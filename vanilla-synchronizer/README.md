@@ -24,11 +24,15 @@ A tool for Crusader Kings III modders to easily synchronize and update modded fi
 
 ## Quick Start
 
-### 1. Clone the Repository
+### 1. Clone the Repository OR Download ZIP
 
-```sh
-git clone https://github.com/YOURUSERNAME/ck3-quieter-events.git
-cd ck3-quieter-events/paradox-file-utils/vanilla-synchronizer
+#### 1a. Clone
+```bash
+git clone https://github.com/idodavis/paradox-file-utils/tree/main.git
+```
+#### 1b. Enter vanilla-synchronizer directory
+```bash
+cd vanilla-synchronizer
 ```
 
 ### 2. Prepare Your Config
@@ -36,7 +40,7 @@ cd ck3-quieter-events/paradox-file-utils/vanilla-synchronizer
 Rename the example config and edit it for your setup:
 
 e.g.
-```sh
+```bash
 cp sync-config.example.yaml sync-config.yaml
 ```
 
@@ -52,13 +56,13 @@ Either option will write your synced version files to the `sync-output/` directo
 
 #### Option A: Using ***Make*** (Linux/macOS/WSL)
 
-  ```sh
+  ```bash
   make build
   ```
 
 #### Option B: Using ***Go***
 
-  ```sh
+  ```bash
   ./vanilla-synchronizer sync-config.yaml
   ```
 
@@ -69,13 +73,13 @@ Both options will generate executable binary named `vanilla_synchronizer`
 
 #### Option A: Using ***Make*** (Linux/macOS/WSL)
 
-```sh
+```bash
 make build
 ```
 
 #### Option B: Using ***Go*** Directly
 
-```sh
+```bash
 go build -o vanilla-synchronizer vanilla_synchronizer.go
 ```
 
