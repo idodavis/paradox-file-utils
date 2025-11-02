@@ -17,6 +17,6 @@ More detail in vanilla-synchronizer [README.md](vanilla-synchronizer/README.md#p
 
 ## Other Paradox Projects
 
-## CK3 Quieter Events Mod
+### CK3 Quieter Events Mod
 This mod is a successor to the **Less Event Spam** mod. It converts several vanilla events that took up the whole screen or required interaction for no reason into smaller toasts or messages. 
 Find it [here](https://github.com/idodavis/ck3-quieter-events)
