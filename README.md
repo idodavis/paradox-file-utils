@@ -14,3 +14,9 @@ More detail in it's [README.md](vanilla-synchronizer/README.md)
 A tcode parser I generated using ANTLR that is able to parser most Paradox `.txt` files and allows more complex manipulation of entities in those files.
 
 More detail in vanilla-synchronizer [README.md](vanilla-synchronizer/README.md#parser-information)
+
+## Other Paradox Projects
+
+## CK3 Quieter Events Mod
+This mod is a successor to the **Less Event Spam** mod. It converts several vanilla events that took up the whole screen or required interaction for no reason into smaller toasts or messages. 
+Find it [here](https://github.com/idodavis/ck3-quieter-events)
