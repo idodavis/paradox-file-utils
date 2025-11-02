@@ -26,11 +26,19 @@ A tool for Crusader Kings III modders to easily synchronize and update modded fi
 
 ### 1. Clone the Repository OR Download ZIP
 
-#### 1a. Clone
+#### Option A: Clone
 ```bash
 git clone https://github.com/idodavis/paradox-file-utils/tree/main.git
 ```
-#### 1b. Enter vanilla-synchronizer directory
+
+#### Option B: Download ZIP
+![[dl-zip-png]](../doc-assets/dl-zip-pic.png)
+
+
+### 2. Go into Vanilla Synchronizer Dir
+Make sure you're in the vanilla-synchronizer dir
+
+e.g.
 ```bash
 cd vanilla-synchronizer
 ```
