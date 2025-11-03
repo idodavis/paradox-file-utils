@@ -1,4 +1,4 @@
-// Code generated from parser/Paradox.g4 by ANTLR 4.13.2. DO NOT EDIT.
+// Code generated from Paradox.g4 by ANTLR 4.13.2. DO NOT EDIT.
 
 package parser // Paradox
 
@@ -62,6 +62,24 @@ func (s *BaseParadoxListener) EnterValueAtom(ctx *ValueAtomContext) {}
 
 // ExitValueAtom is called when production valueAtom is exited.
 func (s *BaseParadoxListener) ExitValueAtom(ctx *ValueAtomContext) {}
+
+// EnterColor_block is called when production color_block is entered.
+func (s *BaseParadoxListener) EnterColor_block(ctx *Color_blockContext) {}
+
+// ExitColor_block is called when production color_block is exited.
+func (s *BaseParadoxListener) ExitColor_block(ctx *Color_blockContext) {}
+
+// EnterHsv_block is called when production hsv_block is entered.
+func (s *BaseParadoxListener) EnterHsv_block(ctx *Hsv_blockContext) {}
+
+// ExitHsv_block is called when production hsv_block is exited.
+func (s *BaseParadoxListener) ExitHsv_block(ctx *Hsv_blockContext) {}
+
+// EnterRgb_or_rgba_block is called when production rgb_or_rgba_block is entered.
+func (s *BaseParadoxListener) EnterRgb_or_rgba_block(ctx *Rgb_or_rgba_blockContext) {}
+
+// ExitRgb_or_rgba_block is called when production rgb_or_rgba_block is exited.
+func (s *BaseParadoxListener) ExitRgb_or_rgba_block(ctx *Rgb_or_rgba_blockContext) {}
 
 // EnterBlock is called when production block is entered.
 func (s *BaseParadoxListener) EnterBlock(ctx *BlockContext) {}

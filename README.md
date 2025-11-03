@@ -1,3 +1,5 @@
+**Discord:** https://discord.com/users/168438474905616386
+
 # Paradox File Utils
 This is just a place for different tools and utilities I'm currently working on for my Quieter Events mod. If this gets much larger I may actually move this to a different repo just for maintainabilities sake.
 

@@ -1,4 +1,4 @@
-// Code generated from parser/Paradox.g4 by ANTLR 4.13.2. DO NOT EDIT.
+// Code generated from Paradox.g4 by ANTLR 4.13.2. DO NOT EDIT.
 
 package parser // Paradox
 
@@ -29,6 +29,15 @@ type ParadoxListener interface {
 	// EnterValueAtom is called when entering the valueAtom production.
 	EnterValueAtom(c *ValueAtomContext)
 
+	// EnterColor_block is called when entering the color_block production.
+	EnterColor_block(c *Color_blockContext)
+
+	// EnterHsv_block is called when entering the hsv_block production.
+	EnterHsv_block(c *Hsv_blockContext)
+
+	// EnterRgb_or_rgba_block is called when entering the rgb_or_rgba_block production.
+	EnterRgb_or_rgba_block(c *Rgb_or_rgba_blockContext)
+
 	// EnterBlock is called when entering the block production.
 	EnterBlock(c *BlockContext)
 
@@ -58,6 +67,15 @@ type ParadoxListener interface {
 
 	// ExitValueAtom is called when exiting the valueAtom production.
 	ExitValueAtom(c *ValueAtomContext)
+
+	// ExitColor_block is called when exiting the color_block production.
+	ExitColor_block(c *Color_blockContext)
+
+	// ExitHsv_block is called when exiting the hsv_block production.
+	ExitHsv_block(c *Hsv_blockContext)
+
+	// ExitRgb_or_rgba_block is called when exiting the rgb_or_rgba_block production.
+	ExitRgb_or_rgba_block(c *Rgb_or_rgba_blockContext)
 
 	// ExitBlock is called when exiting the block production.
 	ExitBlock(c *BlockContext)
