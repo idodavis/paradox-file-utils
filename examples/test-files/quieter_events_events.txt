@@ -1,0 +1,1158 @@
+﻿#########################################
+# Events Triggered When Vanilla Rule Set
+#########################################
+namespace = qe_vanilla_events
+
+# OG Event Key: spymaster_task.0347
+#Spymaster found Secret Unbeliever
+qe_vanilla_events.0001 = {
+	type = character_event
+	title = spymaster_task.0347.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					root = scope:councillor_liege
+				}
+				desc = spymaster_task.0311.councillor_liege_opening
+			}
+			desc = spymaster_task.0311.spymaster_opening
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					religion != scope:secret_holder.religion
+				}
+				desc = spymaster_task.0311.secret_non_believer.other_faith
+			}
+			triggered_desc = {
+				trigger = {
+					faith != scope:secret_holder.faith
+				}
+				desc = spymaster_task.0311.secret_non_believer.other_sect
+			}
+			triggered_desc = {
+				trigger = {
+					OR = {
+						has_character_modifier = known_non_believer
+						any_secret = {	
+							type = secret_non_believer
+						}
+					}
+				}
+				desc = spymaster_task.0311.secret_non_believer.shared
+			}
+			desc = spymaster_task.0311.secret_non_believer
+		}
+	}
+	theme = intrigue
+	left_portrait = {
+		character = scope:councillor
+		animation = disapproval
+	}
+	right_portrait = {
+		character = scope:secret_holder
+		animation = dismissal
+	}
+  # Trigger in Modified Event
+	immediate = {}
+	option = {
+		name = spymaster_task.0347.a
+		scope:secret_to_reveal = {
+			reveal_to = root
+		}
+	}
+}
+
+# OG Event Key: char_interaction.0160
+# (Conditional) Release from Prison: Accepted
+qe_vanilla_events.0002 = {
+	type = letter_event
+	opening = {
+		desc = char_interaction.0001.opening
+	}
+	desc = char_interaction.0160.desc
+  # Trigger in Modified Event
+	sender = scope:recipient
+	option = {
+		name = {
+			trigger = {
+				scope:recipient = {
+					OR = {
+						is_courtier_of = root
+						is_foreign_court_or_pool_guest_of = root
+						scope:recruit = yes
+					}
+					scope:banish = no
+				}
+			}
+			text = char_interaction.0160.a.courtier
+		}
+		name = {
+			text = char_interaction.0160.a
+		}
+	}
+}
+
+# OG Event Key: char_interaction.0231
+#Vassal Imprison Attempt succeeded.
+qe_vanilla_events.0003 = {
+	type = character_event
+	title = char_interaction.0231.title
+	desc = { 
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:recipient = { is_in_prison_type = house_arrest }
+				}
+				desc = char_interaction.0231.desc_house_arrest
+			}
+			triggered_desc = {
+				trigger = {
+					scope:actor = { is_landless_ruler = yes }
+				}
+				desc = char_interaction.0231.desc_stockade
+			}
+			desc = char_interaction.0231.desc_prison
+		}
+	}
+	left_portrait = {
+		character = scope:recipient
+		animation = prisonhouse
+		override_imprisonment_visuals = yes
+	}
+	theme = prison
+	immediate = {
+		# If you have no imprisonment reason and they're your rightful vassal you lose some legitimacy
+		if = {
+			limit = {
+				NOT = { has_imprisonment_reason = scope:recipient }
+			}
+			if = {
+				limit = {
+					scope:actor = { is_rightful_liege_of = scope:recipient }
+				}
+				scope:actor = { add_legitimacy = miniscule_legitimacy_loss }
+			}
+		}
+		show_as_tooltip = {
+			imprison = {
+				target = scope:recipient
+				type = dungeon
+			}
+		}
+	}
+	option = {
+		name = char_interaction.0231.a
+	}
+}
+
+# OG Event Key: marriage_interaction.0010
+# Marriage Proposal: Accepted Event
+qe_vanilla_events.0004 = {
+  type = letter_event
+  opening = {
+    desc = char_interaction.0010.opening
+  }
+  desc = {
+    first_valid = {
+      triggered_desc = { # Betrothal intro (not related)
+        trigger = {
+          OR = {
+            scope:secondary_actor = { is_adult = no }
+            scope:secondary_recipient = { is_adult = no }
+            scope:secondary_actor = { has_been_promised_grand_wedding = yes }
+            scope:secondary_recipient = { has_been_promised_grand_wedding = yes }
+          }
+          scope:secondary_recipient = {
+            NOT = {
+              is_close_or_extended_family_of = scope:recipient
+            }
+          }
+        }
+        desc = marriage_interaction.0010.d_desc
+      }
+      triggered_desc = { # Betrothal intro (related)
+        trigger = {
+          OR = {
+            scope:secondary_actor = { is_adult = no }
+            scope:secondary_recipient = { is_adult = no }
+            scope:secondary_actor = { has_been_promised_grand_wedding = yes }
+            scope:secondary_recipient = { has_been_promised_grand_wedding = yes }
+          }
+        }
+        desc = marriage_interaction.0010.b_desc
+      }
+      triggered_desc = { # Marrying each other!
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor = scope:actor
+        }
+        desc = marriage_interaction.0010.e_desc
+      }
+      triggered_desc = { # Marriage, not related.
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          NOR = {
+            scope:secondary_recipient = { is_close_or_extended_family_of = scope:recipient }
+            scope:secondary_recipient = scope:recipient
+          }
+        }
+        desc = marriage_interaction.0010.c_desc
+      }
+      desc = marriage_interaction.0010.desc
+    }
+    first_valid = {
+      triggered_desc = { # (Betrothal) Neither of the parts are actor/recipient
+        trigger = {
+          OR = {
+            scope:secondary_actor = { is_adult = no }
+            scope:secondary_recipient = { is_adult = no }
+          }
+          NOR = {
+            scope:secondary_actor = scope:actor
+            scope:secondary_recipient = scope:recipient
+          }
+        }
+        desc = marriage_interaction.0010.mid.d_desc
+      }
+      triggered_desc = { # (Betrothal) The actor is marrying
+        trigger = {
+          OR = {
+            scope:secondary_actor = { is_adult = no }
+            scope:secondary_recipient = { is_adult = no }
+          }
+          scope:secondary_actor = scope:actor
+          scope:secondary_recipient != scope:recipient
+        }
+        desc = marriage_interaction.0010.mid.e_desc
+      }
+      triggered_desc = { # (Betrothal) The recipient is marrying (and is a younger child)
+        trigger = {
+          scope:secondary_recipient = { is_adult = no }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor != scope:actor
+        }
+        desc = marriage_interaction.0010.mid.g_desc
+      }
+      triggered_desc = { # (Betrothal) The recipient is marrying
+        trigger = {
+          OR = {
+            scope:secondary_actor = { is_adult = no }
+            scope:secondary_recipient = { is_adult = no }
+          }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor != scope:actor
+        }
+        desc = marriage_interaction.0010.mid.f_desc
+      }
+      triggered_desc = { # (Betrothal) The actor and recipient are marrying
+        trigger = {
+          OR = {
+            scope:secondary_actor = { is_adult = no }
+            scope:secondary_recipient = { is_adult = no }
+          }
+          scope:secondary_actor = scope:actor
+          scope:secondary_recipient = scope:recipient
+        }
+        desc = marriage_interaction.0010.mid.h_desc
+      }
+      ### anti-acquaintance block
+      triggered_desc = { # Neither of the parts are actor/recipient (anti-acquaintance version)
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          NOR = {
+            scope:secondary_actor = scope:actor
+            scope:secondary_recipient = scope:recipient
+          }
+          scope:secondary_actor = {
+            NOT = {
+              is_close_or_extended_family_of = scope:actor
+            }
+          }
+        }
+        desc = marriage_interaction.0010.mid.a_no_acquaintance_desc
+      }
+      triggered_desc = { # The recipient is marrying (anti-acquaintance version)
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor != scope:actor
+          scope:secondary_actor = {
+            NOT = {
+              is_close_or_extended_family_of = scope:actor
+            }
+          }
+        }
+        desc = marriage_interaction.0010.mid.c_no_acquaintance_desc
+      }
+      ### End of anti-acquaintance block
+      triggered_desc = { # Neither of the parts are actor/recipient
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          NOR = {
+            scope:secondary_actor = scope:actor
+            scope:secondary_recipient = scope:recipient
+          }
+        }
+        desc = marriage_interaction.0010.mid.a_desc
+      }
+      triggered_desc = { # The actor is marrying
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          scope:secondary_actor = scope:actor
+          scope:secondary_recipient != scope:recipient
+        }
+        desc = marriage_interaction.0010.mid.b_desc
+      }
+      triggered_desc = { # The recipient is marrying
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor != scope:actor
+        }
+        desc = marriage_interaction.0010.mid.c_desc
+      }
+    }
+    first_valid = {
+      # Fruitful in spite of hatred
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = {
+            is_adult = yes
+            has_relation_rival = scope:secondary_actor
+          }
+          NOR = {
+            scope:secondary_actor = scope:actor
+            scope:secondary_recipient = scope:recipient
+          }
+        }
+        desc = marriage_interaction.0010.ending.d_desc
+      }
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = {
+            is_adult = yes
+            has_relation_rival = scope:secondary_actor
+          }
+          scope:secondary_actor = scope:actor
+          scope:secondary_recipient != scope:recipient
+        }
+        desc = marriage_interaction.0010.ending.d_actor_desc
+      }
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = {
+            is_adult = yes
+            has_relation_rival = scope:secondary_actor
+          }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor != scope:actor
+        }
+        desc = marriage_interaction.0010.ending.d_recipient_desc
+      }
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = {
+            is_adult = yes
+            has_relation_rival = scope:secondary_actor
+          }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor = scope:actor
+        }
+        desc = marriage_interaction.0010.ending.d_both_desc
+      }
+      # Perfect match
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = {
+            is_adult = yes
+            has_relation_soulmate = scope:secondary_actor
+          }
+          NOR = {
+            scope:secondary_actor = scope:actor
+            scope:secondary_recipient = scope:recipient
+          }
+        }
+        desc = marriage_interaction.0010.ending.e_desc
+      }
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = {
+            is_adult = yes
+            has_relation_soulmate = scope:secondary_actor
+          }
+          scope:secondary_actor = scope:actor
+          scope:secondary_recipient != scope:recipient
+        }
+        desc = marriage_interaction.0010.ending.e_actor_desc
+      }
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = {
+            is_adult = yes
+            has_relation_soulmate = scope:secondary_actor
+          }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor != scope:actor
+        }
+        desc = marriage_interaction.0010.ending.e_recipient_desc
+      }
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = {
+            is_adult = yes
+            has_relation_soulmate = scope:secondary_actor
+          }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor = scope:actor
+        }
+        desc = marriage_interaction.0010.ending.e_both_desc
+      }
+      # Recipient hates secondary recipient
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          NOR = {
+            scope:secondary_actor = scope:actor
+            scope:secondary_recipient = scope:recipient
+          }
+          scope:recipient = {
+            OR = {
+              has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:secondary_recipient }
+              opinion = {
+                target = scope:secondary_recipient
+                value <= -70
+              }
+            }
+          }
+        }
+        desc = marriage_interaction.0010.ending.f_desc
+      }
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          scope:secondary_actor = scope:actor
+          scope:secondary_recipient != scope:recipient
+          scope:recipient = {
+            OR = {
+              has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:secondary_recipient }
+              opinion = {
+                target = scope:secondary_recipient
+                value <= -70
+              }
+            }
+          }
+        }
+        desc = marriage_interaction.0010.ending.f_actor_desc
+      }
+      # Sinner, or criminal
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          NOR = {
+            scope:secondary_actor = scope:actor
+            scope:secondary_recipient = scope:recipient
+          }
+          OR = {
+            scope:secondary_actor = {
+              OR = {
+                num_sinful_traits >= 3
+                has_any_shunned_or_criminal_trait_in_faith_trigger = {
+                  CHARACTER = scope:secondary_actor
+                  FAITH = scope:recipient.faith
+                }
+              }
+            }
+            scope:secondary_recipient = {
+              OR = {
+                num_sinful_traits >= 3
+                has_any_shunned_or_criminal_trait_in_faith_trigger = {
+                  CHARACTER = scope:secondary_recipient
+                  FAITH = scope:recipient.faith
+                }
+              }
+            }
+          }
+        }
+        desc = marriage_interaction.0010.ending.g_desc
+      }
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          scope:secondary_actor = scope:actor
+          scope:secondary_recipient != scope:recipient
+          OR = {
+            scope:secondary_actor = {
+              OR = {
+                num_sinful_traits >= 3
+                has_any_shunned_or_criminal_trait_in_faith_trigger = {
+                  CHARACTER = scope:secondary_actor
+                  FAITH = scope:recipient.faith
+                }
+              }
+            }
+            scope:secondary_recipient = {
+              OR = {
+                num_sinful_traits >= 3
+                has_any_shunned_or_criminal_trait_in_faith_trigger = {
+                  CHARACTER = scope:secondary_recipient
+                  FAITH = scope:recipient.faith
+                }
+              }
+            }
+          }
+        }
+        desc = marriage_interaction.0010.ending.g_actor_desc
+      }
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor != scope:actor
+          OR = {
+            scope:secondary_actor = {
+              OR = {
+                num_sinful_traits >= 3
+                has_any_shunned_or_criminal_trait_in_faith_trigger = {
+                  CHARACTER = scope:secondary_actor
+                  FAITH = scope:recipient.faith
+                }
+              }
+            }
+            scope:secondary_recipient = {
+              OR = {
+                num_sinful_traits >= 3
+                has_any_shunned_or_criminal_trait_in_faith_trigger = {
+                  CHARACTER = scope:secondary_recipient
+                  FAITH = scope:recipient.faith
+                }
+              }
+            }
+          }
+        }
+        desc = marriage_interaction.0010.ending.g_recipient_desc
+      }
+      triggered_desc = {
+        trigger = {
+          scope:secondary_actor = { is_adult = yes }
+          scope:secondary_recipient = { is_adult = yes }
+          scope:secondary_recipient = scope:recipient
+          scope:secondary_actor = scope:actor
+          OR = {
+            scope:secondary_actor = {
+              OR = {
+                num_sinful_traits >= 3
+                has_any_shunned_or_criminal_trait_in_faith_trigger = {
+                  CHARACTER = scope:secondary_actor
+                  FAITH = scope:recipient.faith
+                }
+              }
+            }
+            scope:secondary_recipient = {
+              OR = {
+                num_sinful_traits >= 3
+                has_any_shunned_or_criminal_trait_in_faith_trigger = {
+                  CHARACTER = scope:secondary_recipient
+                  FAITH = scope:recipient.faith
+                }
+              }
+            }
+          }
+        }
+        desc = marriage_interaction.0010.ending.g_both_desc
+      }
+      desc = { #These are more unspecific and widely applicable, so we use them as random fallbacks!
+        random_valid = {
+          # Long life and many children
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = {
+                is_adult = yes
+                is_visibly_fertile = yes
+              }
+              scope:secondary_recipient = {
+                is_adult = yes
+                is_visibly_fertile = yes
+              }
+              NOR = {
+                scope:secondary_actor = scope:actor
+                scope:secondary_recipient = scope:recipient
+              }
+            }
+            desc = marriage_interaction.0010.ending.a_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = {
+                is_adult = yes
+                is_visibly_fertile = yes
+              }
+              scope:secondary_recipient = {
+                is_adult = yes
+                is_visibly_fertile = yes
+                can_have_children_with = { CHARACTER = scope:secondary_actor }
+              }
+              scope:secondary_actor = scope:actor
+              scope:secondary_recipient != scope:recipient
+            }
+            desc = marriage_interaction.0010.ending.a_actor_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = {
+                is_adult = yes
+                is_visibly_fertile = yes
+              }
+              scope:secondary_recipient = {
+                is_adult = yes
+                is_visibly_fertile = yes
+                can_have_children_with = { CHARACTER = scope:secondary_actor }
+              }
+              scope:secondary_recipient = scope:recipient
+              scope:secondary_actor != scope:actor
+            }
+            desc = marriage_interaction.0010.ending.a_recipient_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = {
+                is_adult = yes
+                is_visibly_fertile = yes
+              }
+              scope:secondary_recipient = {
+                is_adult = yes
+                is_visibly_fertile = yes
+                can_have_children_with = { CHARACTER = scope:secondary_actor }
+              }
+              scope:secondary_recipient = scope:recipient
+              scope:secondary_actor = scope:actor
+            }
+            desc = marriage_interaction.0010.ending.a_both_desc
+          }
+          # May HighGod bless the union
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              NOR = {
+                scope:secondary_actor = scope:actor
+                scope:secondary_recipient = scope:recipient
+              }
+            }
+            desc = marriage_interaction.0010.ending.b_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              scope:secondary_actor = scope:actor
+              scope:secondary_recipient != scope:recipient
+            }
+            desc = marriage_interaction.0010.ending.b_actor_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              scope:secondary_recipient = scope:recipient
+              scope:secondary_actor != scope:actor
+            }
+            desc = marriage_interaction.0010.ending.b_recipient_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              scope:secondary_recipient = scope:recipient
+              scope:secondary_actor = scope:actor
+            }
+            desc = marriage_interaction.0010.ending.b_both_desc
+          }
+          # Happy and fulfilling marriage
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              NOR = {
+                scope:secondary_actor = scope:actor
+                scope:secondary_recipient = scope:recipient
+              }
+            }
+            desc = marriage_interaction.0010.ending.c_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              scope:secondary_actor = scope:actor
+              scope:secondary_recipient != scope:recipient
+            }
+            desc = marriage_interaction.0010.ending.c_actor_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              scope:secondary_recipient = scope:recipient
+              scope:secondary_actor != scope:actor
+            }
+            desc = marriage_interaction.0010.ending.c_recipient_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              scope:secondary_recipient = scope:recipient
+              scope:secondary_actor = scope:actor
+            }
+            desc = marriage_interaction.0010.ending.c_both_desc
+          }
+          # Strength and support
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              NOR = {
+                scope:secondary_actor = scope:actor
+                scope:secondary_recipient = scope:recipient
+              }
+            }
+            desc = marriage_interaction.0010.ending.h_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              scope:secondary_actor = scope:actor
+              scope:secondary_recipient != scope:recipient
+            }
+            desc = marriage_interaction.0010.ending.h_actor_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              scope:secondary_recipient = scope:recipient
+              scope:secondary_actor != scope:actor
+            }
+            desc = marriage_interaction.0010.ending.h_recipient_desc
+          }
+          triggered_desc = {
+            trigger = {
+              scope:secondary_actor = { is_adult = yes }
+              scope:secondary_recipient = { is_adult = yes }
+              scope:secondary_recipient = scope:recipient
+              scope:secondary_actor = scope:actor
+            }
+            desc = marriage_interaction.0010.ending.h_both_desc
+          }
+        }
+      }
+    }
+    triggered_desc = {
+      trigger = {
+        OR = {
+          scope:secondary_actor = { has_been_promised_grand_wedding = yes }
+          scope:secondary_recipient = { has_been_promised_grand_wedding = yes }
+        }
+      }
+      desc = marriage_interaction.0010.gwedding.desc
+    }
+  }
+  sender = scope:recipient
+  immediate = {
+    show_as_tooltip = {
+      scope:secondary_actor = {
+        if = {
+          limit = { matrilinear_betrothal = yes }
+          create_betrothal_matrilineal = scope:secondary_recipient
+        }
+        else_if = {
+          limit = { patrilinear_betrothal = yes }
+          create_betrothal = scope:secondary_recipient
+        }
+        else_if = {
+          limit = { matrilinear_marriage = yes }
+          marry_matrilineal = scope:secondary_recipient
+        }
+        else = { marry = scope:secondary_recipient }
+      }
+    }
+  }
+  option = {
+    name = EXCELLENT
+  }
+}
+
+# OG Event Key: seduce_outcome.3901
+#Discovery event for spouse/liege
+qe_vanilla_events.0005 = {
+	type = character_event
+	title = seduce_outcome.3901.t
+	desc = seduce_outcome.3901.desc
+	theme = seduce_scheme
+	override_background = {
+		reference = bedchamber
+	}
+	left_portrait = {
+		character = scope:owner
+		animation = flirtation
+	}
+	right_portrait = {
+		character = scope:target
+		animation = admiration
+		outfit_tags = { nightgown }
+	}
+	#No scheme, no widget
+	immediate = {
+		random_dummy_gender_servant_effect = yes
+	}
+	option = {
+		name = seduce_outcome.3900.a
+
+		scope:target = { seduce_outcome_success_discovered_effect = yes }
+	}
+}
+
+# OG Event Key: hostile_scheme_discovery.1002
+#Owner discovered
+qe_vanilla_events.0006 = {
+	type = character_event
+	title = hostile_scheme_discovery.1002.t
+	desc = {
+		desc = {
+			first_valid = {
+				triggered_desc = {
+					trigger = {
+						exists = scope:spymaster
+						exists = cp:councillor_spymaster
+					}
+					desc = hostile_scheme_discovery.1002.intro
+				}
+				desc = hostile_scheme_discovery.1002.intro_no_spymaster
+			}
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:scheme = {
+						scheme_type = murder
+					}
+				}
+				desc = hostile_scheme_discovery.1002.murder
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme = {
+						scheme_type = abduct
+					}
+				}
+				desc = hostile_scheme_discovery.1002.abduction
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme = {
+						scheme_type = elope
+					}
+				}
+				desc = hostile_scheme_discovery.1002.elope
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme = {
+						scheme_type = steal_back_artifact
+					}
+				}
+				desc = hostile_scheme_discovery.1002.steal_back_artifact
+			}
+			desc = hostile_scheme_discovery.1002.fallback
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target != root
+				}
+				desc = hostile_scheme_discovery.2001.target_other
+			}
+			desc = hostile_scheme_discovery.2001.target_me
+		}
+	}
+	theme = generic_intrigue_scheme
+	left_portrait = scope:owner
+	right_portrait = scope:spymaster
+	lower_right_portrait = scope:targeted_courtier
+	immediate = {
+		play_music_cue = "mx_cue_murder"
+		if = {
+			limit = {
+				scope:target_character != root
+			}
+			scope:target_character = {
+				save_scope_as = targeted_courtier
+				trigger_event = hostile_scheme_discovery.1002
+			}
+		}
+	}
+	option = {
+		name = hostile_scheme_discovery.1002.a
+		show_as_tooltip = {
+			scope:owner = {
+				add_dread = minor_dread_gain
+				hostile_scheme_exposure_legitimacy_effect = yes
+			}
+			if = {
+				limit = {
+					scope:scheme = {
+						scheme_type = murder
+					}
+				}
+				attempted_murder_opinion_effect = {
+					VICTIM = scope:target
+					MURDERER = scope:owner
+				}
+			}
+			if = {
+				limit = { #Double check since it seems the scheme sometimes hangs around as a scope
+					exists = scope:scheme
+					exists = scope:scheme.scheme_target_character
+				}
+				scope:scheme = {
+					end_scheme = yes
+				}
+			}
+		}
+	}
+	after = {
+		if = { #Only send it from the host's event so that owner doesn't get duplication if the host and the target isn't the same person
+			limit = {
+				scope:target_character = root
+			}
+			scope:owner = { #Event for the owner that actually ends the scheme
+				trigger_event = hostile_scheme_discovery.3003
+			}
+		}
+	}
+}
+
+# OG Event Key: hostile_scheme_discovery.2001
+#Discover Scheme
+qe_vanilla_events.0007 = {
+	type = character_event
+	title = hostile_scheme_discovery.1001.t
+	desc = {
+		desc = {
+			first_valid = {
+				triggered_desc = {
+					trigger = {
+						exists = scope:spymaster
+						exists = cp:councillor_spymaster
+					}
+					desc = hostile_scheme_discovery.2001.intro
+				}
+				desc = hostile_scheme_discovery.2001.intro_no_spymaster
+			}
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:scheme = {
+						scheme_type = murder
+					}
+				}
+				desc = hostile_scheme_discovery.2001.murder
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme = {
+						scheme_type = abduct
+					}
+				}
+				desc = hostile_scheme_discovery.2001.abduction
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme = {
+						scheme_type = elope
+					}
+				}
+				desc = hostile_scheme_discovery.2001.elope
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme = {
+						scheme_type = steal_back_artifact
+					}
+				}
+				desc = hostile_scheme_discovery.2001.steal_back_artifact
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme = {
+						scheme_type = depose
+					}
+				}
+				desc = hostile_scheme_discovery.2001.depose
+			}
+			desc = hostile_scheme_discovery.2001.fallback
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target != root
+					scope:target = scope:spymaster
+				}
+				desc = hostile_scheme_discovery.2001.target_spymaster
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target != root
+				}
+				desc = hostile_scheme_discovery.2001.target_other
+			}
+			desc = hostile_scheme_discovery.2001.target_me
+		}
+	}
+	theme = generic_intrigue_scheme
+	left_portrait = {
+		character = scope:spymaster
+		animation = eavesdrop
+	}
+	right_portrait = {
+		trigger = {
+			scope:target != scope:spymaster
+		}
+		character = scope:target
+		animation = disbelief
+	}
+	immediate = {
+		play_music_cue = "mx_cue_murder"
+	}
+	#Schemes are bad
+	option = {
+		name = hostile_scheme_discovery.2001.a
+		scope:scheme = {
+			expose_scheme = yes
+		}
+		scope:owner = {
+			trigger_event = hostile_scheme_discovery.3002
+		}
+	}
+}
+
+# Duplicating because CK3 is dumb and can't find it in the birth_events.txt file
+scripted_trigger allow_naming_on_birth_of_dynasty_child_trigger = {
+	save_temporary_scope_as = naming_dynasty_member
+	exists = $CHILD$
+	is_ai = no
+	#No parent is naming the kid, and it's not your child (at least not officially...)
+	$CHILD$ = {
+		any_parent = {
+			NOR = {
+				allow_naming_on_birth_of_child_trigger = { CHILD = $CHILD$ }
+				this = scope:naming_dynasty_member
+			}
+		}
+	}
+	$CHILD$.host = scope:naming_dynasty_member
+}
+
+# OG Event Key: birth.1010
+#Host of the same dynasty (not ai) get to name the child
+qe_vanilla_events.0008 = {
+	type = character_event
+	title = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					exists = scope:child_2
+				}
+				desc = birth.1010.t_twins
+			}
+			desc = birth.1010.t
+		}
+	}
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:child_2 }
+				desc = birth.1010.desc.twin
+			}
+			desc = birth.1010.desc
+		}
+	}
+	theme = pregnancy
+	override_background = { reference = bedchamber }
+	left_portrait = {
+		character = root
+		animation = thinking
+	}
+	right_portrait = {
+		character = scope:mother
+		animation = newborn
+		outfit_tags = { nightgown }
+	}
+	lower_left_portrait = scope:child
+	lower_center_portrait = scope:child_2
+	lower_right_portrait = scope:spouse_of_mother
+	immediate = {
+		play_music_cue_once = { TRACK = mx_cue_birth }
+		if = {
+			limit = {
+				exists = scope:mother.primary_spouse
+			}
+			scope:mother.primary_spouse = {
+				save_scope_as = spouse_of_mother
+			}
+		}
+		else_if = {
+			limit = { exists = scope:child.father }
+			scope:child.father = { save_scope_as = spouse_of_mother }
+		}
+	}
+	#NAMING WIDGET
+	widgets = {
+		widget = {
+			is_shown = {
+				allow_naming_on_birth_of_dynasty_child_trigger = { CHILD = scope:child }
+			}
+			gui = "event_window_widget_name_child"
+			container = "dynamic_birth_name"
+			controller = name_character
+			setup_scope = { scope:child = { save_scope_as = name_character_target } }
+		}
+		widget = {
+			is_shown = {
+				allow_naming_on_birth_of_dynasty_child_trigger = { CHILD = scope:child_2 }
+			}
+			gui = "event_window_widget_name_child"
+			container = "dynamic_birth_name"
+			controller = name_character
+			setup_scope = { scope:child_2 = { save_scope_as = name_character_target } }
+		}
+	}
+	option = {
+		name = birth.1003.b
+	}
+}

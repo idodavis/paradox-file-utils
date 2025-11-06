@@ -1,0 +1,24 @@
+﻿# Good Event Message
+quieter_events_good = {
+	icon = "generic_good_effect"
+	title = event_message_title
+	desc = event_message_text
+	style = good
+	message_filter_type = quieter_events
+}
+
+quieter_events_bad = {
+	icon = "generic_bad_effect"
+	title = event_message_title
+	desc = event_message_text
+	style = bad
+	message_filter_type = quieter_events
+}
+
+quieter_events_neutral = {
+	icon = "generic_neutral_effect"
+	title = event_message_title
+	desc = event_message_text
+	style = neutral
+	message_filter_type = quieter_events
+}
