@@ -20,7 +20,7 @@ var EVENT_KEY_PATTERN = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*\.\d+$`)
 
 type Event struct {
 	Key    string
-	Fields map[string]interface{}
+	Fields map[string]string
 }
 
 type EventCollector struct {
@@ -30,9 +30,19 @@ type EventCollector struct {
 // CollectEvents collects all events from a parsed ParadoxFile
 func (eventCollector *EventCollector) CollectEvents(file *parser.ParadoxFile) {
 	for _, entry := range file.Entries {
-		if entry.Value != nil {
-			value := entry.Value
-			eventCollector.Events = append(eventCollector.Events, Event{Key: entry.Key, Fields: map[string]interface{}{"value": *value.String}})
+
+		if entry.Assignment == nil {
+			continue
+		}
+
+		// Only Entries with assignments to objects
+		if entry.Assignment.Object != nil {
+			if EVENT_KEY_PATTERN.MatchString(entry.Assignment.Key) {
+				eventCollector.Events = append(eventCollector.Events, Event{
+					Key:    entry.Assignment.Key,
+					Fields: map[string]string{"value": entry.Assignment.Object.ToString()},
+				})
+			}
 		}
 	}
 }
@@ -57,7 +67,7 @@ func main() {
 	for _, event := range collector.Events {
 		fmt.Printf("Event: %s\n", event.Key)
 		for k, v := range event.Fields {
-			fmt.Printf("  %s: %v\n", k, v)
+			fmt.Printf("  %s: %s\n", k, v)
 		}
 		fmt.Println(strings.Repeat("-", 40))
 	}
