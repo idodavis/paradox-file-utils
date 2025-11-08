@@ -2,4 +2,7 @@
 vanilla-synchronizer/sync-output/
 parser/.antlr
 vanilla-synchronizer/sync-config.yaml
+
+# Testing Directoriess
 testing-*/
+examples/test*
