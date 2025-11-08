@@ -16,11 +16,16 @@ import (
 	"paradox-file-utils/parser"
 )
 
-var EVENT_KEY_PATTERN = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*\.\d+$`)
+// TODO: Uncomment and remove testing pattern
+// To Ensure we're only getting events, not other types of objects, such as scripted_trigger blocks
+// var EVENT_KEY_PATTERN = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*\.\d+$`)
+
+// temp key pattern for landed_titles file:
+var EVENT_KEY_PATTERN = regexp.MustCompile(`^[\p{L}\p{N}_.$:'-]+$`)
 
 type Event struct {
 	Key    string
-	Fields map[string]string
+	Object *parser.Object
 }
 
 type EventCollector struct {
@@ -31,16 +36,16 @@ type EventCollector struct {
 func (eventCollector *EventCollector) CollectEvents(file *parser.ParadoxFile) {
 	for _, entry := range file.Entries {
 
-		if entry.Assignment == nil {
+		if entry.Expression == nil {
 			continue
 		}
 
 		// Only Entries with assignments to objects
-		if entry.Assignment.Object != nil {
-			if EVENT_KEY_PATTERN.MatchString(entry.Assignment.Key) {
+		if entry.Expression.Object != nil {
+			if EVENT_KEY_PATTERN.MatchString(entry.Expression.Key) {
 				eventCollector.Events = append(eventCollector.Events, Event{
-					Key:    entry.Assignment.Key,
-					Fields: map[string]string{"value": entry.Assignment.Object.ToString()},
+					Key:    entry.Expression.Key,
+					Object: entry.Expression.Object,
 				})
 			}
 		}
@@ -66,9 +71,7 @@ func main() {
 
 	for _, event := range collector.Events {
 		fmt.Printf("Event: %s\n", event.Key)
-		for k, v := range event.Fields {
-			fmt.Printf("  %s: %s\n", k, v)
-		}
+		fmt.Println(event.Object.ToPrettyString(""))
 		fmt.Println(strings.Repeat("-", 40))
 	}
 	fmt.Printf("\nTotal Event Count: %d\n", len(collector.Events))

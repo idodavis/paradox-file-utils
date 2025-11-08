@@ -20,18 +20,17 @@ var (
 
 		{Name: "LBRACE", Pattern: `{`},
 		{Name: "RBRACE", Pattern: `}`},
-		{Name: "HSV", Pattern: `hsv`},
-		{Name: "RGB", Pattern: `rgb`},
+		{Name: "ColorType", Pattern: `(hsv|rgb)`},
 
-		{Name: "Boolean", Pattern: `(yes|no)`},
+		{Name: "Boolean", Pattern: `\b(yes|no)\b`},
 
 		{Name: "LTE", Pattern: `<=`},
 		{Name: "GTE", Pattern: `>=`},
 		{Name: "NEQ", Pattern: `!=`},
 		{Name: "QEQ", Pattern: `\?=`},
 
-		{Name: "Ident", Pattern: `@?[\p{L}\p{N}_.$:'-]+`},
 		{Name: "Number", Pattern: `[-+]?(\d*\.)?\d+`},
+		{Name: "Ident", Pattern: `@?[\p{L}\p{N}_.$:'-]+`},
 		{Name: "String", Pattern: `"(\\"|[^"])*"`},
 
 		{Name: "EQ", Pattern: `=`},
@@ -41,7 +40,6 @@ var (
 
 	paradoxParser = participle.MustBuild[ParadoxFile](
 		participle.Lexer(paradoxLexer),
-		participle.Unquote("String"),
 		participle.UseLookahead(participle.MaxLookahead),
 	)
 )
@@ -56,21 +54,31 @@ type Node struct {
 	Tokens []lexer.Token
 }
 
+type Color struct {
+	Node
+
+	Type *string  `parser:"@ColorType?"`
+	R    float64  `parser:"WS? '{' WS? @Number"`
+	G    float64  `parser:"WS @Number"`
+	B    float64  `parser:"WS @Number"`
+	A    *float64 `parser:"( WS @Number)? WS? '}'"`
+}
+
 type Literal struct {
 	Node
 
-	Boolean    *string    `parser:"('yes'|'no')"`
-	Identifier *string    `parser:"| @Ident"`
+	Identifier *string    `parser:"@Ident"`
 	String     *string    `parser:"| @String"`
 	Number     *float64   `parser:"| @Number"`
+	Boolean    *string    `parser:"| @Boolean"`
+	Color      *Color     `parser:"| @@"`
 	Array      []*Literal `parser:"| '{' WS? (@@ WS)+ WS? '}'"`
-	Color      *string    `parser:"| ('rgb'|'hsv')? WS? '{' WS @Number WS @Number WS @Number ( WS @Number)? WS? '}'"`
 }
 
 type ObjectEntry struct {
 	Node
 
-	Assignment *Assignment `parser:"@@"`
+	Expression *Expression `parser:"@@"`
 	Literal    *Literal    `parser:"| @@"`
 	Object     *Object     `parser:"| @@"`
 	Comment    string      `parser:"| @Comment"`
@@ -82,13 +90,17 @@ type Object struct {
 	Entries []*ObjectEntry `parser:"'{' WS* (@@ WS*)* WS* '}'"`
 }
 
-type Assignment struct {
+// Expressions will require context of surrounding script to know the difference.
+// Also Expressions of things like scopes can contain the qualifier comparison,
+// even without the '=' operator.
+type Expression struct {
 	Node
 
-	Key      string   `parser:"@Ident WS* (@Ident)?"`
+	Key      string   `parser:"((@Ident WS* (@Ident)?) | @String | @Number)"`
 	Operator *string  `parser:"WS* @(LTE|GTE|NEQ|QEQ|EQ|LT|GT) WS*"`
 	Literal  *Literal `parser:"( @@"`
 	Object   *Object  `parser:"| @@ )"`
+	// Qualifier *Expression `parser:"| @@ )"`
 }
 
 type Namespace struct {
@@ -102,7 +114,7 @@ type Entry struct {
 	Node
 
 	Namespace  *Namespace  `parser:"@@"`
-	Assignment *Assignment `parser:"| @@"`
+	Expression *Expression `parser:"| @@"`
 	Comment    string      `parser:"| @Comment"`
 	Whitespace string      `parser:"| @WS"`
 }
@@ -128,7 +140,7 @@ func (node *Node) GetRawText() string {
 // /////////////////////////////////////
 // Pretty formatted methods (JSON-like)
 // /////////////////////////////////////
-func (l *Literal) ToPrettyString() string {
+func (l *Literal) ToPrettyString(indent string) string {
 	switch {
 	case l.Boolean != nil:
 		return *l.Boolean
@@ -138,17 +150,31 @@ func (l *Literal) ToPrettyString() string {
 		return fmt.Sprintf("%q", *l.String)
 	case l.Number != nil:
 		return fmt.Sprintf("%v", *l.Number)
+	case l.Color != nil:
+		if l.Color.Type == nil {
+			if l.Color.A == nil {
+				return fmt.Sprintf("{ %v %v %v }", l.Color.R, l.Color.G, l.Color.B)
+			} else {
+				return fmt.Sprintf("{ %v %v %v %v }", l.Color.R, l.Color.G, l.Color.B, *l.Color.A)
+			}
+		} else {
+			if l.Color.A == nil {
+				return fmt.Sprintf("%s{ %v %v %v }", *l.Color.Type, l.Color.R, l.Color.G, l.Color.B)
+			} else {
+				return fmt.Sprintf("%s{ %v %v %v %v }", *l.Color.Type, l.Color.R, l.Color.G, l.Color.B, *l.Color.A)
+			}
+		}
 	case l.Array != nil:
 		parts := make([]string, len(l.Array))
 		for i, e := range l.Array {
-			parts[i] = e.ToPrettyString()
+			parts[i] = e.ToPrettyString(indent)
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
 	}
 	return "null"
 }
 
-func (o *Object) ToPrettyString() string {
+func (o *Object) ToPrettyString(indent string) string {
 	if o == nil {
 		return "{}"
 	}
@@ -156,54 +182,54 @@ func (o *Object) ToPrettyString() string {
 		return "{}"
 	}
 
-	nextIndent := "	"
+	nextIndent := indent + " " // Adds indent for the next line
 	parts := make([]string, 0, len(o.Entries))
 
 	for _, e := range o.Entries {
-		if e.Assignment != nil {
-			parts = append(parts, nextIndent+e.Assignment.ToPrettyString())
+		if e.Expression != nil {
+			parts = append(parts, nextIndent+e.Expression.ToPrettyString(nextIndent))
 		} else if e.Literal != nil {
-			parts = append(parts, nextIndent+e.Literal.ToPrettyString())
+			parts = append(parts, nextIndent+e.Literal.ToPrettyString(nextIndent))
 		} else if e.Object != nil {
-			parts = append(parts, nextIndent+e.Object.ToPrettyString())
+			parts = append(parts, nextIndent+e.Object.ToPrettyString(nextIndent))
 		} else if e.Comment != "" {
 			parts = append(parts, nextIndent+"# "+strings.TrimPrefix(e.Comment, "#"))
 		}
 	}
 
-	return "{\n" + strings.Join(parts, ",\n") + "\n" + "	" + "}"
+	return "{\n" + strings.Join(parts, ",\n") + "\n" + indent + "}"
 }
 
-func (a *Assignment) ToPrettyString() string {
-	if a == nil {
+func (expr *Expression) ToPrettyString(indent string) string {
+	if expr == nil {
 		return ""
 	}
 	op := "="
-	if a.Operator != nil {
-		op = *a.Operator
+	if expr.Operator != nil {
+		op = *expr.Operator
 	}
 
-	key := a.Key
+	key := expr.Key
 	value := ""
-	if a.Literal != nil {
-		value = a.Literal.ToPrettyString()
-	} else if a.Object != nil {
-		value = a.Object.ToPrettyString()
+	if expr.Literal != nil {
+		value = expr.Literal.ToPrettyString(indent)
+	} else if expr.Object != nil {
+		value = expr.Object.ToPrettyString(indent) // Pass indent to nested objects
 	}
 
 	return fmt.Sprintf("%s %s %s", key, op, value)
 }
 
-func (n *Namespace) ToPrettyString() string {
+func (n *Namespace) ToPrettyString(indent string) string {
 	return fmt.Sprintf("namespace = %s", n.Value)
 }
 
-func (e *Entry) ToPrettyString() string {
-	if e.Assignment != nil {
-		return e.Assignment.ToPrettyString()
+func (e *Entry) ToPrettyString(indent string) string {
+	if e.Expression != nil {
+		return e.Expression.ToPrettyString(indent)
 	}
 	if e.Namespace != nil {
-		return e.Namespace.ToPrettyString()
+		return e.Namespace.ToPrettyString(indent)
 	}
 	if e.Comment != "" {
 		return "# " + strings.TrimPrefix(e.Comment, "#")

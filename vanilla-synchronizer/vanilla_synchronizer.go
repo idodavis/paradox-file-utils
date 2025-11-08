@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	EVENT_KEY_PATTERN = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*\.\d+$`)
-	SYNC_OUTPUT_DIR   = "sync-output"
+	KEY_PATTERN     = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*\.\d+$`)
+	SYNC_OUTPUT_DIR = "sync-output"
 )
 
 type Config struct {
@@ -28,7 +28,7 @@ type Config struct {
 }
 
 type ModdedObject struct {
-	ObjectAsmt *parser.Assignment
+	ObjectExpr *parser.Expression
 	Comment    string
 }
 
@@ -52,8 +52,7 @@ func writeEntry(out *os.File, s string) {
 	}
 }
 
-// Goes through the parsed tree and finds block assignments,
-// and if using normal event key syntax, adds them to a list
+// Goes through the parsed file and collects all entries with objects that match the event key pattern
 // Also grabs comments if they contain the specified prefix in the config
 func collectObjectsAndComments(entries []*parser.Entry, prefix string) map[string]ModdedObject {
 	events := make(map[string]ModdedObject)
@@ -70,15 +69,15 @@ func collectObjectsAndComments(entries []*parser.Entry, prefix string) map[strin
 		}
 
 		// Grabbing events
-		if asmt := entry.Assignment; asmt != nil {
-			key := asmt.Key
-			if asmt.Object != nil && EVENT_KEY_PATTERN.MatchString(key) {
+		if expr := entry.Expression; expr != nil {
+			key := expr.Key
+			if expr.Object != nil && KEY_PATTERN.MatchString(key) {
 				comment := ""
 				if len(pendingComments) > 0 {
 					comment = strings.Join(pendingComments, "\n") + "\n"
 					pendingComments = nil
 				}
-				events[key] = ModdedObject{asmt, comment}
+				events[key] = ModdedObject{expr, comment}
 			}
 		}
 	}
@@ -134,8 +133,8 @@ func main() {
 
 		// Walk vanilla lines, swap event blocks if needed
 		for _, vEntry := range vanillaFile.Entries {
-			if asmt := vEntry.Assignment; asmt != nil {
-				key := asmt.Key
+			if expr := vEntry.Expression; expr != nil {
+				key := expr.Key
 
 				// Swap event block if key is in modified event keys list
 				if _, ok := modKeys[key]; ok {
@@ -145,7 +144,7 @@ func main() {
 							writeEntry(out, modObject.Comment)
 						}
 
-						writeEntry(out, modObject.ObjectAsmt.GetRawText())
+						writeEntry(out, modObject.ObjectExpr.GetRawText())
 						continue
 					}
 				}
@@ -155,14 +154,6 @@ func main() {
 			writeEntry(out, vEntry.GetRawText())
 			continue
 
-			// // Write vanilla comments as-is
-			// if c := vEntry.Comment; c != "" {
-			// 	writeEntry(out, c)
-			// }
-			// // Write vanilla whitespace as-is
-			// if ws := vEntry.Whitespace; ws != "" {
-			// 	writeEntry(out, ws)
-			// }
 		}
 		fmt.Println("Merged file written to:", outPath)
 		defer out.Close()
