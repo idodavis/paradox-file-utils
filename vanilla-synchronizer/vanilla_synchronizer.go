@@ -4,158 +4,94 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 
-	"github.com/goccy/go-yaml"
-
-	"paradox-file-utils/parser"
+	"paradox-file-utils/internal/config"
+	"paradox-file-utils/internal/core"
+	"paradox-file-utils/internal/diff"
 )
 
 var (
-	KEY_PATTERN     = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*\.\d+$`)
 	SYNC_OUTPUT_DIR = "sync-output"
+	DIFF_OUTPUT_DIR = "sync-output/diffs"
 )
-
-type Config struct {
-	GameRoot            string `yaml:"game_root"`
-	ModRoot             string `yaml:"mod_root"`
-	CustomCommentPrefix string `yaml:"custom_comment_prefix"`
-	Files               []struct {
-		RelativePath       string   `yaml:"relative_path"`
-		ModifiedEntityKeys []string `yaml:"modified_entity_keys"`
-	} `yaml:"files"`
-}
-
-type ModdedObject struct {
-	ObjectExpr *parser.Expression
-	Comment    string
-}
-
-func loadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
-}
-
-func writeEntry(out *os.File, s string) {
-	if _, err := out.WriteString(s); err != nil {
-		fmt.Println("Error writing to output file:", err)
-		out.Close()
-		return
-	}
-}
-
-// Goes through the parsed file and collects all entries with objects that match the event key pattern
-// Also grabs comments if they contain the specified prefix in the config
-func collectObjectsAndComments(entries []*parser.Entry, prefix string) map[string]ModdedObject {
-	events := make(map[string]ModdedObject)
-	var pendingComments []string
-	for _, entry := range entries {
-
-		// Grabbing custom comments
-		// These will be attached to the next event block found
-		if c := entry.Comment; c != "" {
-			if strings.HasPrefix(c, prefix) {
-				pendingComments = append(pendingComments, c)
-			}
-			continue
-		}
-
-		// Grabbing events
-		if expr := entry.Expression; expr != nil {
-			key := expr.Key
-			if expr.Object != nil && KEY_PATTERN.MatchString(key) {
-				comment := ""
-				if len(pendingComments) > 0 {
-					comment = strings.Join(pendingComments, "\n") + "\n"
-					pendingComments = nil
-				}
-				events[key] = ModdedObject{expr, comment}
-			}
-		}
-	}
-	return events
-}
 
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: ./vanilla_synchronizer <config.yaml>")
 		return
 	}
-	cfg, err := loadConfig(os.Args[1])
+
+	cfg, err := config.LoadConfig(os.Args[1])
 	if err != nil {
 		fmt.Println("Error loading config:", err)
 		return
 	}
 
-	for _, file := range cfg.Files {
+	// Ensure output directories exist
+	if err := os.MkdirAll(SYNC_OUTPUT_DIR, 0o755); err != nil {
+		fmt.Printf("Error creating output directory: %v\n", err)
+		return
+	}
+	if err := os.MkdirAll(DIFF_OUTPUT_DIR, 0o755); err != nil {
+		fmt.Printf("Error creating diff directory: %v\n", err)
+		return
+	}
+
+	for i, file := range cfg.Files {
 		relPath := file.RelativePath
 
-		// Using map to make quick key lookup/access
-		modKeys := make(map[string]struct{})
-		for _, k := range file.ModifiedEntityKeys {
-			modKeys[k] = struct{}{}
-		}
+		// Build file paths
+		fileAPath := filepath.Join(cfg.GameRoot, relPath)
+		fileBPath := filepath.Join(cfg.ModRoot, relPath)
 
-		// Parse vanilla file
-		vanillaPath := filepath.Join(cfg.GameRoot, relPath)
-		vanillaFile, err := parser.ParseFile(vanillaPath)
+		// Convert config to merge options
+		mergeOptions := cfg.ToMergeOptions(i)
+
+		// Get merged content
+		mergedContent, mergeResult, err := core.GetMergedContent(fileAPath, fileBPath, mergeOptions)
 		if err != nil {
-			fmt.Println("Error parsing vanilla file:", err)
-			return
-		}
-
-		// Parse mod file
-		modPath := filepath.Join(cfg.ModRoot, relPath)
-		modFile, err := parser.ParseFile(modPath)
-		if err != nil {
-			fmt.Println("Error parsing mod file:", err)
-			return
-		}
-
-		// Prepare output file
-		outPath := SYNC_OUTPUT_DIR + "/" + filepath.Base(relPath)
-		out, err := os.Create(outPath)
-		if err != nil {
-			fmt.Println("Error writing merged file:", err)
-			return
-		}
-
-		// Collect events from mod file (all of them, not just ones that were actually modified)
-		modFileObjects := collectObjectsAndComments(modFile.Entries, cfg.CustomCommentPrefix)
-
-		// Walk vanilla lines, swap event blocks if needed
-		for _, vEntry := range vanillaFile.Entries {
-			if expr := vEntry.Expression; expr != nil {
-				key := expr.Key
-
-				// Swap event block if key is in modified event keys list
-				if _, ok := modKeys[key]; ok {
-					if modObject, ok := modFileObjects[key]; ok {
-						// Write mod comment if exists
-						if modObject.Comment != "" {
-							writeEntry(out, modObject.Comment)
-						}
-
-						writeEntry(out, modObject.ObjectExpr.GetRawText())
-						continue
-					}
-				}
-			}
-
-			// Otherwise, write vanilla assignment as-is
-			writeEntry(out, vEntry.GetRawText())
+			fmt.Printf("Error merging file %s: %v\n", relPath, err)
 			continue
-
 		}
-		fmt.Println("Merged file written to:", outPath)
-		defer out.Close()
+
+		// Write merged file
+		outPath := filepath.Join(SYNC_OUTPUT_DIR, filepath.Base(relPath))
+		if err := core.WriteMergedFile(outPath, mergedContent); err != nil {
+			fmt.Printf("Error writing merged file %s: %v\n", outPath, err)
+			continue
+		}
+
+		// Read original file A content for diff
+		fileAContent, err := os.ReadFile(fileAPath)
+		if err != nil {
+			fmt.Printf("Warning: Could not read file A for diff: %v\n", err)
+			continue
+		}
+
+		// Generate diff
+		diffResult, err := diff.GenerateDiff(fileAPath, outPath, string(fileAContent), mergedContent)
+		if err != nil {
+			fmt.Printf("Warning: Could not generate diff: %v\n", err)
+		} else {
+			// Save diff to file
+			diffPath := filepath.Join(DIFF_OUTPUT_DIR, filepath.Base(relPath)+".diff")
+			if err := diff.SaveDiffToFile(diffPath, diffResult.UnifiedDiff); err != nil {
+				fmt.Printf("Warning: Could not save diff file: %v\n", err)
+			} else {
+				fmt.Printf("Diff saved to: %s\n", diffPath)
+			}
+		}
+
+		// Print merge summary
+		fmt.Printf("Merged file written to: %s\n", outPath)
+		if len(mergeResult.EntriesChanged) > 0 {
+			fmt.Printf("  Changed entries: %d\n", len(mergeResult.EntriesChanged))
+		}
+		if len(mergeResult.EntriesAdded) > 0 {
+			fmt.Printf("  Added entries: %d\n", len(mergeResult.EntriesAdded))
+		}
+		if len(mergeResult.EntriesRemoved) > 0 {
+			fmt.Printf("  Removed entries: %d\n", len(mergeResult.EntriesRemoved))
+		}
 	}
 }
