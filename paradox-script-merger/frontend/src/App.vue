@@ -181,15 +181,15 @@
           class="bg-dark-input p-4 rounded overflow-x-auto font-mono text-sm leading-relaxed whitespace-pre-wrap break-words">{{ currentDiff }}</pre>
       </div>
 
-      <!-- Patch Comparison Panel -->
-      <div v-if="showPatchComparison" class="col-span-2 bg-dark-panel rounded-lg p-6">
-        <h2 class="text-xl font-semibold mb-4">Patch Comparison</h2>
+      <!-- Comparison Tool Panel -->
+      <div v-if="showComparisonTool" class="col-span-2 bg-dark-panel rounded-lg p-6">
+        <h2 class="text-xl font-semibold mb-4">Comparison Tool</h2>
         <div class="mb-4">
           <label class="block mb-2 font-medium">Current Game Directory:</label>
           <div class="flex gap-2">
-            <input v-model="patchDirA" type="text" placeholder="Select current game directory..."
+            <input v-model="compareDirectoryA" type="text" placeholder="Select current game directory..."
               class="flex-1 px-3 py-2 bg-dark-input border border-dark-border rounded text-gray-200 focus:outline-none focus:border-primary" />
-            <button @click="selectPatchDirA"
+            <button @click="selectCompareDirectoryA"
               class="px-4 py-2 bg-btn-primary hover:bg-btn-primary-hover text-white rounded font-medium transition-colors">
               Browse
             </button>
@@ -198,24 +198,24 @@
         <div class="mb-4">
           <label class="block mb-2 font-medium">Previous Patch Directory:</label>
           <div class="flex gap-2">
-            <input v-model="patchDirB" type="text" placeholder="Select previous patch directory..."
+            <input v-model="compareDirectoryB" type="text" placeholder="Select previous patch directory..."
               class="flex-1 px-3 py-2 bg-dark-input border border-dark-border rounded text-gray-200 focus:outline-none focus:border-primary" />
-            <button @click="selectPatchDirB"
+            <button @click="selectCompareDirectoryB"
               class="px-4 py-2 bg-btn-primary hover:bg-btn-primary-hover text-white rounded font-medium transition-colors">
               Browse
             </button>
           </div>
         </div>
-        <button @click="runPatchComparison" :disabled="comparingPatches"
+        <button @click="runCompTool" :disabled="comparingDirectories"
           class="w-full px-4 py-3 bg-btn-primary hover:bg-btn-primary-hover text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-          {{ comparingPatches ? 'Comparing...' : 'Compare Patches' }}
+          {{ comparingDirectories ? 'Comparing...' : 'Compare Directories' }}
         </button>
-        <div v-if="patchComparison" class="mt-4 p-4 bg-dark-input rounded">
+        <div v-if="directoryComparison" class="mt-4 p-4 bg-dark-input rounded">
           <h3 class="text-lg font-semibold mb-2">Results</h3>
-          <p class="mb-1">Changed: {{ patchComparison.ChangedFiles?.length || 0 }}</p>
-          <p class="mb-1">Added: {{ patchComparison.AddedFiles?.length || 0 }}</p>
-          <p class="mb-4">Removed: {{ patchComparison.RemovedFiles?.length || 0 }}</p>
-          <button @click="viewPatchReport"
+          <p class="mb-1">Changed: {{ directoryComparison.ChangedFiles?.length || 0 }}</p>
+          <p class="mb-1">Added: {{ directoryComparison.AddedFiles?.length || 0 }}</p>
+          <p class="mb-4">Removed: {{ directoryComparison.RemovedFiles?.length || 0 }}</p>
+          <button @click="viewCompToolReport"
             class="px-4 py-2 bg-btn-primary hover:bg-btn-primary-hover text-white rounded font-medium transition-colors">
             View Full Report
           </button>
@@ -227,7 +227,7 @@
 
 <script>
 // Import App method bindings
-import { SelectDirectory, SelectMultipleFiles, MergeMultipleFileSets, GetDiffForFile, ComparePatches, GeneratePatchReport } from '../wailsjs/go/main/App'
+import { SelectDirectory, SelectMultipleFiles, MergeMultipleFileSets, CompareDirectories, GenerateCompToolReport, GetDiff } from '../wailsjs/go/main/App'
 
 export default {
   name: 'App',
@@ -245,11 +245,11 @@ export default {
       mergeResults: [],
       currentDiff: null,
       diffFilePath: null,
-      showPatchComparison: false,
-      patchDirA: '',
-      patchDirB: '',
-      comparingPatches: false,
-      patchComparison: null
+      showComparisonTool: false,
+      compareDirectoryA: '',
+      compareDirectoryB: '',
+      comparingDirectories: false,
+      directoryComparison: null
     }
   },
   methods: {
@@ -269,19 +269,6 @@ export default {
         alert('Error selecting files: ' + error)
       }
     },
-    async addDirectoryToSetA() {
-      try {
-        const selected = await SelectDirectory('Select Directory for Set A (Base)')
-        if (selected) {
-          // Add directory if not already in list
-          if (!this.fileSetA.includes(selected)) {
-            this.fileSetA.push(selected)
-          }
-        }
-      } catch (error) {
-        alert('Error selecting directory: ' + error)
-      }
-    },
     clearSetA() {
       this.fileSetA = []
     },
@@ -299,19 +286,6 @@ export default {
         }
       } catch (error) {
         alert('Error selecting files: ' + error)
-      }
-    },
-    async addDirectoryToSetB() {
-      try {
-        const selected = await SelectDirectory('Select Directory for Set B (Mod)')
-        if (selected) {
-          // Add directory if not already in list
-          if (!this.fileSetB.includes(selected)) {
-            this.fileSetB.push(selected)
-          }
-        }
-      } catch (error) {
-        alert('Error selecting directory: ' + error)
       }
     },
     clearSetB() {
@@ -383,17 +357,9 @@ export default {
 
       try {
         this.currentDiff = 'Loading diff...'
-        const keys = this.useKeyList ? this.customKeys.split('\n').filter(k => k.trim() !== '') : []
-
-        const diffContent = await GetDiffForFile(
+        const diffContent = await GetDiff(
           result.FileAPath,
-          result.FileBPath,
-          {
-            AddAdditionalEntries: this.addAdditionalEntries,
-            EntryPlacement: this.entryPlacement,
-            KeyList: keys,
-            CustomCommentPrefix: this.commentPrefix,
-          }
+          result.FileBPath
         )
 
         this.currentDiff = diffContent
@@ -407,55 +373,55 @@ export default {
       this.currentDiff = null
       this.diffFilePath = null
     },
-    async selectPatchDirA() {
+    async selectCompareDirectoryA() {
       try {
         const selected = await SelectDirectory('Select Current Game Directory')
         if (selected) {
-          this.patchDirA = selected
+          this.compareDirectoryA = selected
         }
       } catch (error) {
         alert('Error selecting directory: ' + error)
       }
     },
-    async selectPatchDirB() {
+    async selectCompareDirectoryB() {
       try {
         const selected = await SelectDirectory('Select Previous Patch Directory')
         if (selected) {
-          this.patchDirB = selected
+          this.compareDirectoryB = selected
         }
       } catch (error) {
         alert('Error selecting directory: ' + error)
       }
     },
-    async runPatchComparison() {
-      if (!this.patchDirA || !this.patchDirB) {
+    async runCompTool() {
+      if (!this.compareDirectoryA || !this.compareDirectoryB) {
         alert('Please select both directories')
         return
       }
 
-      this.comparingPatches = true
-      this.patchComparison = null
+      this.comparingDirectories = true
+      this.directoryComparison = null
 
       try {
-        const comparison = await ComparePatches(this.patchDirA, this.patchDirB, ['.txt'])
-        this.patchComparison = comparison
+        const comparison = await CompareDirectories(this.compareDirectoryA, this.compareDirectoryB, ['.txt'])
+        this.directoryComparison = comparison
       } catch (error) {
-        alert('Error comparing patches: ' + error)
+        alert('Error comparing directories: ' + error)
       } finally {
-        this.comparingPatches = false
+        this.comparingDirectories = false
       }
     },
-    async viewPatchReport() {
-      if (!this.patchComparison) {
+    async viewCompToolReport() {
+      if (!this.directoryComparison) {
         return
       }
 
       try {
-        const report = await GeneratePatchReport(this.patchComparison)
+        const report = await GenerateCompToolReport(this.directoryComparison)
         this.currentDiff = report
-        this.diffFilePath = 'Patch Comparison Report'
+        this.diffFilePath = 'Comparison Tool Report'
       } catch (error) {
-        alert('Error generating report: ' + error)
+        alert('Error generating comparison report: ' + error)
       }
     }
   }

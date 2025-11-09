@@ -11,7 +11,6 @@ import (
 
 	"paradox-file-utils/internal/core"
 	"paradox-file-utils/internal/diff"
-	"paradox-file-utils/internal/patch"
 )
 
 // App struct
@@ -33,12 +32,6 @@ func (a *App) OnStartup(ctx context.Context) {
 // WriteMergedFile writes the merged content to a file
 func (a *App) WriteMergedFile(outputPath, content string) error {
 	return core.WriteMergedFile(outputPath, content)
-}
-
-// TODO: Not Used Yet
-// SaveDiffToFile saves a diff to a file
-func (a *App) SaveDiffToFile(diffPath, diffContent string) error {
-	return diff.SaveDiffToFile(diffPath, diffContent)
 }
 
 // SelectDirectory opens a directory selection dialog
@@ -313,21 +306,9 @@ func (a *App) mapToMergeOptions(m map[string]interface{}) core.MergeOptions {
 	return options
 }
 
-// GetDiffForFile gets the diff for a merged file
-func (a *App) GetDiffForFile(fileAPath, fileBPath string, optionsMap map[string]interface{}) (string, error) {
-	options := a.mapToMergeOptions(optionsMap)
-
-	mergedContent, _, err := core.GetMergedContent(fileAPath, fileBPath, options)
-	if err != nil {
-		return "", err
-	}
-
-	fileAContent, err := os.ReadFile(fileAPath)
-	if err != nil {
-		return "", err
-	}
-
-	diffResult, err := diff.GenerateDiff(fileAPath, fileBPath, string(fileAContent), mergedContent)
+// GetDiff gets the diff for a merged file
+func (a *App) GetDiff(fileAPath, fileBPath string) (string, error) {
+	diffResult, err := diff.GenerateDiff(fileAPath, fileBPath)
 	if err != nil {
 		return "", err
 	}
@@ -335,26 +316,14 @@ func (a *App) GetDiffForFile(fileAPath, fileBPath string, optionsMap map[string]
 	return diffResult.UnifiedDiff, nil
 }
 
-// ComparePatches compares two game directories and returns patch comparison
-func (a *App) ComparePatches(dirA, dirB string, fileExtensions []string) (*patch.PatchComparison, error) {
-	return patch.CompareDirectories(dirA, dirB, fileExtensions)
+// CompareDirectories compares two game directories and returns directory comparison
+func (a *App) CompareDirectories(dirA, dirB string, fileExtensions []string) (*diff.DirectoryComparison, error) {
+	return diff.CompareDirectories(dirA, dirB, fileExtensions)
 }
 
-// GeneratePatchReport generates a text report of patch comparison
-func (a *App) GeneratePatchReport(comparison *patch.PatchComparison) string {
-	return patch.GeneratePatchReport(comparison)
-}
-
-// SavePatchReport saves patch report to a file
-func (a *App) SavePatchReport(reportPath string, comparison *patch.PatchComparison) error {
-	return patch.SavePatchReport(reportPath, comparison)
-}
-
-// MergeResult represents the result of a merge operation for the GUI
-type MergeResult struct {
-	MergedContent string
-	Diff          string
-	MergeResult   *core.MergeResult
+// GenCompToolReport generates a text report of directory comparison
+func (a *App) GenerateCompToolReport(comparison *diff.DirectoryComparison) string {
+	return diff.GenerateCompToolReport(comparison)
 }
 
 // FileMergeResult represents the result of merging a single file

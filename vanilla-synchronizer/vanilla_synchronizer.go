@@ -61,25 +61,17 @@ func main() {
 			continue
 		}
 
-		// Read original file A content for diff
-		fileAContent, err := os.ReadFile(fileAPath)
-		if err != nil {
-			fmt.Printf("Warning: Could not read file A for diff: %v\n", err)
-			continue
-		}
-
 		// Generate diff
-		diffResult, err := diff.GenerateDiff(fileAPath, outPath, string(fileAContent), mergedContent)
+		diffResult, err := diff.GenerateDiff(fileAPath, outPath)
 		if err != nil {
 			fmt.Printf("Warning: Could not generate diff: %v\n", err)
 		} else {
 			// Save diff to file
 			diffPath := filepath.Join(DIFF_OUTPUT_DIR, filepath.Base(relPath)+".diff")
-			if err := diff.SaveDiffToFile(diffPath, diffResult.UnifiedDiff); err != nil {
+			if err := os.WriteFile(diffPath, []byte(diffResult.UnifiedDiff), 0o644); err != nil {
 				fmt.Printf("Warning: Could not save diff file: %v\n", err)
-			} else {
-				fmt.Printf("Diff saved to: %s\n", diffPath)
 			}
+			fmt.Printf("Diff saved to: %s\n", diffPath)
 		}
 
 		// Print merge summary
