@@ -9,12 +9,6 @@ import (
 	"github.com/aymanbagabas/go-udiff"
 )
 
-// DiffResult represents the result of a diff operation
-type DiffResult struct {
-	UnifiedDiff string
-	FilePath    string
-}
-
 // DirectoryComparison represents a comparison between two game versions
 type DirectoryComparison struct {
 	ChangedFiles []ChangedFile
@@ -31,24 +25,21 @@ type ChangedFile struct {
 	Error        string
 }
 
-// GenerateDiff generates a diff between two file contents (like git diff)
-func GenerateDiff(fileAPath string, fileBPath string) (*DiffResult, error) {
-	aFileContent, err := os.ReadFile(fileAPath)
+// GenerateDiff generates a unified diff between two files (like git diff)
+func GenerateDiff(beforeFilePath string, afterFilePath string) (string, error) {
+	beforeContent, err := os.ReadFile(beforeFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading file A: %w", err)
+		return "", fmt.Errorf("error reading file A: %w", err)
 	}
-	bFileContent, err := os.ReadFile(fileBPath)
+	afterContent, err := os.ReadFile(afterFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading file B: %w", err)
+		return "", fmt.Errorf("error reading file B: %w", err)
 	}
 
 	// Generate diffs
-	diff := udiff.Unified(fileAPath, fileBPath, string(aFileContent), string(bFileContent))
+	diff := udiff.Unified(beforeFilePath, afterFilePath, string(beforeContent), string(afterContent))
 
-	return &DiffResult{
-		UnifiedDiff: diff,
-		FilePath:    fileAPath,
-	}, nil
+	return diff, nil
 }
 
 // CompareDirectories compares two game directories and returns a PatchComparison
@@ -143,14 +134,14 @@ func CompareDirectories(dirA, dirB string, fileExtensions []string) (*DirectoryC
 			}
 
 			// Check if there are actual differences
-			hasChanges := diffResult.UnifiedDiff != ""
+			hasChanges := diffResult != ""
 
 			if hasChanges {
 				comparison.ChangedFiles = append(comparison.ChangedFiles, ChangedFile{
 					RelativePath: relPath,
 					FullPathA:    pathA,
 					FullPathB:    pathB,
-					Diff:         diffResult.UnifiedDiff,
+					Diff:         diffResult,
 				})
 			}
 		} else {

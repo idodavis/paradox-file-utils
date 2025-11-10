@@ -68,7 +68,7 @@ func main() {
 		} else {
 			// Save diff to file
 			diffPath := filepath.Join(DIFF_OUTPUT_DIR, filepath.Base(relPath)+".diff")
-			if err := os.WriteFile(diffPath, []byte(diffResult.UnifiedDiff), 0o644); err != nil {
+			if err := os.WriteFile(diffPath, []byte(diffResult), 0o644); err != nil {
 				fmt.Printf("Warning: Could not save diff file: %v\n", err)
 			}
 			fmt.Printf("Diff saved to: %s\n", diffPath)
