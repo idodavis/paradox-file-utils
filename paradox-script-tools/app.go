@@ -306,24 +306,9 @@ func (a *App) mapToMergeOptions(m map[string]interface{}) core.MergeOptions {
 	return options
 }
 
-// GetDiff gets the diff for a merged file
-func (a *App) GetDiff(fileAPath, fileBPath string) (string, error) {
-	diffResult, err := diff.GenerateDiff(fileAPath, fileBPath)
-	if err != nil {
-		return "", err
-	}
-
-	return diffResult, nil
-}
-
-// CompareDirectories compares two game directories and returns directory comparison
-func (a *App) CompareDirectories(dirA, dirB string, fileExtensions []string) (*diff.DirectoryComparison, error) {
-	return diff.CompareDirectories(dirA, dirB, fileExtensions)
-}
-
-// GenCompToolReport generates a text report of directory comparison
-func (a *App) GenerateCompToolReport(comparison *diff.DirectoryComparison) string {
-	return diff.GenerateCompToolReport(comparison)
+// GetDiff gets the structured diff for a merged file
+func (a *App) GetDiff(fileAPath, fileBPath string) ([]diff.DiffLine, error) {
+	return diff.GenerateDiff(fileAPath, fileBPath)
 }
 
 // FileMergeResult represents the result of merging a single file

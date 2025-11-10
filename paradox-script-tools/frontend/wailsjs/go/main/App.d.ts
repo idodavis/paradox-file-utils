@@ -3,11 +3,7 @@
 import {diff} from '../models';
 import {main} from '../models';
 
-export function CompareDirectories(arg1:string,arg2:string,arg3:Array<string>):Promise<diff.DirectoryComparison>;
-
-export function GenerateCompToolReport(arg1:diff.DirectoryComparison):Promise<string>;
-
-export function GetDiff(arg1:string,arg2:string):Promise<string>;
+export function GetDiff(arg1:string,arg2:string):Promise<Array<diff.DiffLine>>;
 
 export function MergeMultipleFileSets(arg1:Array<string>,arg2:Array<string>,arg3:string,arg4:Record<string, any>):Promise<Array<main.FileMergeResult>>;
 
