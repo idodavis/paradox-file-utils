@@ -62,11 +62,11 @@ func (a *App) SelectMultipleFiles(title, filter string) ([]string, error) {
 	return selected, nil
 }
 
-// collectFilesFromPaths collects all .txt files from a mix of files and directories
+// CollectFilesFromPaths collects all .txt files from a mix of files and directories
 // Returns a map of relativePath -> fullPath
 // For individual files, uses the filename as the relative path
 // For directories, uses the relative path from the directory root
-func (a *App) collectFilesFromPaths(paths []string) (map[string]string, error) {
+func (a *App) CollectFilesFromPaths(paths []string) (map[string]string, error) {
 	files := make(map[string]string)
 
 	for _, path := range paths {
@@ -115,9 +115,9 @@ func (a *App) collectFilesFromPaths(paths []string) (map[string]string, error) {
 	return files, nil
 }
 
-// findMatchingFiles finds files that exist in both sets by matching relative paths
+// FindMatchingFiles finds files that exist in both sets by matching relative paths
 // Returns a map of relativePath -> {fileAPath, fileBPath}
-func (a *App) findMatchingFiles(filesA, filesB map[string]string) map[string]struct {
+func (a *App) FindMatchingFiles(filesA, filesB map[string]string) map[string]struct {
 	FileAPath string
 	FileBPath string
 } {
@@ -222,18 +222,18 @@ func (a *App) MergeMultipleFileSets(pathsA, pathsB []string, outputDir string, o
 	options := a.mapToMergeOptions(optionsMap)
 
 	// Collect files from both sets
-	filesA, err := a.collectFilesFromPaths(pathsA)
+	filesA, err := a.CollectFilesFromPaths(pathsA)
 	if err != nil {
 		return nil, fmt.Errorf("error collecting files from set A: %w", err)
 	}
 
-	filesB, err := a.collectFilesFromPaths(pathsB)
+	filesB, err := a.CollectFilesFromPaths(pathsB)
 	if err != nil {
 		return nil, fmt.Errorf("error collecting files from set B: %w", err)
 	}
 
 	// Find matching files
-	matches := a.findMatchingFiles(filesA, filesB)
+	matches := a.FindMatchingFiles(filesA, filesB)
 
 	// Merge matching files
 	for relPath, match := range matches {

@@ -3,6 +3,10 @@
 import {diff} from '../models';
 import {main} from '../models';
 
+export function CollectFilesFromPaths(arg1:Array<string>):Promise<Record<string, string>>;
+
+export function FindMatchingFiles(arg1:Record<string, string>,arg2:Record<string, string>):Promise<Record<string, any>>;
+
 export function GetDiff(arg1:string,arg2:string):Promise<Array<diff.DiffLine>>;
 
 export function MergeMultipleFileSets(arg1:Array<string>,arg2:Array<string>,arg3:string,arg4:Record<string, any>):Promise<Array<main.FileMergeResult>>;

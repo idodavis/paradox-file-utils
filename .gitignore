@@ -3,9 +3,9 @@ vanilla-synchronizer/sync-output/
 vanilla-synchronizer/sync-config.yaml
 
 # Regular go-wails framework ignores
-paradox-script-merger/build/bin
-paradox-script-merger/frontend/node_modules
-paradox-script-merger/frontend/dist
+paradox-script-tools/build/bin
+paradox-script-tools/frontend/node_modules
+paradox-script-tools/frontend/dist
 
-# Output directory for the paradox script merger
-paradox-script-merger/merger-output/*
+# Output directory for the paradox script tools
+paradox-script-tools/merger-output/

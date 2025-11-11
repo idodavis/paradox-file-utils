@@ -133,6 +133,11 @@ func GetMergedContent(fileAPath, fileBPath string, options MergeOptions) (string
 	// Build output
 	var output strings.Builder
 
+	// Preserve BOM from base file (fileA)
+	if fileA.BOM != "" {
+		output.WriteString(fileA.BOM)
+	}
+
 	// Process base file entries
 	for _, entry := range baseFile.Entries {
 		if expr := entry.Expression; expr != nil {
