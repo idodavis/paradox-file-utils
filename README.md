@@ -18,7 +18,7 @@ Builds are published under [GitHub Releases](https://github.com/idodavis/paradox
 
 ### Paradox script parser (Go)
 
-A **Go** parser (Participle-based) parses typical Paradox `.txt` script for compare/merge and related features. Implementation lives under `services/internal/interpreter/`.
+A **Go** parser (Participle-based) parses typical Paradox `.txt` script for compare/merge and related features. Implementation lives under `services/internal/parser/`.
 
 ## Prerequisites (from source)
 

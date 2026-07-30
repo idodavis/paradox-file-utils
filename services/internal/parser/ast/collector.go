@@ -1,11 +1,11 @@
-package walk
+package ast
 
 import (
 	"strconv"
 	"strings"
 	"sync"
 
-	parser "paradox-modding-tools/services/internal/interpreter"
+	parser "paradox-modding-tools/services/internal/parser"
 )
 
 var mapPool = sync.Pool{

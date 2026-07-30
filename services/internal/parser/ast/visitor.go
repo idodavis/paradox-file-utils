@@ -1,7 +1,7 @@
-package walk
+package ast
 
 import (
-	parser "paradox-modding-tools/services/internal/interpreter"
+	parser "paradox-modding-tools/services/internal/parser"
 )
 
 // Context is passed to every visitor method. Depth is 0 at file top-level (direct entries),

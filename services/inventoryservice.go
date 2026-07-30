@@ -8,14 +8,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
+	"strings"
 	"sync"
 	"time"
 
-	internal "paradox-modding-tools/services/internal"
-	parser "paradox-modding-tools/services/internal/interpreter"
-	ck3 "paradox-modding-tools/services/internal/interpreter/ck3-evaluator"
-	walk "paradox-modding-tools/services/internal/interpreter/walk"
+	semanticquery "paradox-modding-tools/services/internal/parser/semantics/query"
 	"paradox-modding-tools/services/internal/repos"
 
 	"github.com/google/uuid"
@@ -63,157 +60,26 @@ func (i *InventoryService) getRepo() *repos.InventoryRepository {
 
 // GetSupportedTypes returns the sorted list of object type names for the given game.
 func (i *InventoryService) GetSupportedTypes(game string) ([]string, error) {
-	if game != "CK3" {
+	if strings.TrimSpace(game) == "" {
 		return nil, nil
 	}
-	names := ck3.GetSchemaNames()
-	sort.Strings(names)
-	return names, nil
+	meta, err := semanticquery.LoadEmbedded(game)
+	if err != nil {
+		return nil, err
+	}
+	return semanticquery.SupportedTypes(meta), nil
 }
 
 // GetAttributes returns the list of attribute names for an object type and game.
 func (i *InventoryService) GetAttributes(game, typeName string) ([]string, error) {
-	if game != "CK3" {
+	if strings.TrimSpace(game) == "" || strings.TrimSpace(typeName) == "" {
 		return nil, nil
 	}
-	schema, ok := ck3.GetSchema(typeName)
-	if !ok {
-		return nil, nil
-	}
-	return schema.Attributes, nil
-}
-
-type extractVisitor struct {
-	walk.NoopVisitor
-	filePath    string
-	objectTypes []string
-	inlineTypes []string
-	seen        map[string]map[string]bool
-	onItem      func(repos.InventoryItem)
-}
-
-// VisitExpression classifies top-level and inline keys with the CK3 evaluator and emits inventory items.
-func (v *extractVisitor) VisitExpression(expr *parser.Expression, ctx *walk.Context) {
-	if expr == nil || expr.Key == "" {
-		return
-	}
-	inline := ctx.Depth > 0
-	hasObject := expr.Object != nil
-
-	// Optimization: Try to classify based on Key first to avoid expensive TopLevelKeys allocation.
-	typeName, displayKey, ok := ck3.ClassifyKey(expr.Key, hasObject, nil, v.objectTypes, inline)
-
-	var attrs map[string]bool
-	if ok && hasObject {
-		attrs = walk.TopLevelKeys(expr.Object)
-		// Re-classify to ensure attrs don't disqualify it (or if they refine the type).
-		typeName, displayKey, ok = ck3.ClassifyKey(expr.Key, hasObject, attrs, v.objectTypes, inline)
-	}
-	if !ok {
-		return
-	}
-	if inline && !slices.Contains(v.inlineTypes, typeName) {
-		return
-	}
-	if v.seen[typeName][displayKey] {
-		return
-	}
-	v.seen[typeName][displayKey] = true
-
-	lineStart := 1
-	if expr.Pos.Line > 0 {
-		lineStart = expr.Pos.Line
-	}
-	raw := expr.GetRawText()
-	lineEnd := walk.LineEnd(lineStart, raw)
-	potentialRefs := walk.CollectIdentifiers(expr, displayKey)
-
-	v.onItem(repos.InventoryItem{
-		Key:           displayKey,
-		Type:          typeName,
-		FilePath:      v.filePath,
-		LineStart:     lineStart,
-		LineEnd:       lineEnd,
-		RawText:       raw,
-		PotentialRefs: potentialRefs,
-		Attributes:    attrs,
-	})
-}
-
-// processFile walks the AST with the interpreter and returns inventory items.
-func processFile(path string, game string, objectTypes []string) ([]repos.InventoryItem, error) {
-	if game != "CK3" || len(objectTypes) == 0 {
-		return nil, nil
-	}
-
-	// Filter to schemas whose paths match this file (prevents multiple object matches or false positives).
-	// When path matches no schema (e.g. custom export folder), fall back to all objectTypes.
-	// Inline types (scripted_trigger, scripted_effect) can appear nested in any file - always include when selected.
-	pathApplicable := ck3.ApplicableTypesForPath(path)
-	applicableTypes := internal.IntersectStrings(objectTypes, pathApplicable)
-	if len(applicableTypes) == 0 {
-		applicableTypes = objectTypes
-	}
-	inlineTypes := ck3.InlineTypesFor(objectTypes)
-	for _, t := range inlineTypes {
-		if !slices.Contains(applicableTypes, t) {
-			applicableTypes = append(applicableTypes, t)
-		}
-	}
-
-	ast, err := parser.ParseFile(path)
+	meta, err := semanticquery.LoadEmbedded(game)
 	if err != nil {
 		return nil, err
 	}
-	seen := make(map[string]map[string]bool)
-	for _, t := range applicableTypes {
-		seen[t] = make(map[string]bool)
-	}
-
-	var items []repos.InventoryItem
-	v := &extractVisitor{
-		filePath:    path,
-		objectTypes: applicableTypes,
-		inlineTypes: inlineTypes,
-		seen:        seen,
-		onItem:      func(it repos.InventoryItem) { items = append(items, it) },
-	}
-	walk.Walk(ast, v)
-
-	return items, nil
-}
-
-// enrichWithReferences resolves PotentialRefs and adds reference information to all inventory items.
-func enrichWithReferences(ctx context.Context, items []repos.InventoryItem) {
-	if ctx.Err() != nil {
-		return
-	}
-
-	itemIndex := make(map[string]int)
-	for i := range items {
-		itemIndex[items[i].Key] = i
-	}
-
-	for index := range items {
-		for _, potentialRef := range items[index].PotentialRefs {
-			items[index].References = append(items[index].References, repos.ObjectReference{
-				Key:       potentialRef,
-				Type:      items[index].Type,
-				FilePath:  items[index].FilePath,
-				LineStart: items[index].LineStart,
-				LineEnd:   items[index].LineEnd,
-			})
-			if j, ok := itemIndex[potentialRef]; ok {
-				items[j].Referrers = append(items[j].Referrers, repos.ObjectReference{
-					Key:       items[index].Key,
-					Type:      items[index].Type,
-					FilePath:  items[index].FilePath,
-					LineStart: items[index].LineStart,
-					LineEnd:   items[index].LineEnd,
-				})
-			}
-		}
-	}
+	return semanticquery.AttributesForType(meta, typeName)
 }
 
 // ExtractInventory extracts inventory items from basePath that match objectTypes. Writes to DB as temporary; returns inventoryId and totalCount. Only .txt files are processed. Deletes prior temporary inventories before inserting.
@@ -254,14 +120,16 @@ func (i *InventoryService) ExtractInventory(ctx context.Context, game, basePath 
 				return egCtx.Err()
 			}
 
-			itemsForFile, err := processFile(filePath, game, objectTypes)
+			itemsForFile, err := semanticquery.ExtractInventoryItemsFromFile(filePath, game, objectTypes)
 			if err != nil {
 				log.Printf("inventory: skip (parse error) %s: %v", filePath, err)
 				return nil
 			}
 
 			mu.Lock()
-			items = append(items, itemsForFile...)
+			for _, it := range itemsForFile {
+				items = append(items, toRepoInventoryItem(it))
+			}
 			mu.Unlock()
 
 			return nil
@@ -275,7 +143,18 @@ func (i *InventoryService) ExtractInventory(ctx context.Context, game, basePath 
 		return nil, fmt.Errorf("walk %s: %w", basePath, walkErr)
 	}
 
-	enrichWithReferences(ctx, items)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	queryItems := make([]semanticquery.InventoryItem, 0, len(items))
+	for _, it := range items {
+		queryItems = append(queryItems, toQueryInventoryItem(it))
+	}
+	semanticquery.EnrichInventoryReferences(queryItems)
+	for idx := range queryItems {
+		items[idx].References = toRepoRefs(queryItems[idx].References)
+		items[idx].Referrers = toRepoRefs(queryItems[idx].Referrers)
+	}
 
 	repo := i.getRepo()
 
@@ -325,4 +204,43 @@ func (i *InventoryService) DeleteInventory(id string) error {
 // ServiceShutdown deletes temporary inventories. Called by Wails when the app exits.
 func (i *InventoryService) ServiceShutdown() error {
 	return i.getRepo().DeleteTemporaryInventories()
+}
+
+func toRepoInventoryItem(in semanticquery.InventoryItem) repos.InventoryItem {
+	return repos.InventoryItem{
+		Key:           in.Key,
+		Type:          in.Type,
+		FilePath:      in.FilePath,
+		LineStart:     in.LineStart,
+		LineEnd:       in.LineEnd,
+		RawText:       in.RawText,
+		PotentialRefs: in.PotentialRefs,
+		Attributes:    in.Attributes,
+	}
+}
+
+func toQueryInventoryItem(in repos.InventoryItem) semanticquery.InventoryItem {
+	return semanticquery.InventoryItem{
+		Key:           in.Key,
+		Type:          in.Type,
+		FilePath:      in.FilePath,
+		LineStart:     in.LineStart,
+		LineEnd:       in.LineEnd,
+		RawText:       in.RawText,
+		PotentialRefs: in.PotentialRefs,
+	}
+}
+
+func toRepoRefs(in []semanticquery.InventoryReference) []repos.ObjectReference {
+	out := make([]repos.ObjectReference, 0, len(in))
+	for _, r := range in {
+		out = append(out, repos.ObjectReference{
+			Key:       r.Key,
+			Type:      r.Type,
+			FilePath:  r.FilePath,
+			LineStart: r.LineStart,
+			LineEnd:   r.LineEnd,
+		})
+	}
+	return out
 }

@@ -1,0 +1,4415 @@
+{
+  "game": "EU5",
+  "version": 1,
+  "generated_at": "2026-04-29T20:52:06.1224052Z",
+  "language_facts": {
+    "macro_and_var_tokens": [
+      "$ACTION$",
+      "$AREA$",
+      "$BOH$",
+      "$CAPITAL$",
+      "$COUNTRY$",
+      "$CULTURE_FLAG$",
+      "$CULTURE_GFX$",
+      "$DESC$",
+      "$EFFECT$",
+      "$ESTATE_COSSACKS$",
+      "$JAP$",
+      "$LOCATION$",
+      "$NTC$",
+      "$PAP$",
+      "$RANK$",
+      "$RELIGION_FLAG$",
+      "$RELIGION_GFX$",
+      "$RULER$",
+      "$STC$",
+      "$VALUE$",
+      "$accepted_culture$",
+      "$actor$",
+      "$advance_type$",
+      "$age$",
+      "$amount$",
+      "$area$",
+      "$aristocracy_vs_plutocracy$",
+      "$artist$",
+      "$artist_type$",
+      "$avatar$",
+      "$background$",
+      "$base_quality$",
+      "$belligerent_vs_conciliatory$",
+      "$bilala_culture$",
+      "$building_type$",
+      "$cabinet_action$",
+      "$capital_economy_vs_traditional_economy$",
+      "$casus_belli$",
+      "$centralization_vs_decentralization$",
+      "$character$",
+      "$character_interaction$",
+      "$child_education$",
+      "$climate$",
+      "$controller$",
+      "$country$",
+      "$country_gaining_claims$",
+      "$country_interaction$",
+      "$country_losing_claims$",
+      "$country_rank$",
+      "$culture$",
+      "$culture_group$",
+      "$demand$",
+      "$disaster_type$",
+      "$disease$",
+      "$dynasty$",
+      "$effect$",
+      "$era_specific_trigger$",
+      "$estate$",
+      "$estate_privilege$",
+      "$estate_type$",
+      "$event$",
+      "$faction$",
+      "$faction_opponent$",
+      "$faction_supporter$",
+      "$female$",
+      "$first_sibling$",
+      "$foreground$",
+      "$formable_country$",
+      "$from$",
+      "$from_location$",
+      "$generic_action$",
+      "$genghis_khan_name_no_tooltip$",
+      "$geography$",
+      "$god$",
+      "$goods$",
+      "$government_reform$",
+      "$government_type$",
+      "$hegemony$",
+      "$heir_selection$",
+      "$holy_site_definition$",
+      "$holy_site_type$",
+      "$individualism_vs_communalism$",
+      "$institution$",
+      "$interaction_target$",
+      "$international_organization$",
+      "$io$",
+      "$is_good$",
+      "$join_variable$",
+      "$join_years$",
+      "$key$",
+      "$land_vs_naval$",
+      "$language$",
+      "$language_family$",
+      "$law$",
+      "$law_imperial_authority_cost$",
+      "$leave_variable$",
+      "$leave_years$",
+      "$level$",
+      "$levy_setup$",
+      "$list$",
+      "$location$",
+      "$location_rank$",
+      "$mamluk$",
+      "$mamluks$",
+      "$math$",
+      "$max_adm$",
+      "$max_dip$",
+      "$max_mil$",
+      "$max_skill$",
+      "$mechanic$",
+      "$mercantilism_vs_free_trade$",
+      "$min_adm$",
+      "$min_dip$",
+      "$min_mil$",
+      "$min_skill$",
+      "$mission$",
+      "$mission_task$",
+      "$mode$",
+      "$modifier$",
+      "$monarchist_effect$",
+      "$name$",
+      "$nickname$",
+      "$num_months$",
+      "$num_pops_per_month$",
+      "$offensive_vs_defensive$",
+      "$operator$",
+      "$opponent_effect$",
+      "$other_religion$",
+      "$outward_vs_inward$",
+      "$owner$",
+      "$owner_country$",
+      "$parliament_agenda$",
+      "$parliament_issue$",
+      "$peace_treaty$",
+      "$policy$",
+      "$pop_type$",
+      "$pretender_1$",
+      "$pretender_2$",
+      "$production_method$",
+      "$province$",
+      "$qizilbash$",
+      "$quality_vs_quantity$",
+      "$rank$",
+      "$rank_kingdom_muslim$",
+      "$rebel$",
+      "$recipient$",
+      "$recruitment_method$",
+      "$reform$",
+      "$regency_type$",
+      "$relation_type$",
+      "$religion$",
+      "$religion_group$",
+      "$religious_aspect$",
+      "$religious_faction$",
+      "$religious_focus$",
+      "$religious_school$",
+      "$replaced$",
+      "$replacer$",
+      "$resolution$",
+      "$revolution_effect$",
+      "$ruler$",
+      "$safety_threshold_of_peasants$",
+      "$save_scope_as$",
+      "$scale$",
+      "$second_sibling$",
+      "$serfdom_vs_free_subjects$",
+      "$sharia$",
+      "$side$",
+      "$situation$",
+      "$size$",
+      "$societal_value$",
+      "$societal_value_type$",
+      "$source_country$",
+      "$special_status$",
+      "$spiritualist_vs_humanist$",
+      "$status$",
+      "$strength$",
+      "$sub_unit_category$",
+      "$sub_unit_type$",
+      "$subject_type$",
+      "$support_effect$",
+      "$tag$",
+      "$target$",
+      "$target_country$",
+      "$target_culture$",
+      "$target_province$",
+      "$target_rank$",
+      "$the_owner$",
+      "$to$",
+      "$to_province$",
+      "$tooltip$",
+      "$topography$",
+      "$traditionalist_vs_innovative$",
+      "$trait$",
+      "$trigger$",
+      "$trigger_recipient_event$",
+      "$type$",
+      "$union$",
+      "$unit_ability$",
+      "$unit_type$",
+      "$value$",
+      "$value_1$",
+      "$value_2$",
+      "$value_3$",
+      "$value_4$",
+      "$variable$",
+      "$variable_name$",
+      "$vegetation$",
+      "$vote$",
+      "$voter$",
+      "$work_of_art$",
+      "$work_of_art_type$",
+      "$years$",
+      "$years_in_days$",
+      "@1447412038471/Global-coffee-location-database-and-major-coffee-growing-regions-Blue-points-represent.png",
+      "@1458533193400/Potential-habitat-suitable-land-cover-for-feral-horses-E-ferus-The-distribution-of.png",
+      "@1470494400663/Map-of-current-global-distribution-of-cocoa-developed-in-ArcGIS-based-on-data-from.png",
+      "@David",
+      "@[128",
+      "@[flatmap_edge_color_mult",
+      "@[flatmap_edge_width",
+      "@beauty1max",
+      "@beauty1min",
+      "@beauty2max",
+      "@beauty2min",
+      "@beauty3max",
+      "@beauty3min",
+      "@blend1max",
+      "@blend1min",
+      "@blend2max",
+      "@blend2min",
+      "@blend3max",
+      "@blend3min",
+      "@boyMax",
+      "@boyMin",
+      "@data_after_lighting_blend",
+      "@data_before_lighting_blend",
+      "@data_edge_alpha",
+      "@data_edge_color_mult",
+      "@data_edge_sharpness",
+      "@data_edge_width",
+      "@data_gradient_alpha_inside",
+      "@data_gradient_alpha_outside",
+      "@data_gradient_color_mult",
+      "@data_gradient_width",
+      "@debug_timer",
+      "@default_opacity_fade_distance",
+      "@default_smooth_fade_distance",
+      "@default_smooth_iterations",
+      "@default_smooth_kernel_size",
+      "@default_tesselation_max_angle",
+      "@default_tesselation_max_distance",
+      "@default_tesselation_min_distance",
+      "@default_uv_rounding",
+      "@default_uv_scale",
+      "@default_width",
+      "@femaleAnimMax",
+      "@femaleAnimMin",
+      "@feminine_Max",
+      "@feminine_Min",
+      "@filled_far_after_lighting_blend",
+      "@filled_far_before_lighting_blend",
+      "@filled_far_edge_alpha",
+      "@filled_far_edge_color_mult",
+      "@filled_far_edge_sharpness",
+      "@filled_far_edge_width",
+      "@filled_far_gradient_alpha_inside",
+      "@filled_far_gradient_alpha_outside",
+      "@filled_far_gradient_color_mult",
+      "@filled_far_gradient_width",
+      "@filled_near_after_lighting_blend",
+      "@filled_near_before_lighting_blend",
+      "@filled_near_edge_alpha",
+      "@filled_near_edge_color_mult",
+      "@filled_near_edge_sharpness",
+      "@filled_near_edge_width",
+      "@filled_near_gradient_alpha_inside",
+      "@filled_near_gradient_alpha_outside",
+      "@filled_near_gradient_color_mult",
+      "@filled_near_gradient_width",
+      "@flatmap_after_lighting_blend",
+      "@flatmap_before_lighting_blend",
+      "@flatmap_edge_alpha",
+      "@flatmap_edge_color_mult",
+      "@flatmap_edge_sharpness",
+      "@flatmap_edge_width",
+      "@flatmap_far_after_lighting_blend",
+      "@flatmap_far_before_lighting_blend",
+      "@flatmap_far_edge_alpha",
+      "@flatmap_far_edge_color_mult",
+      "@flatmap_far_edge_sharpness",
+      "@flatmap_far_edge_width",
+      "@flatmap_far_gradient_alpha_inside",
+      "@flatmap_far_gradient_alpha_outside",
+      "@flatmap_far_gradient_color_mult",
+      "@flatmap_far_gradient_width",
+      "@flatmap_gradient_alpha_inside",
+      "@flatmap_gradient_alpha_outside",
+      "@flatmap_gradient_color_mult",
+      "@flatmap_gradient_width",
+      "@fort_limit_modifier_increase",
+      "@girlMax",
+      "@girlMin",
+      "@hollow_far_after_lighting_blend",
+      "@hollow_far_before_lighting_blend",
+      "@hollow_far_edge_alpha",
+      "@hollow_far_edge_color_mult",
+      "@hollow_far_edge_sharpness",
+      "@hollow_far_edge_width",
+      "@hollow_far_gradient_alpha_inside",
+      "@hollow_far_gradient_alpha_outside",
+      "@hollow_far_gradient_color_mult",
+      "@hollow_far_gradient_width",
+      "@hollow_mid_after_lighting_blend",
+      "@hollow_mid_before_lighting_blend",
+      "@hollow_mid_edge_alpha",
+      "@hollow_mid_edge_color_mult",
+      "@hollow_mid_edge_sharpness",
+      "@hollow_mid_edge_width",
+      "@hollow_mid_gradient_alpha_inside",
+      "@hollow_mid_gradient_alpha_outside",
+      "@hollow_mid_gradient_color_mult",
+      "@hollow_mid_gradient_width",
+      "@hollow_near_after_lighting_blend",
+      "@hollow_near_before_lighting_blend",
+      "@hollow_near_edge_alpha",
+      "@hollow_near_edge_color_mult",
+      "@hollow_near_edge_sharpness",
+      "@hollow_near_edge_width",
+      "@hollow_near_gradient_alpha_inside",
+      "@hollow_near_gradient_alpha_outside",
+      "@hollow_near_gradient_color_mult",
+      "@hollow_near_gradient_width",
+      "@long_delay_timer",
+      "@maleAnimMax",
+      "@maleAnimMin",
+      "@maleBsMax",
+      "@maleBsMin",
+      "@medium_delay_timer",
+      "@neg1_max",
+      "@neg1_min",
+      "@neg2_max",
+      "@neg2_min",
+      "@neg3_max",
+      "@neg3_min",
+      "@pos1_max",
+      "@pos1_min",
+      "@pos2_max",
+      "@pos2_min",
+      "@pos3_max",
+      "@pos3_min",
+      "@short_delay_timer",
+      "@very_long_delay_timer",
+      "@very_short_delay_timer",
+      "@zoom_step_far",
+      "@zoom_step_flatmap",
+      "@zoom_step_flatmap_far",
+      "@zoom_step_mid",
+      "@zoom_step_near"
+    ],
+    "model_focus": "high_level_structure_only"
+  },
+  "types": {
+    "folder:advances": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "age",
+        "allow",
+        "depth",
+        "global_max_rgo_size_modifier"
+      ],
+      "usage_forms": {
+        "top_level_definition": 2624
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/advances/0_age_of_absolutism.txt",
+        "common/advances/0_age_of_discovery.txt",
+        "common/advances/0_age_of_reformation.txt",
+        "common/advances/0_age_of_renaissance.txt",
+        "common/advances/0_age_of_revolutions.txt",
+        "common/advances/0_age_of_traditions.txt",
+        "common/advances/1_building_unlocks.txt",
+        "common/advances/2_army_unlocks.txt",
+        "common/advances/2_ship_unlocks.txt",
+        "common/advances/3_cabinet_actions_unlocks.txt",
+        "common/advances/3_fort_level.txt",
+        "common/advances/3_production_method_unlocks.txt",
+        "common/advances/3_reform_unlocks.txt",
+        "common/advances/3_road_unlocks.txt",
+        "common/advances/3_supply_limit.txt",
+        "common/advances/4_choices_adm.txt",
+        "common/advances/4_choices_dip.txt",
+        "common/advances/4_choices_mil.txt",
+        "common/advances/area_tuscany.txt",
+        "common/advances/beyliks.txt",
+        "common/advances/colonial_nations.txt",
+        "common/advances/country_ARA.txt",
+        "common/advances/country_AZT.txt",
+        "common/advances/country_BOH.txt",
+        "common/advances/country_BRI.txt",
+        "common/advances/country_BUL.txt",
+        "common/advances/country_BUR.txt",
+        "common/advances/country_CAS.txt",
+        "common/advances/country_CHA.txt",
+        "common/advances/country_CHG.txt",
+        "common/advances/country_CRI.txt",
+        "common/advances/country_CTH.txt"
+      ],
+      "associated_info": [
+        "common/advances/_advances.info"
+      ]
+    },
+    "folder:age": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "efficiency",
+        "max_ai_privilege_per_estate",
+        "max_price",
+        "min_ai_privilege_per_estate",
+        "modifier",
+        "months_for_exploration_spread",
+        "price_stability",
+        "victory_card",
+        "year"
+      ],
+      "usage_forms": {
+        "top_level_definition": 6
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/age/00_default.txt"
+      ],
+      "associated_info": [
+        "common/age/_age.info"
+      ]
+    },
+    "folder:ai_diplochance": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "actor_is_rival",
+        "actor_overlord_is_rival",
+        "age_female",
+        "border_distance",
+        "culture_view",
+        "different_culture",
+        "different_religion",
+        "different_religion_group",
+        "heir",
+        "opinion",
+        "rank_difference",
+        "recipient_is_rival",
+        "recipient_overlord_is_rival",
+        "religion_view",
+        "same_court_language",
+        "same_culture",
+        "trust_in_actor",
+        "union_size"
+      ],
+      "usage_forms": {
+        "top_level_definition": 16
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/ai_diplochance/00_ai_diplochance.txt"
+      ],
+      "associated_info": [
+        "common/ai_diplochance/_ai_diplochance.info"
+      ]
+    },
+    "folder:alert_descriptions": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "priority",
+        "texture",
+        "title"
+      ],
+      "usage_forms": {
+        "top_level_definition": 117
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/alert_descriptions/00_default.txt"
+      ],
+      "associated_info": [
+        "common/alert_descriptions/_alert_descriptions.info"
+      ]
+    },
+    "folder:artist_types": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "potential"
+      ],
+      "usage_forms": {
+        "top_level_definition": 12
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/artist_types/00_default.txt"
+      ],
+      "associated_info": [
+        "common/artist_types/_artist_types.info"
+      ]
+    },
+    "folder:artist_work": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "allow",
+        "captured"
+      ],
+      "usage_forms": {
+        "top_level_definition": 21
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/artist_work/00_default.txt"
+      ],
+      "associated_info": [
+        "common/artist_work/_artist_work.info"
+      ]
+    },
+    "folder:attribute_columns": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "left_click_and_confirm_cost",
+        "left_click_cost",
+        "name",
+        "right_click_and_confirm_cost",
+        "right_click_cost",
+        "subject_type_attribute_column"
+      ],
+      "usage_forms": {
+        "top_level_definition": 58
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/attribute_columns/00_defaults.txt",
+        "common/attribute_columns/05_location.txt",
+        "common/attribute_columns/06_country.txt",
+        "common/attribute_columns/07_unit.txt",
+        "common/attribute_columns/08_subunit.txt",
+        "common/attribute_columns/09_character.txt",
+        "common/attribute_columns/10_dynasty.txt",
+        "common/attribute_columns/11_pop.txt",
+        "common/attribute_columns/121_unit_formation_preference.txt",
+        "common/attribute_columns/12_war.txt",
+        "common/attribute_columns/13_combat.txt",
+        "common/attribute_columns/15_siege.txt",
+        "common/attribute_columns/16_culture.txt",
+        "common/attribute_columns/17_religion.txt",
+        "common/attribute_columns/18_colonial_charter.txt",
+        "common/attribute_columns/19_market.txt",
+        "common/attribute_columns/20_province.txt",
+        "common/attribute_columns/21_province_definition.txt",
+        "common/attribute_columns/22_area.txt",
+        "common/attribute_columns/23_region.txt",
+        "common/attribute_columns/24_sub_continent.txt",
+        "common/attribute_columns/25_continent.txt",
+        "common/attribute_columns/26_religion_group.txt",
+        "common/attribute_columns/27_language.txt",
+        "common/attribute_columns/28_rebel.txt",
+        "common/attribute_columns/29_trade.txt",
+        "common/attribute_columns/30_religious_school.txt",
+        "common/attribute_columns/31_goods.txt",
+        "common/attribute_columns/32_privateer.txt",
+        "common/attribute_columns/33_exploration.txt",
+        "common/attribute_columns/34_mercenary.txt",
+        "common/attribute_columns/35_work_of_art.txt"
+      ],
+      "associated_info": [
+        "common/attribute_columns/_attribute_columns.info"
+      ]
+    },
+    "folder:auto_modifiers": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "allow_male_cabinet",
+        "allow_male_leader",
+        "annexation_speed_base",
+        "army_logistics_distance",
+        "army_tradition_decay",
+        "artillery_bonus_vs_fort",
+        "bank_interest",
+        "burghers_estate_allowed_in_cabinet",
+        "burghers_estate_allowed_leading_military",
+        "burghers_estate_target_satisfaction",
+        "can_extract_amber",
+        "can_extract_beeswax",
+        "can_extract_chili",
+        "can_extract_clay",
+        "can_extract_cloves",
+        "can_extract_cocoa",
+        "can_extract_coffee",
+        "can_extract_cotton",
+        "can_extract_dyes",
+        "can_extract_elephants",
+        "can_extract_fiber_crops",
+        "can_extract_fish",
+        "can_extract_fruit",
+        "can_extract_fur",
+        "can_extract_gems",
+        "can_extract_incense",
+        "can_extract_ivory",
+        "can_extract_livestock",
+        "can_extract_lumber",
+        "can_extract_medicaments",
+        "can_extract_olives",
+        "can_extract_pearls",
+        "can_extract_pepper",
+        "can_extract_pottery",
+        "can_extract_saffron",
+        "can_extract_salt",
+        "can_extract_sand",
+        "can_extract_silk",
+        "can_extract_sugar",
+        "can_extract_tea",
+        "can_extract_tobacco",
+        "can_extract_wild_game",
+        "can_extract_wine",
+        "can_extract_wool",
+        "casus_belli_creation_speed",
+        "clergy_estate_allowed_in_cabinet",
+        "clergy_estate_target_satisfaction",
+        "colonial_range",
+        "combined_arms_max_threshold",
+        "combined_arms_min_percent_for_bonus",
+        "combined_bonus_per_type",
+        "cossacks_estate_allowed_leading_military",
+        "cossacks_estate_target_satisfaction",
+        "country_child_education",
+        "court_spending_cost",
+        "crown_estate_allowed_in_cabinet",
+        "crown_estate_allowed_leading_military",
+        "cultures_capacity",
+        "dhimmi_estate_allowed_leading_military",
+        "dhimmi_estate_target_satisfaction",
+        "diplomatic_capacity",
+        "diplomatic_range",
+        "diplomatic_reputation",
+        "diplomatic_spending_cost",
+        "estate_building_destruction_satisfaction_impact",
+        "estate_satisfaction_from_building",
+        "experience_decay",
+        "exploration_maintenance_cost",
+        "exploration_mission_speed",
+        "fort_limit",
+        "global_burghers_migration_allowed",
+        "global_clergy_migration_allowed",
+        "global_estate_max_tax",
+        "global_estate_min_tax",
+        "global_estate_satisfaction_decay",
+        "global_estate_satisfaction_recovery",
+        "global_food_decay",
+        "global_laborers_migration_allowed",
+        "global_maritime_presence_decay",
+        "global_migration_speed",
+        "global_monthly_art_start_chance",
+        "global_monthly_control_decline",
+        "global_nobles_migration_allowed",
+        "global_peasant_enfranchisment",
+        "global_peasants_migration_allowed",
+        "global_pop_assimilation_speed",
+        "global_pop_conversion_speed",
+        "global_prosperity_decay",
+        "global_slaves_migration_allowed",
+        "global_soldiers_migration_allowed",
+        "global_trades_per_burgher",
+        "global_tribesmen_migration_allowed",
+        "goods_gold_impacts_inflation",
+        "government_reform_slots",
+        "government_size",
+        "land_cost_going_downstream",
+        "land_cost_going_upstream",
+        "land_cost_on_distance_from_capital",
+        "land_cost_on_frozen_water",
+        "land_morale_attrition_cost",
+        "land_morale_movement_cost",
+        "land_morale_recovery",
+        "max_diplomats",
+        "max_war_exhaustion",
+        "maximum_religious_influence",
+        "mercenary_range",
+        "merchant_power_from_maritime",
+        "military_tactics",
+        "minting_inflation_threshold",
+        "monthly_diplomats",
+        "monthly_inflation",
+        "monthly_karma_decay",
+        "monthly_rebel_growth",
+        "monthly_war_exhaustion",
+        "morale_recovery_in_friendly",
+        "movement_speed_when_attached_to_another_unit",
+        "naval_morale_attrition_cost",
+        "naval_morale_movement_cost",
+        "naval_morale_recovery",
+        "naval_range",
+        "navy_tradition_decay",
+        "nobles_estate_allowed_in_cabinet",
+        "nobles_estate_allowed_leading_military",
+        "nobles_estate_can_participate_in_parliament",
+        "nobles_estate_target_satisfaction",
+        "num_local_governors",
+        "parliament_request_issue_support_needed",
+        "peasants_estate_allowed_leading_military",
+        "peasants_estate_target_satisfaction",
+        "pop_join_rebel_threshold",
+        "pop_leave_rebels_threshold",
+        "port_cost_distance_from_capital",
+        "prestige_decay",
+        "privateer_durability",
+        "produced_in_market_bonus",
+        "raw_material_in_province_impact",
+        "requires_real",
+        "road_cost_on_distance_from_capital",
+        "sea_cost_on_distance_from_capital",
+        "sea_cost_on_distance_from_capital_when_maritime",
+        "ship_capture_chance",
+        "silver_impacts_inflation",
+        "skill_of_new_artists",
+        "slave_raid_efficiency",
+        "stability_decay",
+        "subject_loyalty",
+        "supply_depot_capacity",
+        "tolerance_heathen",
+        "tolerance_heretic",
+        "tolerance_own",
+        "trade_range",
+        "tribes_estate_allowed_leading_military",
+        "tribes_estate_target_satisfaction",
+        "unemployed_slave_promotion",
+        "war_declaration_stab_hit_tolerance",
+        "war_declaration_war_exhaustion_tolerance",
+        "win_war_chance_threshold",
+        "wrong_culture_levy_size"
+      ],
+      "usage_forms": {
+        "top_level_definition": 97
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/auto_modifiers/country.txt",
+        "common/auto_modifiers/dynasty.txt",
+        "common/auto_modifiers/international_organization.txt"
+      ],
+      "associated_info": [
+        "common/auto_modifiers/_auto_modifiers.info"
+      ]
+    },
+    "folder:avatars": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "allow",
+        "country_modifier",
+        "god",
+        "location_modifier"
+      ],
+      "usage_forms": {
+        "top_level_definition": 20
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/avatars/hindu.txt"
+      ],
+      "associated_info": [
+        "common/avatars/_avatars.info"
+      ]
+    },
+    "folder:biases": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "max",
+        "min",
+        "months",
+        "value"
+      ],
+      "usage_forms": {
+        "top_level_definition": 1047
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/biases/00_opinion_hardcoded.txt",
+        "common/biases/01_opinion_scripted_diplomacy.txt",
+        "common/biases/02_opinion_subject_types.txt",
+        "common/biases/03_opinion_from_events.txt",
+        "common/biases/04_trust_hardcoded.txt",
+        "common/biases/05_antagonism_hardcoded.txt",
+        "common/biases/06_free_cities_opinions.txt",
+        "common/biases/07_opinion_from_start_up.txt"
+      ],
+      "associated_info": [
+        "common/biases/_biases.info"
+      ]
+    },
+    "folder:building_categories": {
+      "containment_pattern": "flat",
+      "usage_forms": {
+        "top_level_definition": 15
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/building_categories/00_default.txt"
+      ],
+      "associated_info": [
+        "common/building_categories/_building_categories.info"
+      ]
+    },
+    "folder:building_types": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "build_time",
+        "category",
+        "city",
+        "construction_demand",
+        "country_potential",
+        "employment_size",
+        "expensive",
+        "is_special",
+        "max_levels",
+        "modifier",
+        "pop_type",
+        "rural_settlement",
+        "town",
+        "unique_production_methods"
+      ],
+      "usage_forms": {
+        "top_level_definition": 439
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/building_types/00_unique_buildings_to_make_obsolete.txt",
+        "common/building_types/capital_buildings.txt",
+        "common/building_types/coastal_forts.txt",
+        "common/building_types/common_buildings.txt",
+        "common/building_types/culture_buildings.txt",
+        "common/building_types/estate_buildings.txt",
+        "common/building_types/event_only_buildings.txt",
+        "common/building_types/foreign_buildings.txt",
+        "common/building_types/forts.txt",
+        "common/building_types/manpower_buildings.txt",
+        "common/building_types/market_buildings.txt",
+        "common/building_types/pirate_buildings.txt",
+        "common/building_types/plantation_buildings.txt",
+        "common/building_types/port_buildings.txt",
+        "common/building_types/production_beer.txt",
+        "common/building_types/production_books.txt",
+        "common/building_types/production_cannons.txt",
+        "common/building_types/production_cloth.txt",
+        "common/building_types/production_dyes.txt",
+        "common/building_types/production_fine_cloth.txt",
+        "common/building_types/production_firearms.txt",
+        "common/building_types/production_furniture.txt",
+        "common/building_types/production_glass.txt",
+        "common/building_types/production_lacquerware.txt",
+        "common/building_types/production_leather.txt",
+        "common/building_types/production_liquor.txt",
+        "common/building_types/production_naval_supplies.txt",
+        "common/building_types/production_paper.txt",
+        "common/building_types/production_porcelain.txt",
+        "common/building_types/production_pottery.txt",
+        "common/building_types/production_saltpeter.txt",
+        "common/building_types/production_tools.txt"
+      ],
+      "associated_info": [
+        "common/building_types/_building_types.info"
+      ]
+    },
+    "folder:cabinet_actions": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "ability",
+        "allow",
+        "allow_multiple",
+        "icon",
+        "location_modifier",
+        "potential",
+        "select_trigger"
+      ],
+      "usage_forms": {
+        "top_level_definition": 64
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/cabinet_actions/aid_constantinople.txt",
+        "common/cabinet_actions/alleviate_concerns.txt",
+        "common/cabinet_actions/appease_estate.txt",
+        "common/cabinet_actions/aptekarsky.txt",
+        "common/cabinet_actions/assimilate_area.txt",
+        "common/cabinet_actions/bironovshchina.txt",
+        "common/cabinet_actions/bolshogo_dvortsa.txt",
+        "common/cabinet_actions/byz_extensive_conscription.txt",
+        "common/cabinet_actions/cab_diplomatic_corps.txt",
+        "common/cabinet_actions/cab_naval_focus.txt",
+        "common/cabinet_actions/change_societal_values.txt",
+        "common/cabinet_actions/counter_espionage_action.txt",
+        "common/cabinet_actions/develop_province.txt",
+        "common/cabinet_actions/diplomatic_endeavors.txt",
+        "common/cabinet_actions/encourage_migration.txt",
+        "common/cabinet_actions/expel_people.txt",
+        "common/cabinet_actions/form_new_culture.txt",
+        "common/cabinet_actions/frustrate_annexation.txt",
+        "common/cabinet_actions/gaituguiliu_policy.txt",
+        "common/cabinet_actions/gather_acllas.txt",
+        "common/cabinet_actions/increase_control.txt",
+        "common/cabinet_actions/increase_control_area.txt",
+        "common/cabinet_actions/integrate_area.txt",
+        "common/cabinet_actions/integrate_province.txt",
+        "common/cabinet_actions/ispolneniya_zakonov.txt",
+        "common/cabinet_actions/kazenny.txt",
+        "common/cabinet_actions/kbo_pop_promote_action.txt",
+        "common/cabinet_actions/kbo_sharia_courts.txt",
+        "common/cabinet_actions/lit_promote_catholicism.txt",
+        "common/cabinet_actions/maintain_trunk_road_cabinet_action.txt",
+        "common/cabinet_actions/merge_culture_group.txt",
+        "common/cabinet_actions/militarize_country.txt"
+      ],
+      "associated_info": [
+        "common/cabinet_actions/_cabinet_actions.info"
+      ]
+    },
+    "folder:casus_belli": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "allow_declaration",
+        "no_cb",
+        "war_goal_type"
+      ],
+      "usage_forms": {
+        "top_level_definition": 96
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/casus_belli/00_hardcoded.txt",
+        "common/casus_belli/01_event_triggered.txt",
+        "common/casus_belli/anti_piracy.txt",
+        "common/casus_belli/attack_threat.txt",
+        "common/casus_belli/beaver_wars.txt",
+        "common/casus_belli/break_free_tatar_yoke.txt",
+        "common/casus_belli/claim_throne.txt",
+        "common/casus_belli/coalition.txt",
+        "common/casus_belli/colonial_conflict.txt",
+        "common/casus_belli/colony_war.txt",
+        "common/casus_belli/conquer_enemy.txt",
+        "common/casus_belli/conquest.txt",
+        "common/casus_belli/crusade_cb.txt",
+        "common/casus_belli/crush_hussitism.txt",
+        "common/casus_belli/cut_down_in_size.txt",
+        "common/casus_belli/deus_vult.txt",
+        "common/casus_belli/disloyal_subject.txt",
+        "common/casus_belli/disrupting_trade.txt",
+        "common/casus_belli/dissolve_tatar_yoke.txt",
+        "common/casus_belli/excommunication.txt",
+        "common/casus_belli/expansion_into_the_steppes.txt",
+        "common/casus_belli/exploration.txt",
+        "common/casus_belli/fabricated_conquest.txt",
+        "common/casus_belli/flower_wars.txt",
+        "common/casus_belli/force_migration.txt",
+        "common/casus_belli/gag_force_country_into_faction.txt",
+        "common/casus_belli/great_northern_conflict.txt",
+        "common/casus_belli/hegemon.txt",
+        "common/casus_belli/heretic.txt",
+        "common/casus_belli/high_kingship_overthrow.txt",
+        "common/casus_belli/high_kingship_reclamation.txt",
+        "common/casus_belli/high_kingship_subjugate.txt"
+      ],
+      "associated_info": [
+        "common/casus_belli/_casus_belli.info"
+      ]
+    },
+    "folder:character_interactions": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "ai_tick",
+        "ai_tick_frequency",
+        "ai_will_do",
+        "allow",
+        "effect",
+        "is_consort_action",
+        "message",
+        "on_own_nation",
+        "potential",
+        "price",
+        "price_modifier",
+        "select_trigger"
+      ],
+      "usage_forms": {
+        "top_level_definition": 29
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/character_interactions/abdicate.txt",
+        "common/character_interactions/aclla_distribution.txt",
+        "common/character_interactions/adapt_culture.txt",
+        "common/character_interactions/appoint_as_heir.txt",
+        "common/character_interactions/appoint_dragoman.txt",
+        "common/character_interactions/assign_governor.txt",
+        "common/character_interactions/assume_fort_command.txt",
+        "common/character_interactions/banish_character.txt",
+        "common/character_interactions/choose_theologian_duelist.txt",
+        "common/character_interactions/commission_art.txt",
+        "common/character_interactions/dismiss_prince.txt",
+        "common/character_interactions/ennoble.txt",
+        "common/character_interactions/execute_character.txt",
+        "common/character_interactions/favor_heir.txt",
+        "common/character_interactions/grant_cabinet_right.txt",
+        "common/character_interactions/make_regent_ruler.txt",
+        "common/character_interactions/marry_lowborn.txt",
+        "common/character_interactions/marry_noble.txt",
+        "common/character_interactions/move_children_to_court.txt",
+        "common/character_interactions/order_of_chivalry_actions.txt",
+        "common/character_interactions/pap_reassign_cleric.txt",
+        "common/character_interactions/pardon.txt",
+        "common/character_interactions/prefection.txt",
+        "common/character_interactions/promote_to_head_of_cabinet.txt",
+        "common/character_interactions/resign_as_grand_master.txt",
+        "common/character_interactions/seppuku.txt",
+        "common/character_interactions/take_the_vows.txt",
+        "common/character_interactions/tribal_arrange_marriage.txt"
+      ],
+      "associated_info": [
+        "common/character_interactions/_character_interactions.info"
+      ]
+    },
+    "folder:child_educations": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "allow",
+        "modifier"
+      ],
+      "usage_forms": {
+        "top_level_definition": 5
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/child_educations/00_default.txt"
+      ],
+      "associated_info": [
+        "common/child_educations/_child_educations.info"
+      ]
+    },
+    "folder:climates": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "audio_tags",
+        "colonial_migration_size_modifier",
+        "color",
+        "debug_color",
+        "location_modifier",
+        "unit_modifier",
+        "winter"
+      ],
+      "usage_forms": {
+        "top_level_definition": 8
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/climates/00_default.txt"
+      ],
+      "associated_info": [
+        "common/climates/_climates.info"
+      ]
+    },
+    "folder:content_source": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "avoid_sea",
+        "clamp_to_water_level",
+        "generation_mode",
+        "margin",
+        "schematic_name",
+        "separation",
+        "vegetation",
+        "zoom_max"
+      ],
+      "usage_forms": {
+        "top_level_definition": 4
+      },
+      "observed_folders": [
+        "content_source"
+      ],
+      "observed_files": [
+        "content_source/map_objects/ambience_generators/ambience_generators.txt"
+      ],
+      "associated_info": [
+        "content_source/map_objects/ambience_generators/_ambience_generators.info"
+      ]
+    },
+    "folder:country_description_categories": {
+      "containment_pattern": "flat",
+      "usage_forms": {
+        "top_level_definition": 3
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/country_description_categories/categories.txt"
+      ],
+      "associated_info": [
+        "common/country_description_categories/_country_description_categories.info"
+      ]
+    },
+    "folder:country_interactions": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "accept",
+        "ai_will_do",
+        "allow",
+        "category",
+        "diplo_chance",
+        "effect",
+        "potential",
+        "select_trigger",
+        "type"
+      ],
+      "usage_forms": {
+        "top_level_definition": 107
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/country_interactions/appanage_call_to_war.txt",
+        "common/country_interactions/appanage_request_levies.txt",
+        "common/country_interactions/appanage_seize_court_resources.txt",
+        "common/country_interactions/ask_for_money.txt",
+        "common/country_interactions/ask_join_war_for_favors.txt",
+        "common/country_interactions/ask_reject_curia_proposal.txt",
+        "common/country_interactions/ask_support_curia_proposal.txt",
+        "common/country_interactions/assassinate_character.txt",
+        "common/country_interactions/break_others_alliance.txt",
+        "common/country_interactions/break_union.txt",
+        "common/country_interactions/bribe_vote.txt",
+        "common/country_interactions/catholic_interactions.txt",
+        "common/country_interactions/change_ruler.txt",
+        "common/country_interactions/change_subject_court_language.txt",
+        "common/country_interactions/change_subject_policy.txt",
+        "common/country_interactions/demand_additional_tribute.txt",
+        "common/country_interactions/demand_conversion_to_islam.txt",
+        "common/country_interactions/demand_silver_tribute.txt",
+        "common/country_interactions/demote_celestial_governor_to_vassal.txt",
+        "common/country_interactions/enforce_culture.txt",
+        "common/country_interactions/enforce_religion.txt",
+        "common/country_interactions/force_change_court_language.txt",
+        "common/country_interactions/force_embargo.txt",
+        "common/country_interactions/form_closer_bond_iroquois.txt",
+        "common/country_interactions/formalize_italian_state_relations.txt",
+        "common/country_interactions/give_location_to_subject.txt",
+        "common/country_interactions/give_province_to_subject.txt",
+        "common/country_interactions/give_subject_location_to_other_subject.txt",
+        "common/country_interactions/hre.txt",
+        "common/country_interactions/improve_cultural_view.txt",
+        "common/country_interactions/improve_cultural_view_subject.txt",
+        "common/country_interactions/influence_nation.txt"
+      ],
+      "associated_info": [
+        "common/country_interactions/_country_interactions.info"
+      ]
+    },
+    "folder:country_ranks": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "ai_level",
+        "allow",
+        "color",
+        "language_power_scale",
+        "level",
+        "rank_modifier",
+        "victory_card"
+      ],
+      "usage_forms": {
+        "top_level_definition": 4
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/country_ranks/00_default.txt"
+      ],
+      "associated_info": [
+        "common/country_ranks/_country_ranks.info"
+      ]
+    },
+    "folder:culture_groups": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "character_modifier",
+        "country_modifier",
+        "location_modifier"
+      ],
+      "usage_forms": {
+        "top_level_definition": 182
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/culture_groups/00_culture_groups.txt"
+      ],
+      "associated_info": [
+        "common/culture_groups/_culture_groups.info"
+      ]
+    },
+    "folder:cultures": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "color",
+        "culture_groups",
+        "language",
+        "opinions",
+        "tags"
+      ],
+      "usage_forms": {
+        "top_level_definition": 2083
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/cultures/alaska.txt",
+        "common/cultures/arabia.txt",
+        "common/cultures/argentinian.txt",
+        "common/cultures/aridoamerican.txt",
+        "common/cultures/australian.txt",
+        "common/cultures/baltic.txt",
+        "common/cultures/bengal.txt",
+        "common/cultures/brasilian.txt",
+        "common/cultures/british.txt",
+        "common/cultures/canadian.txt",
+        "common/cultures/caribbean.txt",
+        "common/cultures/carpathian.txt",
+        "common/cultures/caucasian.txt",
+        "common/cultures/central_america.txt",
+        "common/cultures/central_north_american.txt",
+        "common/cultures/dravidian.txt",
+        "common/cultures/east_african.txt",
+        "common/cultures/east_asia.txt",
+        "common/cultures/east_slavic.txt",
+        "common/cultures/eastcoast.txt",
+        "common/cultures/egypt.txt",
+        "common/cultures/finno_ugric.txt",
+        "common/cultures/french.txt",
+        "common/cultures/german.txt",
+        "common/cultures/great_bassin.txt",
+        "common/cultures/greek.txt",
+        "common/cultures/horn_of_africa.txt",
+        "common/cultures/iberian.txt",
+        "common/cultures/indo_aryan.txt",
+        "common/cultures/indonesia.txt",
+        "common/cultures/israelite.txt",
+        "common/cultures/italian.txt"
+      ],
+      "associated_info": [
+        "common/cultures/_cultures.info"
+      ]
+    },
+    "folder:customizable_localization": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "text",
+        "type"
+      ],
+      "usage_forms": {
+        "top_level_definition": 435
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/customizable_localization/00_customizable_localization.txt",
+        "common/customizable_localization/01_customizable_event_loc.txt",
+        "common/customizable_localization/99_de_custom_loc.txt",
+        "common/customizable_localization/character_address.txt",
+        "common/customizable_localization/character_title.txt",
+        "common/customizable_localization/common_strings.txt",
+        "common/customizable_localization/countries.txt",
+        "common/customizable_localization/country_history.txt",
+        "common/customizable_localization/country_name_construction.txt",
+        "common/customizable_localization/country_ranks.txt",
+        "common/customizable_localization/country_ranks_spanish_article.txt",
+        "common/customizable_localization/culture_groups.txt",
+        "common/customizable_localization/estates.txt",
+        "common/customizable_localization/international_organizations.txt",
+        "common/customizable_localization/locations.txt",
+        "common/customizable_localization/parliaments.txt",
+        "common/customizable_localization/resolutions.txt",
+        "common/customizable_localization/ru_custom_culture.txt",
+        "common/customizable_localization/ru_custom_loc.txt",
+        "common/customizable_localization/ru_custom_suffix.txt",
+        "common/customizable_localization/ship_prefixes.txt",
+        "common/customizable_localization/subunit_nicknames.txt",
+        "common/customizable_localization/subunit_structure.txt",
+        "common/customizable_localization/subunit_types.txt"
+      ],
+      "associated_info": [
+        "common/customizable_localization/_customizable_localization.info"
+      ]
+    },
+    "folder:death_reason": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "possible_parameter"
+      ],
+      "usage_forms": {
+        "top_level_definition": 49
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/death_reason/00_hardcoded.txt",
+        "common/death_reason/01_content.txt",
+        "common/death_reason/02_life_expectancy.txt"
+      ],
+      "associated_info": [
+        "common/death_reason/_death_reason.info"
+      ]
+    },
+    "folder:designated_heir_reason": {
+      "containment_pattern": "flat",
+      "usage_forms": {
+        "top_level_definition": 7
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/designated_heir_reason/00_standard.txt"
+      ],
+      "associated_info": [
+        "common/designated_heir_reason/_designated_heir_reason.info"
+      ]
+    },
+    "folder:diplomatic_costs": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "spy_network"
+      ],
+      "usage_forms": {
+        "top_level_definition": 29
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/diplomatic_costs/00_hardcoded.txt",
+        "common/diplomatic_costs/01_from_script.txt"
+      ],
+      "associated_info": [
+        "common/diplomatic_costs/_diplomatic_costs.info"
+      ]
+    },
+    "folder:disasters": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "can_end",
+        "can_start",
+        "image",
+        "modifier",
+        "monthly_spawn_chance",
+        "on_end",
+        "on_monthly",
+        "on_start"
+      ],
+      "usage_forms": {
+        "top_level_definition": 34
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/disasters/ambrosian_republic.txt",
+        "common/disasters/aspiration_for_liberty.txt",
+        "common/disasters/byzantine_succession_crisis.txt",
+        "common/disasters/castilian_civil_war.txt",
+        "common/disasters/ciompi_revolt.txt",
+        "common/disasters/coup_attempt.txt",
+        "common/disasters/court_and_country.txt",
+        "common/disasters/crisis_of_the_chinese_dynasty.txt",
+        "common/disasters/crisis_of_the_sayfawa_dynasty.txt",
+        "common/disasters/curse_of_stefan_uros_iii.txt",
+        "common/disasters/death_of_hayan_wuruk.txt",
+        "common/disasters/decline_of_empire.txt",
+        "common/disasters/decline_of_majapahit.txt",
+        "common/disasters/decline_of_mali.txt",
+        "common/disasters/dissolution_of_delhi.txt",
+        "common/disasters/english_civil_war.txt",
+        "common/disasters/french_wars_religion.txt",
+        "common/disasters/hook_and_cod_wars.txt",
+        "common/disasters/horde_civil_war.txt",
+        "common/disasters/muscovite_succession_war.txt",
+        "common/disasters/peasants_war.txt",
+        "common/disasters/reform_society.txt",
+        "common/disasters/religious_turmoil.txt",
+        "common/disasters/revolution_disaster.txt",
+        "common/disasters/revolutionary_chaos.txt",
+        "common/disasters/rise_of_the_szlachta.txt",
+        "common/disasters/savonarola.txt",
+        "common/disasters/sinicization_disaster.txt",
+        "common/disasters/struggle_for_royal_power.txt",
+        "common/disasters/succession_crisis.txt",
+        "common/disasters/time_of_troubles.txt",
+        "common/disasters/turmoil_in_brandenburg.txt"
+      ],
+      "associated_info": [
+        "common/disasters/_disasters.info"
+      ]
+    },
+    "folder:diseases": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "calc_interval_days",
+        "character_mortality_chance",
+        "location_infection_spread_threshold",
+        "location_modifier",
+        "location_stagnation_chance",
+        "map_color",
+        "monthly_resistance_reduction",
+        "monthly_spawn_chance",
+        "mortality_rate",
+        "on_spread_to_country",
+        "percentage_to_meet_their_fate_on_calc",
+        "r0",
+        "secondary_map_color",
+        "spawn"
+      ],
+      "usage_forms": {
+        "top_level_definition": 7
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/diseases/bubonic_plague.txt",
+        "common/diseases/great_pestilence.txt",
+        "common/diseases/influenza.txt",
+        "common/diseases/malaria.txt",
+        "common/diseases/measles.txt",
+        "common/diseases/smallpox.txt",
+        "common/diseases/typhus.txt"
+      ],
+      "associated_info": [
+        "common/diseases/_diseases.info"
+      ]
+    },
+    "folder:effect_localization": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "global",
+        "global_past"
+      ],
+      "usage_forms": {
+        "top_level_definition": 710
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/effect_localization/00_tutorial_effects_loc.txt",
+        "common/effect_localization/building_effects.txt",
+        "common/effect_localization/character_effects.txt",
+        "common/effect_localization/colonial_charter_effects.txt",
+        "common/effect_localization/combat_side_effects.txt",
+        "common/effect_localization/common_effects.txt",
+        "common/effect_localization/country_effects.txt",
+        "common/effect_localization/culture_effects.txt",
+        "common/effect_localization/disease_effects.txt",
+        "common/effect_localization/dynasty_effects.txt",
+        "common/effect_localization/estate_effects.txt",
+        "common/effect_localization/exploration_effects.txt",
+        "common/effect_localization/international_organization_effects.txt",
+        "common/effect_localization/loan_effects.txt",
+        "common/effect_localization/location_effects.txt",
+        "common/effect_localization/market_effects.txt",
+        "common/effect_localization/mercenary_effects.txt",
+        "common/effect_localization/pop_effects.txt",
+        "common/effect_localization/privateer_effects.txt",
+        "common/effect_localization/province_effects.txt",
+        "common/effect_localization/rebel_effects.txt",
+        "common/effect_localization/religion_effects.txt",
+        "common/effect_localization/scripted_effects.txt",
+        "common/effect_localization/siege_effects.txt",
+        "common/effect_localization/subunit_effects.txt",
+        "common/effect_localization/trade_effects.txt",
+        "common/effect_localization/unit_effects.txt",
+        "common/effect_localization/war_effects.txt",
+        "common/effect_localization/weather_effects.txt",
+        "common/effect_localization/work_of_art_effects.txt"
+      ],
+      "associated_info": [
+        "common/effect_localization/_effect_localization.info"
+      ]
+    },
+    "folder:employment_systems": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "ai_will_do",
+        "country_modifier",
+        "priority"
+      ],
+      "usage_forms": {
+        "top_level_definition": 4
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/employment_systems/00_default.txt"
+      ],
+      "associated_info": [
+        "common/employment_systems/_employment_systems.info"
+      ]
+    },
+    "folder:estate_privileges": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "country_modifier",
+        "estate"
+      ],
+      "usage_forms": {
+        "top_level_definition": 256
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/estate_privileges/burghers_estate.txt",
+        "common/estate_privileges/clergy_estate.txt",
+        "common/estate_privileges/cossacks_estate.txt",
+        "common/estate_privileges/dhimmi_estate.txt",
+        "common/estate_privileges/nobles_estate.txt",
+        "common/estate_privileges/peasants_estate.txt",
+        "common/estate_privileges/tribes_estate.txt"
+      ],
+      "associated_info": [
+        "common/estate_privileges/_estate_privileges.info"
+      ]
+    },
+    "folder:estates": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "alliance",
+        "can_spawn_random_characters",
+        "color",
+        "high_power",
+        "low_power",
+        "power",
+        "power_per_pop",
+        "priority_for_dynasty_head",
+        "revolt_court_language",
+        "rival",
+        "ruler",
+        "satisfaction",
+        "tax_per_pop"
+      ],
+      "usage_forms": {
+        "top_level_definition": 8
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/estates/00_default.txt"
+      ],
+      "associated_info": [
+        "common/estates/_estates.info"
+      ]
+    },
+    "folder:ethnicities": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "expressions_brow",
+        "expressions_eyes",
+        "expressions_forehead",
+        "expressions_mouth",
+        "eye_color",
+        "eyelashes",
+        "eyes",
+        "gene_aging_body",
+        "gene_aging_colors",
+        "gene_aging_eyes",
+        "gene_aging_forehead",
+        "gene_aging_mouth",
+        "gene_blush",
+        "gene_body_weight",
+        "gene_cheek_def",
+        "gene_cheek_fat",
+        "gene_cheek_forward",
+        "gene_cheek_height",
+        "gene_cheek_width",
+        "gene_chin_def",
+        "gene_chin_dimple",
+        "gene_chin_height",
+        "gene_chin_length",
+        "gene_chin_size",
+        "gene_complexion",
+        "gene_ear_angle",
+        "gene_ear_out",
+        "gene_ear_size",
+        "gene_eye_angle",
+        "gene_eye_forward",
+        "gene_eye_height",
+        "gene_eye_lower_lid_def",
+        "gene_eye_open",
+        "gene_eye_size",
+        "gene_eye_socket",
+        "gene_eye_socket_color",
+        "gene_eye_spacing",
+        "gene_eye_upper_lid_shape",
+        "gene_eye_upper_lid_size",
+        "gene_eyebrows_inner",
+        "gene_eyebrows_outer",
+        "gene_eyelashes",
+        "gene_forehead_angle",
+        "gene_forehead_brow_angle",
+        "gene_forehead_brow_curve",
+        "gene_forehead_brow_forward",
+        "gene_forehead_brow_height",
+        "gene_forehead_height",
+        "gene_forehead_roundness",
+        "gene_head_face_forward",
+        "gene_head_height",
+        "gene_head_width",
+        "gene_jaw_angle",
+        "gene_jaw_def",
+        "gene_jaw_forward",
+        "gene_jaw_height",
+        "gene_jaw_width",
+        "gene_lip_color",
+        "gene_mouth_corner_height",
+        "gene_mouth_forward",
+        "gene_mouth_height",
+        "gene_mouth_lip_def",
+        "gene_mouth_lower_lip_pad",
+        "gene_mouth_lower_lip_size",
+        "gene_mouth_philtrum_def",
+        "gene_mouth_philtrum_shape",
+        "gene_mouth_philtrum_width",
+        "gene_mouth_upper_lip_shape",
+        "gene_mouth_upper_lip_size",
+        "gene_mouth_width",
+        "gene_neck_def",
+        "gene_neck_length",
+        "gene_neck_width",
+        "gene_nose_forward",
+        "gene_nose_height",
+        "gene_nose_length",
+        "gene_nose_nostril_height",
+        "gene_nose_nostril_width",
+        "gene_nose_ridge_angle",
+        "gene_nose_ridge_def",
+        "gene_nose_ridge_shape",
+        "gene_nose_root_def",
+        "gene_nose_tip_angle",
+        "gene_nose_tip_def",
+        "gene_nose_tip_forward",
+        "gene_nose_tip_size",
+        "gene_nose_width",
+        "gene_skin_detail",
+        "gene_skin_noise",
+        "gene_skull_depth",
+        "gene_skull_height",
+        "gene_skull_width",
+        "gene_stubble",
+        "gene_temple_def",
+        "hair_color",
+        "hair_styles",
+        "skin_color"
+      ],
+      "usage_forms": {
+        "top_level_definition": 59
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/ethnicities/00_ethnicities.txt",
+        "common/ethnicities/00_ethnicities_african.txt",
+        "common/ethnicities/00_ethnicities_african_bantu.txt",
+        "common/ethnicities/00_ethnicities_african_ethiopian.txt",
+        "common/ethnicities/00_ethnicities_african_mande.txt",
+        "common/ethnicities/00_ethnicities_african_nubian.txt",
+        "common/ethnicities/00_ethnicities_american.txt",
+        "common/ethnicities/00_ethnicities_american_amazonian.txt",
+        "common/ethnicities/00_ethnicities_american_andean.txt",
+        "common/ethnicities/00_ethnicities_american_central.txt",
+        "common/ethnicities/00_ethnicities_american_north_east.txt",
+        "common/ethnicities/00_ethnicities_american_patagonian.txt",
+        "common/ethnicities/00_ethnicities_asian.txt",
+        "common/ethnicities/00_ethnicities_asian_ainu.txt",
+        "common/ethnicities/00_ethnicities_asian_austronesian.txt",
+        "common/ethnicities/00_ethnicities_asian_gracile.txt",
+        "common/ethnicities/00_ethnicities_asian_han_chinese.txt",
+        "common/ethnicities/00_ethnicities_asian_japanese.txt",
+        "common/ethnicities/00_ethnicities_asian_korean.txt",
+        "common/ethnicities/00_ethnicities_asian_mongol.txt",
+        "common/ethnicities/00_ethnicities_asian_negrito.txt",
+        "common/ethnicities/00_ethnicities_asian_siberian.txt",
+        "common/ethnicities/00_ethnicities_asian_south_east.txt",
+        "common/ethnicities/00_ethnicities_eurasian.txt",
+        "common/ethnicities/00_ethnicities_european.txt",
+        "common/ethnicities/00_ethnicities_european_finno_ugric.txt",
+        "common/ethnicities/00_ethnicities_european_mediterranean.txt",
+        "common/ethnicities/00_ethnicities_european_nordic.txt",
+        "common/ethnicities/00_ethnicities_european_sami.txt",
+        "common/ethnicities/00_ethnicities_european_slavic.txt",
+        "common/ethnicities/00_ethnicities_european_west.txt",
+        "common/ethnicities/00_ethnicities_indian.txt"
+      ],
+      "associated_info": [
+        "common/ethnicities/_ethnicities.info"
+      ]
+    },
+    "folder:events": {
+      "containment_pattern": "events_namespaced",
+      "attribute_names": [
+        "desc",
+        "dynamic_historical_event",
+        "fire_only_once",
+        "illustration_tags",
+        "immediate",
+        "option",
+        "title",
+        "trigger",
+        "type"
+      ],
+      "usage_forms": {
+        "top_level_definition": 7573
+      },
+      "observed_folders": [
+        "events"
+      ],
+      "observed_files": [
+        "events/DHE/flavor_ARA.txt",
+        "events/DHE/flavor_AYD.txt",
+        "events/DHE/flavor_AZT.txt",
+        "events/DHE/flavor_BEI.txt",
+        "events/DHE/flavor_BOH.txt",
+        "events/DHE/flavor_BRI.txt",
+        "events/DHE/flavor_BYZ.txt",
+        "events/DHE/flavor_CAS.txt",
+        "events/DHE/flavor_CHK.txt",
+        "events/DHE/flavor_CSU.txt",
+        "events/DHE/flavor_DLH.txt",
+        "events/DHE/flavor_ENG.txt",
+        "events/DHE/flavor_ERE.txt",
+        "events/DHE/flavor_ETH.txt",
+        "events/DHE/flavor_FRA.txt",
+        "events/DHE/flavor_FRA_DAU.txt",
+        "events/DHE/flavor_FRA_SCO.txt",
+        "events/DHE/flavor_GEN.txt",
+        "events/DHE/flavor_HAB.txt",
+        "events/DHE/flavor_HSA.txt",
+        "events/DHE/flavor_HUN.txt",
+        "events/DHE/flavor_HUN_SER.txt",
+        "events/DHE/flavor_ICE.txt",
+        "events/DHE/flavor_IRE.txt",
+        "events/DHE/flavor_IRO.txt",
+        "events/DHE/flavor_JAP.txt",
+        "events/DHE/flavor_KBO.txt",
+        "events/DHE/flavor_KOL.txt",
+        "events/DHE/flavor_KOR.txt",
+        "events/DHE/flavor_LIT.txt",
+        "events/DHE/flavor_LOI.txt",
+        "events/DHE/flavor_LUB.txt"
+      ],
+      "associated_info": [
+        "events/DHE/_DHE.info",
+        "events/_events.info",
+        "events/character/_character.info",
+        "events/colonization/_colonization.info",
+        "events/culture/_culture.info",
+        "events/debug/_debug.info",
+        "events/diplomacy/_diplomacy.info",
+        "events/disaster/_disaster.info",
+        "events/economy/_economy.info",
+        "events/estates/_estates.info",
+        "events/exploration/_exploration.info",
+        "events/government/_government.info",
+        "events/missionevents/_missionevents.info",
+        "events/religion/_religion.info",
+        "events/situations/_situations.info"
+      ]
+    },
+    "folder:formable_countries": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "adjective",
+        "allow",
+        "areas",
+        "color",
+        "flag",
+        "form_effect",
+        "level",
+        "name",
+        "potential",
+        "regions",
+        "required_locations_fraction",
+        "rule",
+        "tag"
+      ],
+      "usage_forms": {
+        "top_level_definition": 139
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/formable_countries/00_formable_countries.txt"
+      ],
+      "associated_info": [
+        "common/formable_countries/_formable_countries.info"
+      ]
+    },
+    "folder:generic_action_ai_lists": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "actions",
+        "potential"
+      ],
+      "usage_forms": {
+        "top_level_definition": 77
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/generic_action_ai_lists/aspiration_for_liberty_list.txt",
+        "common/generic_action_ai_lists/autocephalous_patriarchates_list.txt",
+        "common/generic_action_ai_lists/black_death_list.txt",
+        "common/generic_action_ai_lists/canonize_list.txt",
+        "common/generic_action_ai_lists/catholic_list.txt",
+        "common/generic_action_ai_lists/church_aspect_list.txt",
+        "common/generic_action_ai_lists/church_aspects_list.txt",
+        "common/generic_action_ai_lists/colonial_charters_list.txt",
+        "common/generic_action_ai_lists/colonial_revolution_list.txt",
+        "common/generic_action_ai_lists/columbian_exchange_list.txt",
+        "common/generic_action_ai_lists/conquistador_list.txt",
+        "common/generic_action_ai_lists/coup_attempt_list.txt",
+        "common/generic_action_ai_lists/court_and_country_list.txt",
+        "common/generic_action_ai_lists/crisis_of_the_chinese_dynasty_list.txt",
+        "common/generic_action_ai_lists/decline_of_empire_list.txt",
+        "common/generic_action_ai_lists/decline_of_majapahit_list.txt",
+        "common/generic_action_ai_lists/exploration_list.txt",
+        "common/generic_action_ai_lists/fall_of_delhi_list.txt",
+        "common/generic_action_ai_lists/french_wars_religion_list.txt",
+        "common/generic_action_ai_lists/global_list.txt",
+        "common/generic_action_ai_lists/golden_age_of_piracy_list.txt",
+        "common/generic_action_ai_lists/government_transition_list.txt",
+        "common/generic_action_ai_lists/great_pestilence_list.txt",
+        "common/generic_action_ai_lists/guelphs_and_ghibellines_list.txt",
+        "common/generic_action_ai_lists/high_kingship_of_ireland_list.txt",
+        "common/generic_action_ai_lists/hindu_list.txt",
+        "common/generic_action_ai_lists/hundred_years_war_list.txt",
+        "common/generic_action_ai_lists/hussite_wars_list.txt",
+        "common/generic_action_ai_lists/ilkhanate_list.txt",
+        "common/generic_action_ai_lists/international_organization_list.txt",
+        "common/generic_action_ai_lists/inti_list.txt",
+        "common/generic_action_ai_lists/italian_wars_list.txt"
+      ],
+      "associated_info": [
+        "common/generic_action_ai_lists/_generic_action_ai_lists.info"
+      ]
+    },
+    "folder:generic_actions": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "ai_tick",
+        "ai_tick_frequency",
+        "ai_will_do",
+        "allow",
+        "automation_tick",
+        "automation_tick_frequency",
+        "effect",
+        "player_automated_category",
+        "price",
+        "select_trigger",
+        "sound",
+        "type"
+      ],
+      "usage_forms": {
+        "top_level_definition": 369
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/generic_actions/autocephalous_patriarchates.txt",
+        "common/generic_actions/black_death.txt",
+        "common/generic_actions/canonization.txt",
+        "common/generic_actions/catholic.txt",
+        "common/generic_actions/chinese_treasure_voyages.txt",
+        "common/generic_actions/church_power.txt",
+        "common/generic_actions/colonial_charters.txt",
+        "common/generic_actions/colonial_revolution.txt",
+        "common/generic_actions/columbian_exchange.txt",
+        "common/generic_actions/conquistadors.txt",
+        "common/generic_actions/coup_attempt_actions.txt",
+        "common/generic_actions/court_and_country_actions.txt",
+        "common/generic_actions/create_building_subject.txt",
+        "common/generic_actions/create_province_subject.txt",
+        "common/generic_actions/crisis_of_the_chinese_dynasty_actions.txt",
+        "common/generic_actions/culture.txt",
+        "common/generic_actions/decline_of_empire_actions.txt",
+        "common/generic_actions/decline_of_majapahit_actions.txt",
+        "common/generic_actions/employment_system.txt",
+        "common/generic_actions/estates.txt",
+        "common/generic_actions/explorers.txt",
+        "common/generic_actions/fall_of_delhi.txt",
+        "common/generic_actions/french_wars_religion_actions.txt",
+        "common/generic_actions/general_religion.txt",
+        "common/generic_actions/golden_age_of_piracy.txt",
+        "common/generic_actions/government_conversions.txt",
+        "common/generic_actions/great_pestilence.txt",
+        "common/generic_actions/guelphs_and_ghibellines.txt",
+        "common/generic_actions/high_kingship_of_ireland.txt",
+        "common/generic_actions/hindu_branches.txt",
+        "common/generic_actions/hire_advisor.txt",
+        "common/generic_actions/hire_artist.txt"
+      ],
+      "associated_info": [
+        "common/generic_actions/_generic_actions.info"
+      ]
+    },
+    "folder:genes": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "eye_color",
+        "hair_color",
+        "skin_color"
+      ],
+      "usage_forms": {
+        "top_level_definition": 22
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/genes/00_genes_color.txt",
+        "common/genes/01_genes_morph.txt",
+        "common/genes/02_genes_accessories_misc.txt",
+        "common/genes/03_genes_accessories_clothes.txt",
+        "common/genes/04_genes_accessories_beards.txt",
+        "common/genes/05_genes_accessories_headwear.txt",
+        "common/genes/06_genes_accessories_neckware.txt",
+        "common/genes/07_genes_accessories_hair.txt",
+        "common/genes/08_genes_special_visual_traits.txt",
+        "common/genes/09_genes_special_expressions.txt"
+      ],
+      "associated_info": [
+        "common/genes/_genes.info"
+      ]
+    },
+    "folder:gfx": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "decal_material",
+        "road_material"
+      ],
+      "usage_forms": {
+        "top_level_definition": 1195
+      },
+      "observed_folders": [
+        "gfx"
+      ],
+      "observed_files": [
+        "gfx/city_materials/materials.txt",
+        "gfx/graphical_culture_types/00_graphical_culture_types.txt",
+        "gfx/graphical_culture_types/01_graphical_culture_types_british.txt",
+        "gfx/graphical_culture_types/01_graphical_culture_types_french.txt",
+        "gfx/graphical_culture_types/01_graphical_culture_types_indian.txt",
+        "gfx/graphical_culture_types/01_graphical_religion_types.txt",
+        "gfx/graphical_culture_types/02_graphical_culture_types_coa.txt",
+        "gfx/graphical_culture_types/02_graphical_religion_types_coa.txt",
+        "gfx/images/00_backgrounds_exterior.txt",
+        "gfx/images/00_backgrounds_interior.txt",
+        "gfx/images/00_characters_angry.txt",
+        "gfx/images/00_characters_armed.txt",
+        "gfx/images/00_characters_happy.txt",
+        "gfx/images/00_characters_regular.txt",
+        "gfx/images/00_frontobjects_exterior.txt",
+        "gfx/images/00_frontobjects_interior.txt",
+        "gfx/images/00_images.txt",
+        "gfx/images/00_images_battlefield.txt",
+        "gfx/images/00_images_location.txt",
+        "gfx/images/00_vfx.txt",
+        "gfx/map/biome_definitions/biomes.txt",
+        "gfx/map/environment/environment.txt",
+        "gfx/map/environment/ui_flag_environment.txt",
+        "gfx/map/flatmap/flatmap_materials.txt",
+        "gfx/map/locators_override/locators_override.txt",
+        "gfx/map/map_modes/map_modes.txt",
+        "gfx/map/map_objects/_categories.txt",
+        "gfx/map/map_objects/decal_dirt_patch_01_a.txt",
+        "gfx/map/map_objects/decal_rock_clusters_01_a.txt.txt",
+        "gfx/map/map_objects/decal_rock_group_01_a.txt",
+        "gfx/map/map_objects/decal_rock_group_01_b.txt",
+        "gfx/map/map_objects/decal_rock_group_01_c.txt"
+      ],
+      "associated_info": [
+        "gfx/city_materials/_city_materials.info",
+        "gfx/graphical_culture_types/_graphical_culture_types.info",
+        "gfx/images/_images.info",
+        "gfx/map/biome_definitions/_biome_definitions.info",
+        "gfx/map/environment/_environment.info",
+        "gfx/map/flatmap/_flatmap.info",
+        "gfx/map/locators_override/_locators_override.info",
+        "gfx/map/map_modes/_map_modes.info",
+        "gfx/map/map_objects/_map_objects.info",
+        "gfx/map/map_objects/generated/_generated.info",
+        "gfx/map/post_effects/_post_effects.info",
+        "gfx/map/spline_network/route_graphics/_route_graphics.info",
+        "gfx/map/spline_network/spline_styles/_spline_styles.info",
+        "gfx/map/spline_network/spline_types/_spline_types.info",
+        "gfx/map/_map.info",
+        "gfx/scenes/_scenes.info"
+      ]
+    },
+    "folder:gods": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "country_modifier",
+        "group",
+        "icon"
+      ],
+      "usage_forms": {
+        "top_level_definition": 121
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/gods/common.txt",
+        "common/gods/folk_african.txt",
+        "common/gods/folk_american.txt",
+        "common/gods/folk_asian.txt",
+        "common/gods/folk_default.txt",
+        "common/gods/hindu.txt",
+        "common/gods/inti.txt",
+        "common/gods/mesoamerican.txt",
+        "common/gods/norse.txt",
+        "common/gods/tengri.txt"
+      ],
+      "associated_info": [
+        "common/gods/_gods.info"
+      ]
+    },
+    "folder:goods": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "category",
+        "color",
+        "custom_tags",
+        "default_market_price",
+        "demand_add",
+        "method",
+        "origin_in_old_world",
+        "transport_cost"
+      ],
+      "usage_forms": {
+        "top_level_definition": 74
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/goods/00_raw_materials.txt",
+        "common/goods/01_plantation_goods.txt",
+        "common/goods/02_produced_goods.txt",
+        "common/goods/03_food.txt",
+        "common/goods/04_special.txt"
+      ],
+      "associated_info": [
+        "common/goods/_goods.info"
+      ]
+    },
+    "folder:goods_demand": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "category",
+        "firearms",
+        "leather",
+        "weaponry"
+      ],
+      "usage_forms": {
+        "top_level_definition": 347
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/goods_demand/army_demands.txt",
+        "common/goods_demand/building_construction_costs.txt",
+        "common/goods_demand/from_events.txt",
+        "common/goods_demand/hardcoded.txt",
+        "common/goods_demand/navy_demands.txt",
+        "common/goods_demand/pop_demands.txt",
+        "common/goods_demand/special_construction_demands.txt"
+      ],
+      "associated_info": [
+        "common/goods_demand/_goods_demand.info"
+      ]
+    },
+    "folder:goods_demand_category": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "display"
+      ],
+      "usage_forms": {
+        "top_level_definition": 13
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/goods_demand_category/00_default.txt"
+      ],
+      "associated_info": [
+        "common/goods_demand_category/_goods_demand_category.info"
+      ]
+    },
+    "folder:government_reforms": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "age",
+        "country_modifier",
+        "societal_values",
+        "years"
+      ],
+      "usage_forms": {
+        "top_level_definition": 291
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/government_reforms/common.txt",
+        "common/government_reforms/country_specific.txt",
+        "common/government_reforms/monarchy.txt",
+        "common/government_reforms/republic.txt",
+        "common/government_reforms/steppe_horde.txt",
+        "common/government_reforms/theocracy.txt"
+      ],
+      "associated_info": [
+        "common/government_reforms/_government_reforms.info"
+      ]
+    },
+    "folder:government_types": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "default_character_estate",
+        "government_power",
+        "heir_selection",
+        "map_color",
+        "modifier",
+        "revolutionary_country_antagonism",
+        "use_regnal_number"
+      ],
+      "usage_forms": {
+        "top_level_definition": 5
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/government_types/00_default.txt"
+      ],
+      "associated_info": [
+        "common/government_types/_government_types.info"
+      ]
+    },
+    "folder:gui": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "exclusive_group",
+        "group",
+        "scope",
+        "tag",
+        "trigger"
+      ],
+      "usage_forms": {
+        "top_level_definition": 161
+      },
+      "observed_folders": [
+        "gui"
+      ],
+      "observed_files": [
+        "gui/filters/05_location.txt",
+        "gui/filters/06_country.txt",
+        "gui/filters/07_unit.txt",
+        "gui/filters/08_subunit.txt",
+        "gui/filters/09_character.txt",
+        "gui/filters/11_pop.txt",
+        "gui/filters/16_culture.txt",
+        "gui/filters/17_religion.txt",
+        "gui/filters/20_province.txt",
+        "gui/filters/28_rebel.txt",
+        "gui/filters/31_goods.txt",
+        "gui/filters/34_mercenary.txt",
+        "gui/filters/37_international_organization.txt",
+        "gui/filters/42_building.txt",
+        "gui/filters/57_cabinet_action.txt",
+        "gui/filters/58_building_type.txt",
+        "gui/sort_keys/00_sort_keys.txt"
+      ],
+      "associated_info": [
+        "gui/filters/_filters.info",
+        "gui/sort_keys/_sort_keys.info"
+      ]
+    },
+    "folder:hegemons": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "gain",
+        "lose",
+        "modifier"
+      ],
+      "usage_forms": {
+        "top_level_definition": 5
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/hegemons/0_economic_hegemon.txt",
+        "common/hegemons/1_naval_hegemon.txt",
+        "common/hegemons/2_military_hegemon.txt",
+        "common/hegemons/3_diplomatic_hegemon.txt",
+        "common/hegemons/4_cultural_hegemon.txt"
+      ],
+      "associated_info": [
+        "common/hegemons/_hegemons.info"
+      ]
+    },
+    "folder:heir_selections": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "allow_children",
+        "allow_female",
+        "allowed_estates",
+        "depth_first",
+        "heir_is_allowed",
+        "ignore_ruler",
+        "include_ruler_siblings",
+        "potential",
+        "sibling_score",
+        "through_female",
+        "traverse_family_tree"
+      ],
+      "usage_forms": {
+        "top_level_definition": 43
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/heir_selections/monarchy.txt",
+        "common/heir_selections/republic.txt",
+        "common/heir_selections/specialized.txt",
+        "common/heir_selections/theocracy.txt",
+        "common/heir_selections/tribal.txt"
+      ],
+      "associated_info": [
+        "common/heir_selections/_heir_selections.info"
+      ]
+    },
+    "folder:historical_scores": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "score",
+        "tag"
+      ],
+      "usage_forms": {
+        "top_level_definition": 21
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/historical_scores/the_best_and_worst.txt"
+      ],
+      "associated_info": [
+        "common/historical_scores/_historical_scores.info"
+      ]
+    },
+    "folder:holy_site_types": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "location_modifier"
+      ],
+      "usage_forms": {
+        "top_level_definition": 10
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/holy_site_types/00_holy_site_types.txt"
+      ],
+      "associated_info": [
+        "common/holy_site_types/_holy_site_types.info"
+      ]
+    },
+    "folder:holy_sites": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "importance",
+        "location",
+        "religions",
+        "type"
+      ],
+      "usage_forms": {
+        "top_level_definition": 209
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/holy_sites/bogomilism.txt",
+        "common/holy_sites/bosnian_church.txt",
+        "common/holy_sites/catholic.txt",
+        "common/holy_sites/hindu.txt",
+        "common/holy_sites/inti.txt",
+        "common/holy_sites/islam.txt",
+        "common/holy_sites/jain.txt",
+        "common/holy_sites/mahayana.txt",
+        "common/holy_sites/mayan.txt",
+        "common/holy_sites/mesoamerican.txt",
+        "common/holy_sites/nestorian.txt",
+        "common/holy_sites/orthodox.txt",
+        "common/holy_sites/sanjiao.txt",
+        "common/holy_sites/shinto.txt",
+        "common/holy_sites/theravada.txt"
+      ],
+      "associated_info": [
+        "common/holy_sites/_holy_sites.info"
+      ]
+    },
+    "folder:institution": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "age",
+        "can_spawn",
+        "promote_chance",
+        "spread_embraced_to_capital",
+        "spread_from_any_coast_border_location",
+        "spread_from_any_export",
+        "spread_from_any_import",
+        "spread_from_friendly_coast_border_location",
+        "spread_scale_on_control_if_owner_embraced",
+        "spread_to_market_member"
+      ],
+      "usage_forms": {
+        "top_level_definition": 18
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/institution/age_1_traditions_institutions.txt",
+        "common/institution/age_2_renaissance_institutions.txt",
+        "common/institution/age_3_discovery_institutions.txt",
+        "common/institution/age_4_reformation_institutions.txt",
+        "common/institution/age_5_absolutism_institutions.txt",
+        "common/institution/age_6_revolutions_institutions.txt"
+      ],
+      "associated_info": [
+        "common/institution/_institution.info"
+      ]
+    },
+    "folder:insults": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "trigger"
+      ],
+      "usage_forms": {
+        "top_level_definition": 74
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/insults/00_insults.txt"
+      ],
+      "associated_info": [
+        "common/insults/_insults.info"
+      ]
+    },
+    "folder:international_organization_land_ownership_rules": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "ai_desire_to_add",
+        "can_add_location_trigger",
+        "can_add_trigger",
+        "can_remove_trigger",
+        "modifier",
+        "on_added",
+        "on_removed"
+      ],
+      "usage_forms": {
+        "top_level_definition": 8
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/international_organization_land_ownership_rules/high_kingship_land_ownership.txt",
+        "common/international_organization_land_ownership_rules/hre_land_ownership.txt",
+        "common/international_organization_land_ownership_rules/italian_wars_land_ownership.txt",
+        "common/international_organization_land_ownership_rules/japanese_shogunate_land_ownership.txt",
+        "common/international_organization_land_ownership_rules/lordship_of_ireland_land_ownership.txt",
+        "common/international_organization_land_ownership_rules/middle_kingdom_land_ownership.txt",
+        "common/international_organization_land_ownership_rules/sect_land_ownership.txt",
+        "common/international_organization_land_ownership_rules/swiss_conferation_land_ownership.txt"
+      ],
+      "associated_info": [
+        "common/international_organization_land_ownership_rules/_international_organization_land_ownership_rules.info"
+      ]
+    },
+    "folder:international_organization_payments": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "get_payee_list",
+        "get_payer_list",
+        "maintenance_modifier",
+        "price",
+        "price_multiplier",
+        "proportion_for_payee",
+        "proportion_for_payer",
+        "uses_maintenance"
+      ],
+      "usage_forms": {
+        "top_level_definition": 8
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/international_organization_payments/hre.txt",
+        "common/international_organization_payments/middle_kingdom_tribute.txt",
+        "common/international_organization_payments/tatar_yoke_payment.txt",
+        "common/international_organization_payments/tithe.txt",
+        "common/international_organization_payments/union_contribution.txt"
+      ],
+      "associated_info": [
+        "common/international_organization_payments/_international_organization_payments.info"
+      ]
+    },
+    "folder:international_organization_special_statuses": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "auto_bestowal_trigger",
+        "auto_rescind_trigger",
+        "can_bestow_trigger",
+        "map_color",
+        "modifier",
+        "on_bestowed_effect",
+        "on_rescinded_effect",
+        "priority"
+      ],
+      "usage_forms": {
+        "top_level_definition": 25
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/international_organization_special_statuses/catholic_church.txt",
+        "common/international_organization_special_statuses/high_kingship.txt",
+        "common/international_organization_special_statuses/hre.txt",
+        "common/international_organization_special_statuses/ilkhanate.txt",
+        "common/international_organization_special_statuses/japanese_shogunate.txt",
+        "common/international_organization_special_statuses/lordship_of_ireland.txt",
+        "common/international_organization_special_statuses/middle_kingdom.txt",
+        "common/international_organization_special_statuses/tatar_yoke.txt",
+        "common/international_organization_special_statuses/union.txt"
+      ],
+      "associated_info": [
+        "common/international_organization_special_statuses/_international_organization_special_statuses.info"
+      ]
+    },
+    "folder:international_organizations": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "ai_desire_to_allow_new_member",
+        "ai_desire_to_join",
+        "auto_disband_trigger",
+        "auto_leave_trigger",
+        "can_declare_war",
+        "can_join_trigger",
+        "can_lead_trigger",
+        "can_leave_trigger",
+        "create_visible_trigger",
+        "custom_name",
+        "expel_members_who_target_the_leader",
+        "has_leader_country",
+        "has_target",
+        "invite_visible_trigger",
+        "leader_change_trigger_type",
+        "leader_modifier",
+        "leader_type",
+        "modifier",
+        "on_creation",
+        "on_disband",
+        "on_joined",
+        "on_left",
+        "unique",
+        "variables"
+      ],
+      "usage_forms": {
+        "top_level_definition": 35
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/international_organizations/autocephalous_patriarchate.txt",
+        "common/international_organizations/catholic_church.txt",
+        "common/international_organizations/coalition.txt",
+        "common/international_organizations/colonial_federation.txt",
+        "common/international_organizations/crusade.txt",
+        "common/international_organizations/defensive_league.txt",
+        "common/international_organizations/foreign_league_france.txt",
+        "common/international_organizations/foreign_league_hre.txt",
+        "common/international_organizations/foreign_league_iberia.txt",
+        "common/international_organizations/guelphs_and_ghibellines.txt",
+        "common/international_organizations/high_kingship.txt",
+        "common/international_organizations/hindu_branch.txt",
+        "common/international_organizations/hre.txt",
+        "common/international_organizations/ilkhanate.txt",
+        "common/international_organizations/independence_movement.txt",
+        "common/international_organizations/italian_league_1.txt",
+        "common/international_organizations/italian_league_2.txt",
+        "common/international_organizations/italian_league_3.txt",
+        "common/international_organizations/japanese_shogunate.txt",
+        "common/international_organizations/jihad.txt",
+        "common/international_organizations/jurchen_federation.txt",
+        "common/international_organizations/lordship_of_ireland.txt",
+        "common/international_organizations/marriage_union.txt",
+        "common/international_organizations/middle_kingdom.txt",
+        "common/international_organizations/red_turban_rebels.txt",
+        "common/international_organizations/religious_leagues.txt",
+        "common/international_organizations/sect.txt",
+        "common/international_organizations/shinto.txt",
+        "common/international_organizations/sikhism.txt",
+        "common/international_organizations/swiss_confederation.txt",
+        "common/international_organizations/tatar_yoke.txt",
+        "common/international_organizations/tribal_confederation.txt"
+      ],
+      "associated_info": [
+        "common/international_organizations/_international_organizations.info"
+      ]
+    },
+    "folder:join_war_rules": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "join_war_disabled_trigger"
+      ],
+      "usage_forms": {
+        "top_level_definition": 1
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/join_war_rules/teu_crusade.txt"
+      ],
+      "associated_info": [
+        "common/join_war_rules/_join_war_rules.info"
+      ]
+    },
+    "folder:language_families": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "color"
+      ],
+      "usage_forms": {
+        "top_level_definition": 56
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/language_families/00_language_families.txt"
+      ],
+      "associated_info": [
+        "common/language_families/_language_families.info"
+      ]
+    },
+    "folder:languages": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "color",
+        "dynasty_names",
+        "female_names",
+        "lowborn",
+        "male_names"
+      ],
+      "usage_forms": {
+        "top_level_definition": 526
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/languages/00_alaska.txt",
+        "common/languages/00_anatolia.txt",
+        "common/languages/00_arabia.txt",
+        "common/languages/00_aridoamerica.txt",
+        "common/languages/00_australia.txt",
+        "common/languages/00_balkans.txt",
+        "common/languages/00_baltic.txt",
+        "common/languages/00_bengal.txt",
+        "common/languages/00_brazil.txt",
+        "common/languages/00_canada.txt",
+        "common/languages/00_caribbean.txt",
+        "common/languages/00_carpathia.txt",
+        "common/languages/00_caucasus.txt",
+        "common/languages/00_central_america.txt",
+        "common/languages/00_central_north_america.txt",
+        "common/languages/00_china.txt",
+        "common/languages/00_crescent.txt",
+        "common/languages/00_deccan.txt",
+        "common/languages/00_east_africa.txt",
+        "common/languages/00_east_coast.txt",
+        "common/languages/00_east_siberia.txt",
+        "common/languages/00_egypt.txt",
+        "common/languages/00_france.txt",
+        "common/languages/00_germany.txt",
+        "common/languages/00_great_bassin.txt",
+        "common/languages/00_great_britain.txt",
+        "common/languages/00_horn_africa.txt",
+        "common/languages/00_iberia.txt",
+        "common/languages/00_indochina.txt",
+        "common/languages/00_indonesia.txt",
+        "common/languages/00_ireland.txt",
+        "common/languages/00_italy.txt"
+      ],
+      "associated_info": [
+        "common/languages/_languages.info"
+      ]
+    },
+    "folder:laws": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "by_blood",
+        "by_tradition",
+        "law_category",
+        "law_gov_group",
+        "potential"
+      ],
+      "usage_forms": {
+        "top_level_definition": 191
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/laws/00_monarchy.txt",
+        "common/laws/00_religious.txt",
+        "common/laws/00_republic.txt",
+        "common/laws/00_theocracies.txt",
+        "common/laws/00_tribes.txt",
+        "common/laws/01_common.txt",
+        "common/laws/01_legal_system.txt",
+        "common/laws/01_military_laws.txt",
+        "common/laws/01_naval_laws.txt",
+        "common/laws/02_country_specific.txt",
+        "common/laws/02_distribution_of_power.txt",
+        "common/laws/03_estate_laws.txt",
+        "common/laws/04_order_of_chivalry.txt",
+        "common/laws/10_reforms_from_events.txt",
+        "common/laws/20_hre.txt",
+        "common/laws/20_middle_kingdom.txt",
+        "common/laws/20_shogunate.txt",
+        "common/laws/21_jurchen_confederation.txt",
+        "common/laws/22_swiss_confederation.txt",
+        "common/laws/23_lordship_of_ireland.txt",
+        "common/laws/24_colonial_federation.txt",
+        "common/laws/30_hindu.txt",
+        "common/laws/31_catholic_church.txt",
+        "common/laws/40_personal_unions.txt",
+        "common/laws/christian_tenets.txt",
+        "common/laws/colonial_laws.txt",
+        "common/laws/io_alliances_law.txt",
+        "common/laws/sects.txt",
+        "common/laws/sikhism.txt"
+      ],
+      "associated_info": [
+        "common/laws/_laws.info"
+      ]
+    },
+    "folder:levies": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "allowed_pop_type",
+        "size",
+        "unit"
+      ],
+      "usage_forms": {
+        "top_level_definition": 43
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/levies/00_revolutions_levies.txt",
+        "common/levies/01_absolutism_levies.txt",
+        "common/levies/02_reformation_levies.txt",
+        "common/levies/03_discovery_levies.txt",
+        "common/levies/04_renaissance_levies.txt",
+        "common/levies/05_traditions_levies.txt",
+        "common/levies/06_tribal_levies.txt",
+        "common/levies/10_traditions_levies_navy.txt"
+      ],
+      "associated_info": [
+        "common/levies/_levies.info"
+      ]
+    },
+    "folder:location_ranks": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "allow",
+        "build_time",
+        "color",
+        "construction_demand",
+        "country_modifier",
+        "frame_tier",
+        "is_established_city",
+        "max_rank",
+        "rank_modifier",
+        "show_in_label"
+      ],
+      "usage_forms": {
+        "top_level_definition": 3
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/location_ranks/00_default.txt"
+      ],
+      "associated_info": [
+        "common/location_ranks/_location_ranks.info"
+      ]
+    },
+    "folder:map_data": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "eastern_europe",
+        "western_europe"
+      ],
+      "usage_forms": {
+        "top_level_definition": 57165
+      },
+      "observed_folders": [
+        "map_data"
+      ],
+      "observed_files": [
+        "map_data/definitions.txt",
+        "map_data/generated_locators_port.txt",
+        "map_data/location_templates.txt",
+        "map_data/named_locations/00_default.txt"
+      ],
+      "associated_info": [
+        "map_data/_map_data.info",
+        "map_data/named_locations/_named_locations.info"
+      ]
+    },
+    "folder:missions": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "chance",
+        "high_era_of_countryname",
+        "icon",
+        "meritocratic_approach",
+        "mission_create_cabinet",
+        "mission_enact_government_reforms",
+        "mission_increase_cabinet_efficiency",
+        "mission_promote_cabinet_head",
+        "on_abort",
+        "on_completion",
+        "on_start",
+        "player_playstyle",
+        "repeatable",
+        "royal_authority",
+        "visible"
+      ],
+      "usage_forms": {
+        "top_level_definition": 11
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/missions/generic_capable_cabinet_mission_pack.txt",
+        "common/missions/generic_capital_economy_mission_pack.txt",
+        "common/missions/generic_colonize_explore_mission_pack.txt",
+        "common/missions/generic_conquer_province_mission_pack.txt",
+        "common/missions/generic_estate_cooperation_mission_pack.txt",
+        "common/missions/generic_humiliate_rival_mission_pack.txt",
+        "common/missions/generic_infrastructure_mission_pack.txt.txt",
+        "common/missions/generic_progress_and_literacy_mission_pack.txt",
+        "common/missions/generic_trade_mission_pack.txt",
+        "common/missions/generic_traditional_economy_mission_pack.txt",
+        "common/missions/generic_vassal_mission_pack.txt"
+      ],
+      "associated_info": [
+        "common/missions/_missions.info"
+      ]
+    },
+    "folder:music_player_tracks": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "composer",
+        "performer"
+      ],
+      "usage_forms": {
+        "top_level_definition": 82
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/music_player_tracks/00_music_player_tracks.txt"
+      ],
+      "associated_info": [
+        "common/music_player_tracks/_music_player_tracks.info"
+      ]
+    },
+    "folder:on_action": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "effect"
+      ],
+      "usage_forms": {
+        "top_level_definition": 166
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/on_action/_hardcoded.txt",
+        "common/on_action/appanage_monthly.txt",
+        "common/on_action/character.txt",
+        "common/on_action/character_death_pulses.txt",
+        "common/on_action/colonial_charter_monthly.txt",
+        "common/on_action/country_biyearly.txt",
+        "common/on_action/country_four_yearly.txt",
+        "common/on_action/country_monthly.txt",
+        "common/on_action/country_pulse_for_high_infamy.txt",
+        "common/on_action/country_yearly.txt",
+        "common/on_action/exploration_mission_monthly.txt",
+        "common/on_action/government_flavor_pulse.txt",
+        "common/on_action/in_regency_yearly_pulse.txt",
+        "common/on_action/location_pulses.txt",
+        "common/on_action/on_country_specific_pulse.txt",
+        "common/on_action/parliament_monthly_pulse.txt",
+        "common/on_action/religion_flavor_pulse.txt",
+        "common/on_action/settle_the_frontier_monthly.txt",
+        "common/on_action/treasure_voyage.txt"
+      ],
+      "associated_info": [
+        "common/on_action/_on_action.info"
+      ]
+    },
+    "folder:parliament_agendas": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "ai_will_do",
+        "can_bribe",
+        "chance",
+        "estate",
+        "importance",
+        "on_accept",
+        "on_bribe",
+        "potential",
+        "type"
+      ],
+      "usage_forms": {
+        "top_level_definition": 122
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/parliament_agendas/00_common.txt",
+        "common/parliament_agendas/01_societal_values.txt",
+        "common/parliament_agendas/02_institutions.txt",
+        "common/parliament_agendas/03_buildings.txt",
+        "common/parliament_agendas/10_hre_agendas.txt"
+      ],
+      "associated_info": [
+        "common/parliament_agendas/_parliament_agendas.info"
+      ]
+    },
+    "folder:parliament_issues": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "allow",
+        "chance",
+        "estate",
+        "modifier_when_in_debate",
+        "on_debate_failed",
+        "on_debate_passed"
+      ],
+      "usage_forms": {
+        "top_level_definition": 94
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/parliament_issues/01_country_specific_parliament_issues.txt",
+        "common/parliament_issues/02_crown_estate_parliament_issues.txt",
+        "common/parliament_issues/03_nobles_estate_parliament_issues.txt",
+        "common/parliament_issues/04_clergy_estate_parliament_issues.txt",
+        "common/parliament_issues/05_burghers_estate_parliament_issues.txt",
+        "common/parliament_issues/06_peasants_estate_parliament_issues.txt",
+        "common/parliament_issues/10_hre_issues.txt",
+        "common/parliament_issues/11_union_issue.txt"
+      ],
+      "associated_info": [
+        "common/parliament_issues/_parliament_issues.info"
+      ]
+    },
+    "folder:parliament_types": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "modifier",
+        "type"
+      ],
+      "usage_forms": {
+        "top_level_definition": 14
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/parliament_types/00_default.txt",
+        "common/parliament_types/01_international_organization.txt"
+      ],
+      "associated_info": [
+        "common/parliament_types/_parliament_types.info"
+      ]
+    },
+    "folder:peace_treaties": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "ai_desire",
+        "allow",
+        "antagonism_type",
+        "base_antagonism",
+        "cost",
+        "effect",
+        "potential",
+        "select_trigger"
+      ],
+      "usage_forms": {
+        "top_level_definition": 56
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/peace_treaties/abandon_colonial_claim.txt",
+        "common/peace_treaties/abandon_colonies.txt",
+        "common/peace_treaties/abandon_piracy.txt",
+        "common/peace_treaties/assume_union_senority.txt",
+        "common/peace_treaties/block_foreign_buildings.txt",
+        "common/peace_treaties/break_from_tatar_yoke.txt",
+        "common/peace_treaties/break_from_union.txt",
+        "common/peace_treaties/cancel_debt.txt",
+        "common/peace_treaties/claim_french_throne.txt",
+        "common/peace_treaties/claim_timurid_empire.txt",
+        "common/peace_treaties/delhi_peace_treaties.txt",
+        "common/peace_treaties/disband_kontor.txt",
+        "common/peace_treaties/dismantle_fort.txt",
+        "common/peace_treaties/dismantle_hre.txt",
+        "common/peace_treaties/dissolve_coalition.txt",
+        "common/peace_treaties/dissolve_league.txt",
+        "common/peace_treaties/dissolve_tatar_yoke.txt",
+        "common/peace_treaties/execute_ruler.txt",
+        "common/peace_treaties/expand_clan_influence.txt",
+        "common/peace_treaties/force_convert.txt",
+        "common/peace_treaties/force_renounce_ilkhan_claim.txt",
+        "common/peace_treaties/force_revolution.txt",
+        "common/peace_treaties/force_tributary.txt",
+        "common/peace_treaties/gain_clan_autonomy.txt",
+        "common/peace_treaties/guelphs_and_ghibellines.txt",
+        "common/peace_treaties/hegemon_demands.txt",
+        "common/peace_treaties/high_kingship_overthrow.txt",
+        "common/peace_treaties/humiliate.txt",
+        "common/peace_treaties/hussite_wars_pt.txt",
+        "common/peace_treaties/jurchen_confederation_treaties.txt",
+        "common/peace_treaties/league_of_public_weal_appanage.txt",
+        "common/peace_treaties/league_of_public_weal_royalist.txt"
+      ],
+      "associated_info": [
+        "common/peace_treaties/_peace_treaties.info"
+      ]
+    },
+    "folder:persistent_dna": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "portrait_info",
+        "priority",
+        "tags"
+      ],
+      "usage_forms": {
+        "top_level_definition": 100
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/persistent_dna/custom_characters.txt"
+      ],
+      "associated_info": [
+        "common/persistent_dna/_persistent_dna.info"
+      ]
+    },
+    "folder:pop_types": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "assimilation_conversion_factor",
+        "city_graphics",
+        "color",
+        "dhimmi_estate",
+        "editor",
+        "has_cap",
+        "literacy_impact",
+        "nobles_estate",
+        "pop_food_consumption",
+        "promotion_factor",
+        "tribes_estate",
+        "upper"
+      ],
+      "usage_forms": {
+        "top_level_definition": 8
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/pop_types/00_default.txt"
+      ],
+      "associated_info": [
+        "common/pop_types/_pop_types.info"
+      ]
+    },
+    "folder:prices": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "government_power",
+        "stability"
+      ],
+      "usage_forms": {
+        "top_level_definition": 342
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/prices/00_hardcoded.txt",
+        "common/prices/01_buildings.txt",
+        "common/prices/02_units.txt",
+        "common/prices/03_diplomacy.txt",
+        "common/prices/04_government.txt"
+      ],
+      "associated_info": [
+        "common/prices/_prices.info"
+      ]
+    },
+    "folder:production_methods": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "category"
+      ],
+      "usage_forms": {
+        "top_level_definition": 73
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/production_methods/unsorted_building_inputs.txt"
+      ],
+      "associated_info": [
+        "common/production_methods/_production_methods.info"
+      ]
+    },
+    "folder:recruitment_method": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "army",
+        "default"
+      ],
+      "usage_forms": {
+        "top_level_definition": 4
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/recruitment_method/army.txt",
+        "common/recruitment_method/navy.txt"
+      ],
+      "associated_info": [
+        "common/recruitment_method/_recruitment_method.info"
+      ]
+    },
+    "folder:regencies": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "allow",
+        "modifier",
+        "start_effect"
+      ],
+      "usage_forms": {
+        "top_level_definition": 14
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/regencies/00_fratricide_succesion.txt",
+        "common/regencies/00_judicial_election.txt",
+        "common/regencies/00_mamluk_succesion.txt",
+        "common/regencies/00_papal_election.txt",
+        "common/regencies/00_republican_election.txt",
+        "common/regencies/10_consort_regency.txt",
+        "common/regencies/11_subject_regency.txt",
+        "common/regencies/12_lordship_of_ireland_regency.txt",
+        "common/regencies/1_nobles_regency.txt",
+        "common/regencies/2_clergy_regency.txt",
+        "common/regencies/3_burghers_regency.txt",
+        "common/regencies/4_peasants_regency.txt",
+        "common/regencies/9_overlord_regency.txt",
+        "common/regencies/zz_default.txt"
+      ],
+      "associated_info": [
+        "common/regencies/_regencies.info"
+      ]
+    },
+    "folder:religion_groups": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "allow_slaves_of_same_group",
+        "color",
+        "convert_slaves_at_start"
+      ],
+      "usage_forms": {
+        "top_level_definition": 29
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/religion_groups/00_default.txt"
+      ],
+      "associated_info": [
+        "common/religion_groups/_religion_groups.info"
+      ]
+    },
+    "folder:religions": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "color",
+        "definition_modifier",
+        "group",
+        "has_karma",
+        "language",
+        "opinions",
+        "tags"
+      ],
+      "usage_forms": {
+        "top_level_definition": 293
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/religions/buddhist.txt",
+        "common/religions/christian.txt",
+        "common/religions/dharmic.txt",
+        "common/religions/druze.txt",
+        "common/religions/folk_african.txt",
+        "common/religions/folk_argentinian.txt",
+        "common/religions/folk_aridoamerica.txt",
+        "common/religions/folk_asian.txt",
+        "common/religions/folk_australian.txt",
+        "common/religions/folk_brazilian.txt",
+        "common/religions/folk_caribbean.txt",
+        "common/religions/folk_central_america.txt",
+        "common/religions/folk_european.txt",
+        "common/religions/folk_melanesia.txt",
+        "common/religions/folk_micronesia.txt",
+        "common/religions/folk_north_america.txt",
+        "common/religions/folk_papuan.txt",
+        "common/religions/folk_permic.txt",
+        "common/religions/folk_peruvian.txt",
+        "common/religions/folk_polynesia.txt",
+        "common/religions/folk_se_asian.txt",
+        "common/religions/folk_south_american.txt",
+        "common/religions/israelite.txt",
+        "common/religions/mandean.txt",
+        "common/religions/manichaeism.txt",
+        "common/religions/muslim.txt",
+        "common/religions/tonal.txt",
+        "common/religions/yazidi.txt",
+        "common/religions/zoroastrian.txt"
+      ],
+      "associated_info": [
+        "common/religions/_religions.info"
+      ]
+    },
+    "folder:religious_aspects": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "modifier",
+        "opinions",
+        "religion"
+      ],
+      "usage_forms": {
+        "top_level_definition": 163
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/religious_aspects/anglican.txt",
+        "common/religious_aspects/bogomilism.txt",
+        "common/religious_aspects/calvinist.txt",
+        "common/religious_aspects/catharism.txt",
+        "common/religious_aspects/common.txt",
+        "common/religious_aspects/folk_african.txt",
+        "common/religious_aspects/folk_american.txt",
+        "common/religious_aspects/folk_asian.txt",
+        "common/religious_aspects/folk_default.txt",
+        "common/religious_aspects/hussite.txt",
+        "common/religious_aspects/inti.txt",
+        "common/religious_aspects/norse.txt",
+        "common/religious_aspects/paulicianism.txt",
+        "common/religious_aspects/protestant.txt",
+        "common/religious_aspects/tengri.txt",
+        "common/religious_aspects/tonal.txt"
+      ],
+      "associated_info": [
+        "common/religious_aspects/_religious_aspects.info"
+      ]
+    },
+    "folder:religious_factions": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "actions",
+        "enabled",
+        "visible"
+      ],
+      "usage_forms": {
+        "top_level_definition": 5
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/religious_factions/shinto.txt"
+      ],
+      "associated_info": [
+        "common/religious_factions/_religious_factions.info"
+      ]
+    },
+    "folder:religious_figures": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "enabled_for_religion"
+      ],
+      "usage_forms": {
+        "top_level_definition": 2
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/religious_figures/00_muslim.txt",
+        "common/religious_figures/01_hindu.txt"
+      ],
+      "associated_info": [
+        "common/religious_figures/_religious_figures.info"
+      ]
+    },
+    "folder:religious_focuses": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "ai_will_do",
+        "allow",
+        "modifier_on_completion",
+        "modifier_while_progressing",
+        "monthly_progress"
+      ],
+      "usage_forms": {
+        "top_level_definition": 8
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/religious_focuses/nahuatl.txt"
+      ],
+      "associated_info": [
+        "common/religious_focuses/_religious_focuses.info"
+      ]
+    },
+    "folder:religious_schools": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "color",
+        "enabled_for_character",
+        "enabled_for_country",
+        "modifier"
+      ],
+      "usage_forms": {
+        "top_level_definition": 43
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/religious_schools/hinduism.txt",
+        "common/religious_schools/ibadi.txt",
+        "common/religious_schools/jain.txt",
+        "common/religious_schools/shia.txt",
+        "common/religious_schools/sufi.txt",
+        "common/religious_schools/sunni.txt"
+      ],
+      "associated_info": [
+        "common/religious_schools/_religious_schools.info"
+      ]
+    },
+    "folder:resolutions": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "ai_proposer_risk",
+        "ai_will_do",
+        "allow",
+        "can_vote",
+        "effect",
+        "international_organization_type",
+        "months",
+        "potential",
+        "proposal_price",
+        "propose_effect",
+        "reject_effect",
+        "select_trigger",
+        "votes"
+      ],
+      "usage_forms": {
+        "top_level_definition": 21
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/resolutions/00_excommunicate.txt",
+        "common/resolutions/apostolicae_servitutis.txt",
+        "common/resolutions/benedictus_deus.txt",
+        "common/resolutions/call_crusade.txt",
+        "common/resolutions/christiana_pietas.txt",
+        "common/resolutions/dei_gratia_rex.txt",
+        "common/resolutions/enact_policy.txt",
+        "common/resolutions/fall_of_delhi.txt",
+        "common/resolutions/high_kingship_election.txt",
+        "common/resolutions/hre_election.txt",
+        "common/resolutions/ilius_qui_se_pro_divini.txt",
+        "common/resolutions/immensa_aeterni_dei.txt",
+        "common/resolutions/in_coena_domini.txt",
+        "common/resolutions/inter_gravissimas.txt",
+        "common/resolutions/international_organization_election.txt",
+        "common/resolutions/libertas_ecclesiae.txt",
+        "common/resolutions/nanbokuchou_resolution.txt",
+        "common/resolutions/policy_vote.txt",
+        "common/resolutions/repeal_law.txt",
+        "common/resolutions/swiss_election.txt",
+        "common/resolutions/western_schism.txt"
+      ],
+      "associated_info": [
+        "common/resolutions/_resolutions.info"
+      ]
+    },
+    "folder:rival_criteria": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "enabled"
+      ],
+      "usage_forms": {
+        "top_level_definition": 4
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/rival_criteria/europe.txt"
+      ],
+      "associated_info": [
+        "common/rival_criteria/_rival_criteria.info"
+      ]
+    },
+    "folder:road_types": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "build_time_per_unit_distance",
+        "color",
+        "construction_demand",
+        "level",
+        "maintenance_demand",
+        "market_access",
+        "movement_cost",
+        "price_per_unit_distance",
+        "spline_style_id"
+      ],
+      "usage_forms": {
+        "top_level_definition": 4
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/road_types/00_generic.txt"
+      ],
+      "associated_info": [
+        "common/road_types/_road_types.info"
+      ]
+    },
+    "folder:script_values": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "if",
+        "value"
+      ],
+      "usage_forms": {
+        "top_level_definition": 188
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/script_values/_____debug_stuf.txt",
+        "common/script_values/best_capital_for_colony.txt",
+        "common/script_values/building_caps.txt",
+        "common/script_values/chinese_expedition.txt",
+        "common/script_values/define_values.txt",
+        "common/script_values/diplomatic_values.txt",
+        "common/script_values/eu4_conversions.txt",
+        "common/script_values/event_illustration_values.txt",
+        "common/script_values/garrison.txt",
+        "common/script_values/heir_selection.txt",
+        "common/script_values/hre_action_values.txt",
+        "common/script_values/institution_spread.txt",
+        "common/script_values/io_policy.txt",
+        "common/script_values/monthly_income.txt",
+        "common/script_values/parliament_request_support.txt",
+        "common/script_values/policy_voting_value.txt",
+        "common/script_values/research_values.txt",
+        "common/script_values/union_action_values.txt",
+        "common/script_values/unit_values.txt"
+      ],
+      "associated_info": [
+        "common/script_values/_script_values.info"
+      ]
+    },
+    "folder:scriptable_hints": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "hide",
+        "player_playstyle",
+        "priority",
+        "sort_priority"
+      ],
+      "usage_forms": {
+        "top_level_definition": 89
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/scriptable_hints/scripted_hints.txt"
+      ],
+      "associated_info": [
+        "common/scriptable_hints/_scriptable_hints.info"
+      ]
+    },
+    "folder:scripted_country_names": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "capital_trigger",
+        "country_trigger",
+        "location_trigger"
+      ],
+      "usage_forms": {
+        "top_level_definition": 12
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/scripted_country_names/00_default.txt"
+      ],
+      "associated_info": [
+        "common/scripted_country_names/_scripted_country_names.info"
+      ]
+    },
+    "folder:scripted_diplomatic_objectives": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "actor_trigger",
+        "cancel_trigger",
+        "country_interactions",
+        "country_relations",
+        "days_between_checks",
+        "improve_relation",
+        "max_allowed",
+        "pause_trigger",
+        "recipient_list_builder",
+        "recipient_priority",
+        "recipient_trigger"
+      ],
+      "usage_forms": {
+        "top_level_definition": 3
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/scripted_diplomatic_objectives/hre_emperorship.txt",
+        "common/scripted_diplomatic_objectives/japanese_clan_spying.txt"
+      ],
+      "associated_info": [
+        "common/scripted_diplomatic_objectives/_scripted_diplomatic_objectives.info"
+      ]
+    },
+    "folder:scripted_effects": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "if"
+      ],
+      "usage_forms": {
+        "top_level_definition": 440
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/scripted_effects/00_event_illustration_effects.txt",
+        "common/scripted_effects/___test_effects.txt",
+        "common/scripted_effects/character_effects.txt",
+        "common/scripted_effects/country_effects.txt",
+        "common/scripted_effects/country_gold_effects.txt",
+        "common/scripted_effects/global_effects.txt",
+        "common/scripted_effects/international_organization_effects.txt",
+        "common/scripted_effects/location_effects.txt",
+        "common/scripted_effects/on_action_effects.txt",
+        "common/scripted_effects/prisoner_effects.txt",
+        "common/scripted_effects/religious_effects.txt",
+        "common/scripted_effects/situation_effects.txt",
+        "common/scripted_effects/unit_effects.txt"
+      ],
+      "associated_info": [
+        "common/scripted_effects/_scripted_effects.info"
+      ]
+    },
+    "folder:scripted_geography": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "location"
+      ],
+      "usage_forms": {
+        "top_level_definition": 10
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/scripted_geography/00_event_scripted_geography.txt",
+        "common/scripted_geography/01_europe.txt"
+      ],
+      "associated_info": [
+        "common/scripted_geography/_scripted_geography.info"
+      ]
+    },
+    "folder:scripted_lists": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "base",
+        "conditions"
+      ],
+      "usage_forms": {
+        "top_level_definition": 8
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/scripted_lists/character_lists.txt",
+        "common/scripted_lists/country_lists.txt",
+        "common/scripted_lists/religion_lists.txt"
+      ],
+      "associated_info": [
+        "common/scripted_lists/_scripted_lists.info"
+      ]
+    },
+    "folder:scripted_relations": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "break_visible",
+        "category",
+        "diplomatic_cost_offer",
+        "institution_spread_to_second",
+        "offer_enabled",
+        "relation_type",
+        "relation_type_for_ai",
+        "request_visible",
+        "type",
+        "visible",
+        "will_expire_trigger"
+      ],
+      "usage_forms": {
+        "top_level_definition": 31
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/scripted_relations/agitate_for_liberty.txt",
+        "common/scripted_relations/alliance.txt",
+        "common/scripted_relations/anti_coalition_treaty.txt",
+        "common/scripted_relations/anti_piracy_agreement.txt",
+        "common/scripted_relations/block_foreign_buildings.txt",
+        "common/scripted_relations/corrupt_officials.txt",
+        "common/scripted_relations/deny_market_access.txt",
+        "common/scripted_relations/divert_trade.txt",
+        "common/scripted_relations/embargo_nation.txt",
+        "common/scripted_relations/exclusive_trade_rights_with_isolated.txt",
+        "common/scripted_relations/fleet_basing_rights.txt",
+        "common/scripted_relations/fondaco_rights.txt",
+        "common/scripted_relations/food_access.txt",
+        "common/scripted_relations/forced_divert_trade.txt",
+        "common/scripted_relations/grant_administrative_autonomy.txt",
+        "common/scripted_relations/guarantee.txt",
+        "common/scripted_relations/guarantee_vassal_independence.txt",
+        "common/scripted_relations/knowledge_sharing.txt",
+        "common/scripted_relations/military_access.txt",
+        "common/scripted_relations/military_sponsorship.txt",
+        "common/scripted_relations/rein_in_junior_diplomacy.txt",
+        "common/scripted_relations/scutage.txt",
+        "common/scripted_relations/send_officers.txt",
+        "common/scripted_relations/sound_toll_exemption.txt",
+        "common/scripted_relations/sow_discontent.txt",
+        "common/scripted_relations/support_heir.txt",
+        "common/scripted_relations/support_loyalists.txt",
+        "common/scripted_relations/support_military.txt",
+        "common/scripted_relations/trade_access.txt",
+        "common/scripted_relations/union_of_crowns_pact.txt",
+        "common/scripted_relations/wako_sponsorship.txt"
+      ],
+      "associated_info": [
+        "common/scripted_relations/_scripted_relations.info"
+      ]
+    },
+    "folder:scripted_triggers": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "gfx_culture_applicable"
+      ],
+      "usage_forms": {
+        "top_level_definition": 451
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/scripted_triggers/00_clothing_triggers.txt",
+        "common/scripted_triggers/00_event_illustration_triggers.txt",
+        "common/scripted_triggers/building_triggers.txt",
+        "common/scripted_triggers/cabinet_triggers.txt",
+        "common/scripted_triggers/character_triggers.txt",
+        "common/scripted_triggers/country_triggers.txt",
+        "common/scripted_triggers/culture_triggers.txt",
+        "common/scripted_triggers/disaster_triggers.txt",
+        "common/scripted_triggers/exploration_triggers.txt",
+        "common/scripted_triggers/game_triggers.txt",
+        "common/scripted_triggers/goods_triggers.txt",
+        "common/scripted_triggers/international_organization_triggers.txt",
+        "common/scripted_triggers/location_triggers.txt",
+        "common/scripted_triggers/pop_triggers.txt",
+        "common/scripted_triggers/province_triggers.txt",
+        "common/scripted_triggers/religion_triggers.txt",
+        "common/scripted_triggers/resolution_triggers.txt",
+        "common/scripted_triggers/situation_triggers.txt",
+        "common/scripted_triggers/unit_triggers.txt",
+        "common/scripted_triggers/war_triggers.txt",
+        "common/scripted_triggers/work_of_art_triggers.txt"
+      ],
+      "associated_info": [
+        "common/scripted_triggers/_scripted_triggers.info"
+      ]
+    },
+    "folder:setup": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "color",
+        "color2"
+      ],
+      "usage_forms": {
+        "top_level_definition": 2328
+      },
+      "observed_folders": [
+        "setup"
+      ],
+      "observed_files": [
+        "setup/countries/_default.txt",
+        "setup/countries/_scandinavia.txt",
+        "setup/countries/anatolia.txt",
+        "setup/countries/andes.txt",
+        "setup/countries/arabia.txt",
+        "setup/countries/aridoamerica.txt",
+        "setup/countries/balkans.txt",
+        "setup/countries/baltics.txt",
+        "setup/countries/bengal.txt",
+        "setup/countries/brasil.txt",
+        "setup/countries/british_isles.txt",
+        "setup/countries/canadian.txt",
+        "setup/countries/carpathia.txt",
+        "setup/countries/caucasus.txt",
+        "setup/countries/central_north_america.txt",
+        "setup/countries/centralamerica.txt",
+        "setup/countries/chaco.txt",
+        "setup/countries/colombia.txt",
+        "setup/countries/crescent.txt",
+        "setup/countries/east_africa.txt",
+        "setup/countries/east_asia.txt",
+        "setup/countries/eastcoast.txt",
+        "setup/countries/egypt.txt",
+        "setup/countries/france.txt",
+        "setup/countries/horn_of_africa.txt",
+        "setup/countries/iberia.txt",
+        "setup/countries/india.txt",
+        "setup/countries/indonesia.txt",
+        "setup/countries/italy.txt",
+        "setup/countries/kongo.txt",
+        "setup/countries/lowlands.txt",
+        "setup/countries/maghreb.txt"
+      ],
+      "associated_info": [
+        "setup/countries/_countries.info"
+      ]
+    },
+    "folder:situations": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "can_end",
+        "can_start",
+        "hint_tag",
+        "is_data_map",
+        "legend_key",
+        "map_color",
+        "monthly_spawn_chance",
+        "on_ended",
+        "on_monthly",
+        "on_start",
+        "tooltip",
+        "visible"
+      ],
+      "usage_forms": {
+        "top_level_definition": 22
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/situations/black_death.txt",
+        "common/situations/colonial_revolution.txt",
+        "common/situations/columbian_exchange.txt",
+        "common/situations/council_of_trent.txt",
+        "common/situations/fall_of_delhi.txt",
+        "common/situations/golden_age_of_piracy.txt",
+        "common/situations/great_pestilence.txt",
+        "common/situations/guelphs_and_ghibellines.txt",
+        "common/situations/hundred_years_war.txt",
+        "common/situations/hussite_wars.txt",
+        "common/situations/italian_wars.txt",
+        "common/situations/little_ice_age.txt",
+        "common/situations/nanbokuchou.txt",
+        "common/situations/red_turban_rebellions.txt",
+        "common/situations/reformation.txt",
+        "common/situations/rise_of_the_ottomans.txt",
+        "common/situations/rise_of_timur.txt",
+        "common/situations/sengoku.txt",
+        "common/situations/the_revolution.txt",
+        "common/situations/treaty_of_tordesillas.txt",
+        "common/situations/war_of_religions.txt",
+        "common/situations/western_schism.txt"
+      ],
+      "associated_info": [
+        "common/situations/_situations.info"
+      ]
+    },
+    "folder:societal_values": {
+      "containment_pattern": "two_level",
+      "attribute_names": [
+        "left_modifier",
+        "opinion_importance_multiplier",
+        "right_modifier"
+      ],
+      "usage_forms": {
+        "top_level_definition": 16
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/societal_values/00_default.txt"
+      ],
+      "associated_info": [
+        "common/societal_values/_societal_values.info"
+      ]
+    },
+    "folder:subject_military_stances": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "army_logistics_priority",
+        "blockade_port_priority",
+        "blockade_strait_priority",
+        "carpet_siege_enemy_locations_priority",
+        "carpet_siege_own_locations_attacking_priority",
+        "carpet_siege_own_locations_defending_priority",
+        "chase_navy_priority",
+        "chase_unit_enemy_location_priority",
+        "chase_unit_friendly_location_priority",
+        "chase_unit_neutral_location_priority",
+        "chase_unit_overlord_location_priority",
+        "chase_unit_own_location_priority",
+        "chase_unit_subject_location_priority",
+        "defend_ally_territory_priority",
+        "defend_own_territory_priority",
+        "hunt_army_priority",
+        "hunt_navy_priority",
+        "hunt_pirates_priority",
+        "is_default",
+        "maintain_military_levels_priority",
+        "merge_units_priority",
+        "navy_logistics_priority",
+        "repatriate_ships_priority",
+        "repatriate_troops_priority",
+        "support_armies_priority",
+        "suppress_rebel_priority"
+      ],
+      "usage_forms": {
+        "top_level_definition": 5
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/subject_military_stances/00_default.txt"
+      ],
+      "associated_info": [
+        "common/subject_military_stances/_subject_military_stances.info"
+      ]
+    },
+    "folder:subject_types": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "ai_wants_to_be_overlord",
+        "allow_declaring_wars",
+        "annexation_min_opinion",
+        "annexation_min_years_before",
+        "annexation_speed",
+        "annexation_stall_opinion",
+        "annullment_favours_required",
+        "can_attack",
+        "can_change_heir_selection",
+        "can_change_rank",
+        "can_overlord_build_buildings",
+        "can_overlord_build_rgos",
+        "can_overlord_build_roads",
+        "color",
+        "creation_visible",
+        "diplo_chance_accept_overlord",
+        "diplo_chance_accept_subject",
+        "diplomatic_capacity_cost_scale",
+        "enabled_through_diplomacy",
+        "food_access",
+        "great_power_score_transfer",
+        "has_limited_diplomacy",
+        "has_overlords_ruler",
+        "institution_spread_to_overlord",
+        "institution_spread_to_subject",
+        "join_defensive_wars_always",
+        "join_offensive_wars_always",
+        "level",
+        "minimum_opinion_for_offer",
+        "on_disable",
+        "on_enable",
+        "overlord_can_cancel",
+        "overlord_inherit_if_no_heir",
+        "overlord_modifier",
+        "release_country_enabled",
+        "strength_vs_overlord",
+        "subject_can_cancel",
+        "subject_creation_enabled",
+        "subject_modifier",
+        "subject_pays",
+        "visible_through_diplomacy",
+        "visible_through_treaty"
+      ],
+      "usage_forms": {
+        "top_level_definition": 19
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/subject_types/appanage.txt",
+        "common/subject_types/colonial_nation.txt",
+        "common/subject_types/conquistador.txt",
+        "common/subject_types/dominion.txt",
+        "common/subject_types/fiefdom.txt",
+        "common/subject_types/hanseatic_member.txt",
+        "common/subject_types/hre.txt",
+        "common/subject_types/march.txt",
+        "common/subject_types/samanta.txt",
+        "common/subject_types/secessionists.txt",
+        "common/subject_types/state_bank.txt",
+        "common/subject_types/trade_company.txt",
+        "common/subject_types/tributary.txt",
+        "common/subject_types/tusi.txt",
+        "common/subject_types/uc_bey.txt",
+        "common/subject_types/vassal.txt"
+      ],
+      "associated_info": [
+        "common/subject_types/_subject_types.info"
+      ]
+    },
+    "folder:tests": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "end_year",
+        "fail_on_end_year",
+        "success",
+        "year"
+      ],
+      "usage_forms": {
+        "top_level_definition": 37
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/tests/00_generic.txt",
+        "common/tests/age_of_discovery_tests.txt",
+        "common/tests/age_of_reformation_tests.txt",
+        "common/tests/age_of_rennaisance_tests.txt"
+      ],
+      "associated_info": [
+        "common/tests/_tests.info"
+      ]
+    },
+    "folder:topography": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "audio_tags",
+        "color",
+        "debug_color",
+        "movement_cost",
+        "vegetation_density",
+        "weather_cyclone_strength_change_percent",
+        "weather_front_strength_change_percent",
+        "weather_tornado_strength_change_percent"
+      ],
+      "usage_forms": {
+        "top_level_definition": 22
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/topography/00_default.txt"
+      ],
+      "associated_info": [
+        "common/topography/_topography.info"
+      ]
+    },
+    "folder:town_setups": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "brewery",
+        "marketplace",
+        "mason",
+        "pottery_guild",
+        "temple",
+        "tools_guild",
+        "weapon_guild"
+      ],
+      "usage_forms": {
+        "top_level_definition": 77
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/town_setups/00_default.txt"
+      ],
+      "associated_info": [
+        "common/town_setups/_town_setups.info"
+      ]
+    },
+    "folder:trait_flavor": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "color"
+      ],
+      "usage_forms": {
+        "top_level_definition": 4
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/trait_flavor/00_default.txt"
+      ],
+      "associated_info": [
+        "common/trait_flavor/_trait_flavor.info"
+      ]
+    },
+    "folder:traits": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "allow",
+        "category",
+        "flavor",
+        "modifier"
+      ],
+      "usage_forms": {
+        "top_level_definition": 111
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/traits/00_ruler.txt",
+        "common/traits/01_general.txt",
+        "common/traits/02_admiral.txt",
+        "common/traits/03_artist.txt",
+        "common/traits/04_explorer.txt",
+        "common/traits/05_child.txt",
+        "common/traits/06_religious_figure.txt"
+      ],
+      "associated_info": [
+        "common/traits/_traits.info"
+      ]
+    },
+    "folder:trigger_localization": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "global",
+        "none",
+        "third"
+      ],
+      "usage_forms": {
+        "top_level_definition": 1345
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/trigger_localization/area_triggers.txt",
+        "common/trigger_localization/building_triggers.txt",
+        "common/trigger_localization/cabinet_action_triggers.txt",
+        "common/trigger_localization/character_triggers.txt",
+        "common/trigger_localization/common_triggers.txt",
+        "common/trigger_localization/country_triggers.txt",
+        "common/trigger_localization/culture_triggers.txt",
+        "common/trigger_localization/disaster_triggers.txt",
+        "common/trigger_localization/disease_outbreak_triggers.txt",
+        "common/trigger_localization/dynasty_triggers.txt",
+        "common/trigger_localization/estate_triggers.txt",
+        "common/trigger_localization/exploration_triggers.txt",
+        "common/trigger_localization/goods_triggers.txt",
+        "common/trigger_localization/government_reform_triggers.txt",
+        "common/trigger_localization/institution_triggers.txt",
+        "common/trigger_localization/international_organization_triggers.txt",
+        "common/trigger_localization/language_triggers.txt",
+        "common/trigger_localization/loan_triggers.txt",
+        "common/trigger_localization/location_triggers.txt",
+        "common/trigger_localization/market_triggers.txt",
+        "common/trigger_localization/mercenary_triggers.txt",
+        "common/trigger_localization/parliament_triggers.txt",
+        "common/trigger_localization/peace_treaty_triggers.txt",
+        "common/trigger_localization/policy_triggers.txt",
+        "common/trigger_localization/pop_triggers.txt",
+        "common/trigger_localization/privateer_triggers.txt",
+        "common/trigger_localization/province_triggers.txt",
+        "common/trigger_localization/rebel_triggers.txt",
+        "common/trigger_localization/religion_triggers.txt",
+        "common/trigger_localization/scope_comparisons.txt",
+        "common/trigger_localization/scripted_lists.txt",
+        "common/trigger_localization/scripted_triggers.txt"
+      ],
+      "associated_info": [
+        "common/trigger_localization/_trigger_localization.info"
+      ]
+    },
+    "folder:tutorial_lesson_chains": {
+      "containment_pattern": "flat",
+      "usage_forms": {
+        "top_level_definition": 7
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/tutorial_lesson_chains/00_tutorial_lesson_chains.txt"
+      ],
+      "associated_info": [
+        "common/tutorial_lesson_chains/_tutorial_lesson_chains.info"
+      ]
+    },
+    "folder:tutorial_lessons": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "chain",
+        "delay",
+        "gui_tag",
+        "lesson_admin_21",
+        "lesson_admin_22",
+        "lesson_admin_25",
+        "lesson_admin_26",
+        "lesson_admin_27",
+        "lesson_admin_27b",
+        "lesson_admin_28",
+        "lesson_admin_29",
+        "lesson_economy_1",
+        "lesson_economy_2",
+        "lesson_economy_3",
+        "lesson_economy_4",
+        "lesson_economy_5",
+        "start_automatically"
+      ],
+      "usage_forms": {
+        "top_level_definition": 4
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/tutorial_lessons/00_tutorial_lesson_admin.txt",
+        "common/tutorial_lessons/00_tutorial_lesson_basics.txt",
+        "common/tutorial_lessons/00_tutorial_lesson_diplomacy.txt",
+        "common/tutorial_lessons/00_tutorial_lesson_military.txt"
+      ],
+      "associated_info": [
+        "common/tutorial_lessons/_tutorial_lessons.info"
+      ]
+    },
+    "folder:unit_abilities": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "allow",
+        "army_only",
+        "hidden",
+        "map",
+        "start_effect",
+        "toggle"
+      ],
+      "usage_forms": {
+        "top_level_definition": 16
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/unit_abilities/absorb_pops.txt",
+        "common/unit_abilities/convert_galley.txt",
+        "common/unit_abilities/drill_army.txt",
+        "common/unit_abilities/execute_prisoners.txt",
+        "common/unit_abilities/gather_food.txt",
+        "common/unit_abilities/hire_prisoners_as_mercenaries.txt",
+        "common/unit_abilities/hussite_tribunal.txt",
+        "common/unit_abilities/march_to_sound_of_guns.txt",
+        "common/unit_abilities/promote_to_farari.txt",
+        "common/unit_abilities/raid_clan_holdings.txt",
+        "common/unit_abilities/raid_imperial_family_holdings.txt",
+        "common/unit_abilities/ransom_prisoners.txt",
+        "common/unit_abilities/sacrifice_prisoners.txt",
+        "common/unit_abilities/scorch_earth.txt",
+        "common/unit_abilities/sell_prisoners_into_slavery.txt"
+      ],
+      "associated_info": [
+        "common/unit_abilities/_unit_abilities.info"
+      ]
+    },
+    "folder:unit_categories": {
+      "containment_pattern": "wrapper_keyed",
+      "attribute_names": [
+        "ai_weight",
+        "assault",
+        "build_time",
+        "combat_speed",
+        "construction_demand",
+        "damage_taken",
+        "flanking_ability",
+        "food_consumption_per_strength",
+        "food_storage_per_strength",
+        "frontage",
+        "initiative",
+        "is_army",
+        "is_garrison",
+        "maintenance_demand",
+        "max_strength",
+        "movement_speed",
+        "secure_flanks_defense",
+        "startup_amount",
+        "supply_weight"
+      ],
+      "usage_forms": {
+        "top_level_definition": 8
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/unit_categories/00_army_infantry.txt",
+        "common/unit_categories/01_army_cavalry.txt",
+        "common/unit_categories/03_army_artillery.txt",
+        "common/unit_categories/04_army_auxiliary.txt",
+        "common/unit_categories/10_navy_galley.txt",
+        "common/unit_categories/11_navy_light_ship.txt",
+        "common/unit_categories/13_navy_heavy_ship.txt",
+        "common/unit_categories/14_navy_transport.txt"
+      ],
+      "associated_info": [
+        "common/unit_categories/_unit_categories.info"
+      ]
+    },
+    "folder:unit_formation_preference": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "army",
+        "center",
+        "default",
+        "left",
+        "reserves",
+        "right"
+      ],
+      "usage_forms": {
+        "top_level_definition": 3
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/unit_formation_preference/army.txt",
+        "common/unit_formation_preference/navy.txt"
+      ],
+      "associated_info": [
+        "common/unit_formation_preference/_unit_formation_preference.info"
+      ]
+    },
+    "folder:unit_types": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "age",
+        "buildable",
+        "category",
+        "combat_power",
+        "construction_demand",
+        "maintenance_demand",
+        "max_strength"
+      ],
+      "usage_forms": {
+        "top_level_definition": 282
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/unit_types/00_age_templates_land.txt",
+        "common/unit_types/00_age_templates_navy.txt",
+        "common/unit_types/0_knights.txt",
+        "common/unit_types/0_tribal.txt",
+        "common/unit_types/1_uniques_for_age_1_traditions.txt",
+        "common/unit_types/1_uniques_for_age_2_renaissance.txt",
+        "common/unit_types/1_uniques_for_age_3_discovery.txt",
+        "common/unit_types/1_uniques_for_age_4_reformation.txt",
+        "common/unit_types/1_uniques_for_age_5_absolutism.txt",
+        "common/unit_types/1_uniques_for_age_6_revolutions.txt",
+        "common/unit_types/2_conquistador.txt",
+        "common/unit_types/2_unlocked_through_tech.txt",
+        "common/unit_types/3_cawa_regiments.txt",
+        "common/unit_types/3_elephant_units.txt",
+        "common/unit_types/3_janissaries.txt",
+        "common/unit_types/3_naval_uniques_for_age_1_traditions.txt",
+        "common/unit_types/3_naval_uniques_for_age_2_renaissance.txt",
+        "common/unit_types/3_naval_uniques_for_age_3_discovery.txt",
+        "common/unit_types/3_naval_uniques_for_age_4_reformation.txt",
+        "common/unit_types/3_naval_uniques_for_age_5_absolutism.txt",
+        "common/unit_types/3_naval_uniques_for_age_6_revolutions.txt",
+        "common/unit_types/3_qizilbash.txt",
+        "common/unit_types/a_bedouin_cavalry.txt",
+        "common/unit_types/a_nahuatl.txt",
+        "common/unit_types/navy_galley.txt",
+        "common/unit_types/navy_heavy_ship.txt",
+        "common/unit_types/navy_light_ship.txt",
+        "common/unit_types/navy_transport.txt"
+      ],
+      "associated_info": [
+        "common/unit_types/_unit_types.info"
+      ]
+    },
+    "folder:vegetation": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "audio_tags",
+        "colonial_migration_size_modifier",
+        "color",
+        "debug_color",
+        "has_sand",
+        "location_modifier",
+        "movement_cost",
+        "proximity"
+      ],
+      "usage_forms": {
+        "top_level_definition": 7
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/vegetation/00_default.txt"
+      ],
+      "associated_info": [
+        "common/vegetation/_vegetation.info"
+      ]
+    },
+    "folder:wargoals": {
+      "containment_pattern": "flat",
+      "attribute_names": [
+        "attacker",
+        "defender",
+        "type"
+      ],
+      "usage_forms": {
+        "top_level_definition": 62
+      },
+      "observed_folders": [
+        "common"
+      ],
+      "observed_files": [
+        "common/wargoals/00_default.txt"
+      ],
+      "associated_info": [
+        "common/wargoals/_wargoals.info"
+      ]
+    }
+  },
+  "diagnostics": [
+    {
+      "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis V\\game\\in_game\\content_source\\map_objects\\generators\\vegetation_generators.txt",
+      "message": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis V\\game\\in_game\\content_source\\map_objects\\generators\\vegetation_generators.txt:309:1: unexpected token \"@decal_density_base\" (expected (\u003clte\u003e | \u003cgte\u003e | \u003cneq\u003e | \u003cqeq\u003e | \u003ceqeq\u003e | \u003ceq\u003e | \u003clt\u003e | \u003cgt\u003e) \u003cws\u003e* \u003ccomment\u003e? \u003cws\u003e* (Literal | Object))"
+    },
+    {
+      "path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis V\\game\\in_game\\gfx\\terrain2\\decals\\decal_definitions.txt",
+      "message": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Europa Universalis V\\game\\in_game\\gfx\\terrain2\\decals\\decal_definitions.txt:1:1: unexpected token \"{\""
+    }
+  ]
+}

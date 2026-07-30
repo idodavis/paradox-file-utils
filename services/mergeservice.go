@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal"
-	parser "paradox-modding-tools/services/internal/interpreter"
+	parser "paradox-modding-tools/services/internal/parser"
 )
 
 const (
@@ -167,10 +167,16 @@ func (m *MergeService) GetMergeConflicts(ctx context.Context, fileAPath, fileBPa
 
 // ValidateMergedFiles runs the Paradox parser on each path and returns parse errors.
 func (m *MergeService) ValidateMergedFiles(paths []string) []ValidationError {
-	results := parser.ValidatePaths(paths)
-	errs := make([]ValidationError, len(results))
-	for i, r := range results {
-		errs[i] = ValidationError{Path: r.Path, Line: r.Line, Error: r.Error}
+	var errs []ValidationError
+	for _, p := range paths {
+		_, err := parser.ParseFile(p)
+		if err != nil {
+			line := 0
+			if pe, ok := err.(interface{ Line() int }); ok {
+				line = pe.Line()
+			}
+			errs = append(errs, ValidationError{Path: p, Line: line, Error: err.Error()})
+		}
 	}
 	return errs
 }

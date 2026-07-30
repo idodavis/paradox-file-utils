@@ -1,7 +1,7 @@
-package walk
+package ast
 
 import (
-	parser "paradox-modding-tools/services/internal/interpreter"
+	parser "paradox-modding-tools/services/internal/parser"
 )
 
 // Walk performs a depth-first traversal of the Paradox AST, calling the visitor at each node.
