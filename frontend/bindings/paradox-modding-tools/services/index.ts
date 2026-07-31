@@ -26,7 +26,7 @@ export {
     SteamService
 };
 
-export {
+export type {
     DocPathCache,
     FileCollectorFilter,
     FileMergeResult,

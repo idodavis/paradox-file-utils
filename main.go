@@ -2,12 +2,13 @@ package main
 
 import (
 	"embed"
-	_ "embed"
 	"log"
 
 	"paradox-modding-tools/services"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/updater"
+	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
 
 // Wails uses Go's `embed` package to embed the frontend files into the binary.
@@ -18,13 +19,13 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-func init() {
-}
+var version = "dev" // This will be replaced by the build process with the actual version number
 
 // main function serves as the application's entry point. It initializes the application, creates a window,
 // and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
 // logs any error that might occur.
 func main() {
+	// Main application initialization
 	dbSvc := &services.DbService{}
 	if err := dbSvc.ServiceStartup(); err != nil {
 		log.Fatalf("db startup: %v", err)
@@ -38,7 +39,7 @@ func main() {
 	fileSvc := &services.FileService{}
 	mergeSvc := &services.MergeService{FileService: fileSvc}
 	modDocSvc := &services.ModDocService{FileService: fileSvc, DB: dbSvc.DB}
-	settingsSvc := &services.SettingsService{DB: dbSvc.DB}
+	settingsSvc := &services.SettingsService{DB: dbSvc.DB, Version: version}
 	steamSvc := &services.SteamService{DB: dbSvc.DB}
 	invSvc := &services.InventoryService{DB: dbSvc.DB}
 
@@ -59,13 +60,26 @@ func main() {
 			application.NewService(mergeSvc),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
+			Handler: application.BundledAssetFileServer(assets),
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
 
+	// Initialize the GitHub updater provider with the specified repository.
+	// This allows the application to check for updates from the GitHub repository releases.
+	// Using SHA256SUMS sidecar for checksum verification of downloaded updates.
+	gh, err := github.New(github.Config{Repository: "idodavis/paradox-modding-tools", ChecksumAsset: "SHA256SUMS"})
+	if err != nil {
+		log.Fatalf("github.New: %v", err)
+	}
+
+	if err := app.Updater.Init(updater.Config{CurrentVersion: version, Providers: []updater.Provider{gh}}); err != nil {
+		log.Fatalf("updater.Init: %v", err)
+	}
+
+	// Main App Window
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Paradox Modding Tools",
 		Width:  1300,
@@ -75,14 +89,11 @@ func main() {
 			Backdrop:                application.MacBackdropTranslucent,
 			TitleBar:                application.MacTitleBarHiddenInset,
 		},
-		BackgroundColour: application.NewRGB(15, 20, 25),
-		URL:              "/",
+		URL: "/",
 	})
 
 	// Run the application. This blocks until the application has been exited.
-	err := app.Run()
-	// If an error occurred while running the application, log it and exit.
-	if err != nil {
-		log.Fatal(err)
+	if err := app.Run(); err != nil {
+		log.Fatalf("app.Run: %v", err)
 	}
 }

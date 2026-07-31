@@ -8,7 +8,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -17,52 +17,34 @@ import * as $models from "./models.js";
 /**
  * GenerateMergeReport builds a Markdown report from merge results.
  */
-export function GenerateMergeReport(results: $models.FileMergeResult[], totalAdded: number, totalChanged: number, totalRemoved: number, labelA: string, labelB: string): $CancellablePromise<string> {
+export function GenerateMergeReport(results: $models.FileMergeResult[] | null, totalAdded: number, totalChanged: number, totalRemoved: number, labelA: string, labelB: string): $CancellablePromise<string> {
     return $Call.ByID(1204015806, results, totalAdded, totalChanged, totalRemoved, labelA, labelB);
 }
 
 /**
  * GetMergeConflicts returns structured conflict chunks for the assisted merge editor.
  */
-export function GetMergeConflicts(fileAPath: string, fileBPath: string, options: $models.MergerOptions): $CancellablePromise<$models.MergeConflictChunk[]> {
-    return $Call.ByID(2239209270, fileAPath, fileBPath, options).then(($result: any) => {
-        return $$createType1($result);
-    });
+export function GetMergeConflicts(fileAPath: string, fileBPath: string, options: $models.MergerOptions): $CancellablePromise<$models.MergeConflictChunk[] | null> {
+    return $Call.ByID(2239209270, fileAPath, fileBPath, options);
 }
 
 /**
  * Merge performs the merge for each task (PreviewItem) and writes results. Single entry point for merge operations.
  */
-export function Merge(tasks: $models.PreviewItem[], opts: $models.MergerOptions): $CancellablePromise<$models.FileMergeResult[]> {
-    return $Call.ByID(2042205069, tasks, opts).then(($result: any) => {
-        return $$createType3($result);
-    });
+export function Merge(tasks: $models.PreviewItem[] | null, opts: $models.MergerOptions): $CancellablePromise<$models.FileMergeResult[] | null> {
+    return $Call.ByID(2042205069, tasks, opts);
 }
 
 /**
  * MergePreview collects matching files from pathA/pathB and returns preview items with output paths.
  */
-export function MergePreview(pathA: string, pathB: string, outputDir: string, opts: $models.MergerOptions): $CancellablePromise<$models.PreviewItem[]> {
-    return $Call.ByID(2633360575, pathA, pathB, outputDir, opts).then(($result: any) => {
-        return $$createType5($result);
-    });
+export function MergePreview(pathA: string, pathB: string, outputDir: string, opts: $models.MergerOptions): $CancellablePromise<$models.PreviewItem[] | null> {
+    return $Call.ByID(2633360575, pathA, pathB, outputDir, opts);
 }
 
 /**
  * ValidateMergedFiles runs the Paradox parser on each path and returns parse errors.
  */
-export function ValidateMergedFiles(paths: string[]): $CancellablePromise<$models.ValidationError[]> {
-    return $Call.ByID(31895744, paths).then(($result: any) => {
-        return $$createType7($result);
-    });
+export function ValidateMergedFiles(paths: string[] | null): $CancellablePromise<$models.ValidationError[] | null> {
+    return $Call.ByID(31895744, paths);
 }
-
-// Private type creation functions
-const $$createType0 = $models.MergeConflictChunk.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $models.FileMergeResult.createFrom;
-const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = $models.PreviewItem.createFrom;
-const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = $models.ValidationError.createFrom;
-const $$createType7 = $Create.Array($$createType6);

@@ -8,15 +8,15 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="paradox-modding-tools"
+        Path="paradox-modding-tools.exe"
         Arguments=""
-        InstallLocation="C:\Program Files\My Company\My Product">
+        InstallLocation="C:\Program Files\idavis.io\Paradox Modding Tools">
     </Installer>
     <PackageInformation
-        PackageName="My Product"
-        PackageDisplayName="My Product"
-        PublisherName="CN=My Company"
-        PublisherDisplayName="My Company"
+        PackageName="Paradox Modding Tools"
+        PackageDisplayName="Paradox Modding Tools"
+        PublisherName="CN=idavis.io"
+        PublisherDisplayName="idavis.io"
         Version="0.1.0.0"
         PackageDescription="A paradox-modding-tools application">
         <Capabilities>
@@ -25,10 +25,10 @@
         </Capabilities>
         <Applications>
             <Application
-                Id="com.example.paradoxmoddingtools"
+                Id="com.idodavis.paradoxmoddingtools"
                 Description="A paradox-modding-tools application"
-                DisplayName="My Product"
-                ExecutableName="paradox-modding-tools"
+                DisplayName="Paradox Modding Tools"
+                ExecutableName="paradox-modding-tools.exe"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -41,8 +41,8 @@
         </Dependencies>
         <Properties>
             <Framework>false</Framework>
-            <DisplayName>My Product</DisplayName>
-            <PublisherDisplayName>My Company</PublisherDisplayName>
+            <DisplayName>Paradox Modding Tools</DisplayName>
+            <PublisherDisplayName>idavis.io</PublisherDisplayName>
             <Description>A paradox-modding-tools application</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>

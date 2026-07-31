@@ -9,12 +9,12 @@
   import MergeTool from "@pages/MergeTool.svelte";
   import InventoryTool from "@pages/InventoryTool.svelte";
   import Settings from "@pages/Settings.svelte";
+  import { CheckForUpdates, GetVersion } from "@services/settingsservice";
   import { game, currentPage, gotoPage, loadSettings } from "@stores/app.svelte";
   import { LogError } from "@services/logservice";
   import { GetLatestPatchNotes } from "@services/steamservice";
   import { OpenURL } from "@services/browserservice";
   import type { LatestPatchNotes } from "@services/models";
-  import pkg from "../package.json";
 
   const backgroundImage = $derived($game === "EU5" ? eu5Bg : ck3Bg);
   let latestPatchNotes = $state<Record<string, LatestPatchNotes>>({});
@@ -36,13 +36,13 @@
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.toLowerCase().includes("cancel")) return;
       if (/\b(t\.with|monaco|minified|startLineNumber)\b/i.test(msg)) return;
-      const stack = err instanceof Error ? err.stack ?? "" : "";
+      const stack = err instanceof Error ? (err.stack ?? "") : "";
       logErr(msg, stack);
       e.preventDefault();
     };
     const handleError = (e: ErrorEvent) => {
       const msg = e.message ?? String(e);
-      logErr(msg, e.error instanceof Error ? e.error.stack ?? "" : "");
+      logErr(msg, e.error instanceof Error ? (e.error.stack ?? "") : "");
     };
     window.addEventListener("unhandledrejection", handleRejection);
     window.addEventListener("error", handleError);
@@ -210,6 +210,10 @@
   >
     <PMTLogo iconHeight={25} textHeight={30} />
     <PageHelp page={$currentPage} />
-    <span class="font-mono">v{pkg.version}</span>
+    {#await GetVersion() then version}
+      <span class="font-mono">{version}</span>
+    {:catch error}
+      <span class="font-mono">{error.message}</span>
+    {/await}
   </footer>
 </div>

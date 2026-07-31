@@ -5,10 +5,10 @@
 	"info": {
 		"0000": {
 			"ProductVersion": "0.1.0",
-			"CompanyName": "My Company",
+			"CompanyName": "idavis.io",
 			"FileDescription": "A paradox-modding-tools application",
-			"LegalCopyright": "© 2026, My Company",
-			"ProductName": "My Product",
+			"LegalCopyright": "© 2026, idavis.io",
+			"ProductName": "Paradox Modding Tools",
 			"Comments": "This is a comment"
 		}
 	}

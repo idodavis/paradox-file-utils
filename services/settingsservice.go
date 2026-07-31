@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"paradox-modding-tools/services/internal/repos"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // ############
@@ -16,8 +18,20 @@ import (
 
 // SettingsService provides persisted app settings.
 type SettingsService struct {
-	DB   *sqlx.DB
-	repo *repos.SettingsRepository
+	DB      *sqlx.DB
+	repo    *repos.SettingsRepository
+	Version string
+}
+
+func (s *SettingsService) GetVersion() string {
+	return s.Version
+}
+
+func (s *SettingsService) CheckForUpdates() {
+	app := application.Get()
+	if err := app.Updater.CheckAndInstall(context.Background()); err != nil {
+		app.Logger.Error("update", "error", err)
+	}
 }
 
 func (s *SettingsService) getRepo() *repos.SettingsRepository {

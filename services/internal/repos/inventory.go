@@ -91,17 +91,16 @@ func (r *InventoryRepository) SaveInventoryItems(inventoryId string, items []Inv
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	for b := 0; b < len(items); b += batchSize {
-		end := b + batchSize
-		if end > len(items) {
-			end = len(items)
-		}
+		end := min(b+batchSize, len(items))
 
 		batch := items[b:end]
 		valueStrings := make([]string, 0, len(batch))
-		valueArgs := make([]interface{}, 0, len(batch)*10)
+		valueArgs := make([]any, 0, len(batch)*10)
 
 		for _, it := range items[b:end] {
 			refsJSON, _ := json.Marshal(it.References)
@@ -109,7 +108,8 @@ func (r *InventoryRepository) SaveInventoryItems(inventoryId string, items []Inv
 			attrsJSON, _ := json.Marshal(it.Attributes)
 
 			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-			valueArgs = append(valueArgs,
+			valueArgs = append(
+				valueArgs,
 				inventoryId,
 				it.Key,
 				it.Type,
