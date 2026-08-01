@@ -1,11 +1,11 @@
-name: Build and Sign (Cross-Platform)
+name: Build and Release (Cross-Platform)
 
 on:
   push:
     tags: ["v*"]
 
 jobs:
-  build-and-sign:
+  build-and-release:
     runs-on: ubuntu-latest
     environment: Production
 
