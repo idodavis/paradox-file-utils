@@ -211,9 +211,24 @@
     <PMTLogo iconHeight={25} textHeight={30} />
     <PageHelp page={$currentPage} />
     {#await GetVersion() then version}
-      <span class="font-mono">{version}</span>
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs h-7 px-2 font-mono normal-case"
+        title="Check for updates"
+        onclick={() => void CheckForUpdates()}
+      >
+        <span>{version}</span>
+        <Icon icon="mdi:refresh" class="size-3.5 ml-1" />
+      </button>
     {:catch error}
-      <span class="font-mono">{error.message}</span>
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs h-7 px-2 font-mono normal-case"
+        title="Check for updates"
+        onclick={() => void CheckForUpdates()}
+      >
+        <span>{error.message}</span>
+      </button>
     {/await}
   </footer>
 </div>

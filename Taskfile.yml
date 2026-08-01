@@ -21,16 +21,31 @@ tasks:
     summary: Builds the application
     cmds:
       - task: "{{.GOOS}}:build"
+        vars:
+          VERSION: "{{.VERSION}}"
+          DEV: "{{.DEV}}"
+          EXTRA_TAGS: "{{.EXTRA_TAGS}}"
+          OBFUSCATED: "{{.OBFUSCATED}}"
+          GARBLE_ARGS: "{{.GARBLE_ARGS}}"
 
   package:
     summary: Packages a production build of the application
     cmds:
       - task: "{{.GOOS}}:package"
+        vars:
+          VERSION: "{{.VERSION}}"
+          FORMAT: "{{.FORMAT}}"
+          INSTALL_SCOPE: "{{.INSTALL_SCOPE}}"
+          CERT_PATH: "{{.CERT_PATH}}"
+          PUBLISHER: "{{.PUBLISHER}}"
+          USE_MSIX_TOOL: "{{.USE_MSIX_TOOL}}"
 
   run:
     summary: Runs the application
     cmds:
       - task: "{{.GOOS}}:run"
+        vars:
+          VERSION: "{{.VERSION}}"
 
   dev:
     summary: Runs the application in development mode
