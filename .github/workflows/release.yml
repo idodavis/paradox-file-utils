@@ -24,40 +24,31 @@ jobs:
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 
-      - name: Install Build Dependencies
+      - name: Build Windows amd64
         run: |
-          sudo apt-get update
-          sudo apt-get install -y nsis rpm
+          wails3 task windows:build VERSION="$RELEASE_VERSION" GOARCH=amd64
+          cp bin/paradox-modding-tools.exe bin/paradox-modding-tools-windows-x64.exe
 
-      # Import certificates
-      - name: Import Certificates
-        env:
-          PGP_KEY_BASE64: ${{ secrets.PGP_PRIVATE_KEY }}
+      - name: Build Windows arm64
         run: |
-          echo "$PGP_KEY_BASE64" | base64 -d > signing-key.asc
+          wails3 task windows:build VERSION="$RELEASE_VERSION" GOARCH=arm64
+          cp bin/paradox-modding-tools.exe bin/paradox-modding-tools-windows-arm64.exe
 
-      # Build and sign Windows
-      - name: Build and Sign Windows
+      - name: Build Linux amd64
         run: |
-          wails3 task windows:build VERSION="$RELEASE_VERSION"
+          wails3 task linux:build VERSION="$RELEASE_VERSION" GOARCH=amd64
+          cp bin/paradox-modding-tools bin/paradox-modding-tools-linux-amd64
 
-      # Build and sign Linux packages
-      - name: Build and Sign Linux Packages
-        env:
-          WAILS_PGP_PASSWORD: ${{ secrets.PGP_PASSWORD }}
+      - name: Build Linux arm64
         run: |
-          wails3 task linux:sign:packages PGP_KEY=signing-key.asc VERSION="$RELEASE_VERSION"
+          wails3 task linux:build VERSION="$RELEASE_VERSION" GOARCH=arm64
+          cp bin/paradox-modding-tools bin/paradox-modding-tools-linux-arm64
 
-      # Cleanup secrets
-      - name: Cleanup
-        if: always()
-        run: rm -f signing-key.asc
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: signed-linux-and-unsigned-windows-binaries
-          path: |
-            bin/*.exe
-            bin/*.deb
-            bin/*.rpm
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: bin/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
