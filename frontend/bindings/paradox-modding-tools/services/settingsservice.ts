@@ -8,11 +8,15 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
+
+export function CheckForUpdates(): $CancellablePromise<void> {
+    return $Call.ByID(2389207713);
+}
 
 /**
  * DeleteMergePreset removes a preset by name.
@@ -24,19 +28,19 @@ export function DeleteMergePreset(name: string): $CancellablePromise<void> {
 /**
  * GetMergePresets returns saved merge presets from app_settings.
  */
-export function GetMergePresets(): $CancellablePromise<$models.MergePreset[]> {
-    return $Call.ByID(3580251362).then(($result: any) => {
-        return $$createType1($result);
-    });
+export function GetMergePresets(): $CancellablePromise<$models.MergePreset[] | null> {
+    return $Call.ByID(3580251362);
 }
 
 /**
  * GetSettings loads settings as a map "game.key" -> value.
  */
-export function GetSettings(): $CancellablePromise<{ [_ in string]?: string }> {
-    return $Call.ByID(1419253203).then(($result: any) => {
-        return $$createType2($result);
-    });
+export function GetSettings(): $CancellablePromise<{ [_ in string]?: string } | null> {
+    return $Call.ByID(1419253203);
+}
+
+export function GetVersion(): $CancellablePromise<string> {
+    return $Call.ByID(2937747050);
 }
 
 /**
@@ -49,11 +53,6 @@ export function SaveMergePreset(name: string, options: $models.MergerOptions): $
 /**
  * SaveSettings writes user settings to app_settings table.
  */
-export function SaveSettings(settings: { [_ in string]?: string }): $CancellablePromise<void> {
+export function SaveSettings(settings: { [_ in string]?: string } | null): $CancellablePromise<void> {
     return $Call.ByID(3145424170, settings);
 }
-
-// Private type creation functions
-const $$createType0 = $models.MergePreset.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $Create.Map($Create.Any, $Create.Any);

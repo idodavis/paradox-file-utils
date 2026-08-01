@@ -8,7 +8,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -19,10 +19,5 @@ import * as $models from "./models.js";
  * Uses patchnotes table; fetches from API if stale or missing. Description is a short preview.
  */
 export function GetLatestPatchNotes(game: string): $CancellablePromise<$models.LatestPatchNotes> {
-    return $Call.ByID(3933143665, game).then(($result: any) => {
-        return $$createType0($result);
-    });
+    return $Call.ByID(3933143665, game);
 }
-
-// Private type creation functions
-const $$createType0 = $models.LatestPatchNotes.createFrom;

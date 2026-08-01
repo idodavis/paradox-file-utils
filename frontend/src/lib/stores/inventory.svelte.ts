@@ -1,7 +1,7 @@
 import { getContext, setContext } from "svelte";
 import { game } from "@stores/app.svelte";
 import { get } from "svelte/store";
-import { InventorySummary, InventoryItemRow } from "@services/models";
+import type { InventorySummary, InventoryItemRow } from "@services/models";
 import {
   GetSupportedTypes,
   ListInventoriesForGame,

@@ -8,7 +8,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -17,39 +17,31 @@ import * as $models from "./models.js";
 /**
  * BuildTree builds a file tree from a list of paths
  */
-export function BuildTree(paths: string[]): $CancellablePromise<$models.TreeNode[]> {
-    return $Call.ByID(4120140263, paths).then(($result: any) => {
-        return $$createType1($result);
-    });
+export function BuildTree(paths: string[] | null): $CancellablePromise<$models.TreeNode[] | null> {
+    return $Call.ByID(4120140263, paths);
 }
 
 /**
  * CollectAndMatchPaths collects files from both paths and returns matching pairs.
  */
-export function CollectAndMatchPaths(pathA: string, pathB: string, filter: $models.FileCollectorFilter, matchByFilenameOnly: boolean): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
-    return $Call.ByID(1380774949, pathA, pathB, filter, matchByFilenameOnly).then(($result: any) => {
-        return $$createType3($result);
-    });
+export function CollectAndMatchPaths(pathA: string, pathB: string, filter: $models.FileCollectorFilter, matchByFilenameOnly: boolean): $CancellablePromise<{ [_ in string]?: $models.PathMatch } | null> {
+    return $Call.ByID(1380774949, pathA, pathB, filter, matchByFilenameOnly);
 }
 
 /**
  * CollectFilesFromPath collects all .txt files from a mix of files and directories
  * Returns a map of relativePath -> fullPath
  */
-export function CollectFilesFromPath(inputPath: string, filter: $models.FileCollectorFilter): $CancellablePromise<{ [_ in string]?: string }> {
-    return $Call.ByID(2863705307, inputPath, filter).then(($result: any) => {
-        return $$createType4($result);
-    });
+export function CollectFilesFromPath(inputPath: string, filter: $models.FileCollectorFilter): $CancellablePromise<{ [_ in string]?: string } | null> {
+    return $Call.ByID(2863705307, inputPath, filter);
 }
 
 /**
  * FindMatchingPaths finds paths that exist in both sets. When matchByFilenameOnly is true,
  * matches only by filename (e.g. for zz_mod_file.txt where paths differ).
  */
-export function FindMatchingPaths(filesA: { [_ in string]?: string }, filesB: { [_ in string]?: string }, matchByFilenameOnly: boolean): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
-    return $Call.ByID(2990739391, filesA, filesB, matchByFilenameOnly).then(($result: any) => {
-        return $$createType3($result);
-    });
+export function FindMatchingPaths(filesA: { [_ in string]?: string } | null, filesB: { [_ in string]?: string } | null, matchByFilenameOnly: boolean): $CancellablePromise<{ [_ in string]?: $models.PathMatch } | null> {
+    return $Call.ByID(2990739391, filesA, filesB, matchByFilenameOnly);
 }
 
 export function GetGameScriptRoot(game: string, installPath: string): $CancellablePromise<string> {
@@ -88,10 +80,3 @@ export function SelectSingleFile(title: string, filter: string): $CancellablePro
 export function WriteWithBOM(outputPath: string, content: string): $CancellablePromise<void> {
     return $Call.ByID(239287030, outputPath, content);
 }
-
-// Private type creation functions
-const $$createType0 = $models.TreeNode.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $models.PathMatch.createFrom;
-const $$createType3 = $Create.Map($Create.Any, $$createType2);
-const $$createType4 = $Create.Map($Create.Any, $Create.Any);

@@ -1,31 +1,51 @@
 version: "3"
 
+vars:
+  APP_NAME: "paradox-modding-tools"
+  BIN_DIR: "bin"
+  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
+  VITE_PORT: "{{.WAILS_VITE_PORT | default 9245}}"
+  # Target OS for build/package/run. Defaults to the host OS, and is overridden
+  # by `wails3 build GOOS=...` (or the GOOS env var) for cross-compilation. The
+  # tasks below dispatch to the matching platform Taskfile via this variable.
+  GOOS: "{{.GOOS | default OS}}"
+
 includes:
   common: ./build/Taskfile.yml
   windows: ./build/windows/Taskfile.yml
   darwin: ./build/darwin/Taskfile.yml
   linux: ./build/linux/Taskfile.yml
 
-vars:
-  APP_NAME: "paradox-modding-tools"
-  BIN_DIR: "bin"
-  VITE_PORT: "{{.WAILS_VITE_PORT | default 9245}}"
-
 tasks:
   build:
     summary: Builds the application
     cmds:
-      - task: "{{OS}}:build"
+      - task: "{{.GOOS}}:build"
+        vars:
+          VERSION: "{{.VERSION}}"
+          DEV: "{{.DEV}}"
+          EXTRA_TAGS: "{{.EXTRA_TAGS}}"
+          OBFUSCATED: "{{.OBFUSCATED}}"
+          GARBLE_ARGS: "{{.GARBLE_ARGS}}"
 
   package:
     summary: Packages a production build of the application
     cmds:
-      - task: "{{OS}}:package"
+      - task: "{{.GOOS}}:package"
+        vars:
+          VERSION: "{{.VERSION}}"
+          FORMAT: "{{.FORMAT}}"
+          INSTALL_SCOPE: "{{.INSTALL_SCOPE}}"
+          CERT_PATH: "{{.CERT_PATH}}"
+          PUBLISHER: "{{.PUBLISHER}}"
+          USE_MSIX_TOOL: "{{.USE_MSIX_TOOL}}"
 
   run:
     summary: Runs the application
     cmds:
-      - task: "{{OS}}:run"
+      - task: "{{.GOOS}}:run"
+        vars:
+          VERSION: "{{.VERSION}}"
 
   dev:
     summary: Runs the application in development mode

@@ -3,24 +3,16 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
-export function DirectoryCompare(setAPath: string, setBPath: string): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
-    return $Call.ByID(3511042450, setAPath, setBPath).then(($result: any) => {
-        return $$createType1($result);
-    });
+export function DirectoryCompare(setAPath: string, setBPath: string): $CancellablePromise<{ [_ in string]?: $models.PathMatch } | null> {
+    return $Call.ByID(3511042450, setAPath, setBPath);
 }
 
-export function VanillaCompare(game: string, vanillaInstallPath: string, modPath: string): $CancellablePromise<{ [_ in string]?: $models.PathMatch }> {
-    return $Call.ByID(311089558, game, vanillaInstallPath, modPath).then(($result: any) => {
-        return $$createType1($result);
-    });
+export function VanillaCompare(game: string, vanillaInstallPath: string, modPath: string): $CancellablePromise<{ [_ in string]?: $models.PathMatch } | null> {
+    return $Call.ByID(311089558, game, vanillaInstallPath, modPath);
 }
-
-// Private type creation functions
-const $$createType0 = $models.PathMatch.createFrom;
-const $$createType1 = $Create.Map($Create.Any, $$createType0);
