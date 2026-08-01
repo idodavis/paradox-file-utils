@@ -21,6 +21,11 @@ jobs:
         with:
           go-version: "1.26"
 
+      - name: Setup Wails Linux Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt install build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 
