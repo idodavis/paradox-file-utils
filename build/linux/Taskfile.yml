@@ -26,6 +26,7 @@ tasks:
         vars:
           ARCH: "{{.ARCH}}"
           DEV: "{{.DEV}}"
+          FRONTEND_MODE: "{{.FRONTEND_MODE}}"
           OUTPUT: "{{.OUTPUT}}"
           EXTRA_TAGS: "{{.EXTRA_TAGS}}"
           OBFUSCATED: "{{.OBFUSCATED}}"
@@ -52,6 +53,8 @@ tasks:
             ref: .OBFUSCATED
           DEV:
             ref: .DEV
+          FRONTEND_MODE:
+            ref: .FRONTEND_MODE
       - task: common:generate:icons
       - task: generate:dotdesktop
     preconditions:
@@ -76,6 +79,8 @@ tasks:
         vars:
           OBFUSCATED:
             ref: .OBFUSCATED
+          FRONTEND_MODE:
+            ref: .FRONTEND_MODE
       - task: common:generate:icons
       - task: generate:dotdesktop
     preconditions:

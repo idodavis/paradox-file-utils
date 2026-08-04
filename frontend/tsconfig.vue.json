@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "jsx": "preserve",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@services/*": ["./bindings/paradox-modding-tools/services/*"],
+      "@assets/*": ["./src/assets/*"]
+    }
+  },
+  "include": [
+    "src-vue/**/*.ts",
+    "src-vue/**/*.vue",
+    "bindings/**/*.ts",
+    "src/vite-env.d.ts",
+    "auto-imports.d.ts",
+    "components.d.ts"
+  ]
+}

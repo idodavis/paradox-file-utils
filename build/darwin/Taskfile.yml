@@ -37,6 +37,8 @@ tasks:
             ref: .OBFUSCATED
           DEV:
             ref: .DEV
+          FRONTEND_MODE:
+            ref: .FRONTEND_MODE
       - task: common:generate:icons
     preconditions:
       - sh: '{{if eq .OBFUSCATED "true"}}command -v garble >/dev/null 2>&1{{else}}true{{end}}'
@@ -63,6 +65,8 @@ tasks:
         vars:
           OBFUSCATED:
             ref: .OBFUSCATED
+          FRONTEND_MODE:
+            ref: .FRONTEND_MODE
       - task: common:generate:icons
     preconditions:
       - sh: docker info > /dev/null 2>&1

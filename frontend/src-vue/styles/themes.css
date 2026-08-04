@@ -1,0 +1,396 @@
+/*
+ * Runtime Nuxt UI theme bridge for the Vue frontend.
+ * Preserves the existing named color schemes without importing DaisyUI in Vue mode.
+ */
+
+@theme static {
+  --color-base-100: var(--pmt-base-100);
+  --color-base-200: var(--pmt-base-200);
+  --color-base-300: var(--pmt-base-300);
+  --color-base-content: var(--pmt-base-content);
+  --color-primary: var(--pmt-primary);
+  --color-primary-content: var(--pmt-primary-content);
+  --color-secondary: var(--pmt-secondary);
+  --color-secondary-content: var(--pmt-secondary-content);
+  --color-accent: var(--pmt-accent);
+  --color-accent-content: var(--pmt-accent-content);
+  --color-neutral: var(--pmt-neutral);
+  --color-neutral-content: var(--pmt-neutral-content);
+  --color-info: var(--pmt-info);
+  --color-info-content: var(--pmt-info-content);
+  --color-success: var(--pmt-success);
+  --color-success-content: var(--pmt-success-content);
+  --color-warning: var(--pmt-warning);
+  --color-warning-content: var(--pmt-warning-content);
+  --color-error: var(--pmt-error);
+  --color-error-content: var(--pmt-error-content);
+  --color-dark-input: var(--pmt-editor-bg);
+}
+
+:root,
+:root[data-theme="PMT"] {
+  color-scheme: dark;
+  --pmt-base-100: hsl(223 22% 13%);
+  --pmt-base-200: hsl(224 22% 10%);
+  --pmt-base-300: hsl(222 26% 7%);
+  --pmt-base-content: oklch(77.4% 0.043 245.152);
+  --pmt-primary: oklch(82% 0.136 87.9);
+  --pmt-primary-content: oklch(14.94% 0.031 39.947);
+  --pmt-secondary: oklch(77.4% 0.136 167.3);
+  --pmt-secondary-content: oklch(14.507% 0.035 2.72);
+  --pmt-accent: oklch(71.294% 0.166 299.844);
+  --pmt-accent-content: oklch(14.258% 0.033 299.844);
+  --pmt-neutral: hsl(222 26% 7%);
+  --pmt-neutral-content: oklch(98% 0.001 106.423);
+  --pmt-info: oklch(85.559% 0.085 206.015);
+  --pmt-info-content: oklch(17.111% 0.017 206.015);
+  --pmt-success: oklch(85.6% 0.128 144.778);
+  --pmt-success-content: oklch(17.112% 0.017 144.778);
+  --pmt-warning: oklch(88.8% 0.113 104);
+  --pmt-warning-content: oklch(17.113% 0.016 74.427);
+  --pmt-error: oklch(79% 0.235 28.4);
+  --pmt-error-content: oklch(17.102% 0.015 16.886);
+  --pmt-radius: 0.5rem;
+}
+
+:root[data-theme="retro"] {
+  color-scheme: light;
+  --pmt-base-100: oklch(91.637% 0.034 90.515);
+  --pmt-base-200: oklch(88.272% 0.049 91.774);
+  --pmt-base-300: oklch(84.133% 0.065 90.856);
+  --pmt-base-content: oklch(41% 0.112 45.904);
+  --pmt-primary: oklch(80% 0.114 19.571);
+  --pmt-primary-content: oklch(39% 0.141 25.723);
+  --pmt-secondary: oklch(92% 0.084 155.995);
+  --pmt-secondary-content: oklch(44% 0.119 151.328);
+  --pmt-accent: oklch(68% 0.162 75.834);
+  --pmt-accent-content: oklch(41% 0.112 45.904);
+  --pmt-neutral: oklch(44% 0.011 73.639);
+  --pmt-neutral-content: oklch(86% 0.005 56.366);
+  --pmt-info: oklch(58% 0.158 241.966);
+  --pmt-info-content: oklch(96% 0.059 95.617);
+  --pmt-success: oklch(51% 0.096 186.391);
+  --pmt-success-content: oklch(96% 0.059 95.617);
+  --pmt-warning: oklch(64% 0.222 41.116);
+  --pmt-warning-content: oklch(96% 0.059 95.617);
+  --pmt-error: oklch(70% 0.191 22.216);
+  --pmt-error-content: oklch(40% 0.123 38.172);
+  --pmt-radius: 0.5rem;
+}
+
+:root[data-theme="pastel"] {
+  color-scheme: light;
+  --pmt-base-100: oklch(100% 0 0);
+  --pmt-base-200: oklch(98.462% 0.001 247.838);
+  --pmt-base-300: oklch(92.462% 0.001 247.838);
+  --pmt-base-content: oklch(20% 0 0);
+  --pmt-primary: oklch(90% 0.063 306.703);
+  --pmt-primary-content: oklch(49% 0.265 301.924);
+  --pmt-secondary: oklch(89% 0.058 10.001);
+  --pmt-secondary-content: oklch(51% 0.222 16.935);
+  --pmt-accent: oklch(90% 0.093 164.15);
+  --pmt-accent-content: oklch(50% 0.118 165.612);
+  --pmt-neutral: oklch(55% 0.046 257.417);
+  --pmt-neutral-content: oklch(92% 0.013 255.508);
+  --pmt-info: oklch(86% 0.127 207.078);
+  --pmt-info-content: oklch(52% 0.105 223.128);
+  --pmt-success: oklch(87% 0.15 154.449);
+  --pmt-success-content: oklch(52% 0.154 150.069);
+  --pmt-warning: oklch(83% 0.128 66.29);
+  --pmt-warning-content: oklch(55% 0.195 38.402);
+  --pmt-error: oklch(80% 0.114 19.571);
+  --pmt-error-content: oklch(50% 0.213 27.518);
+  --pmt-radius: 1rem;
+}
+
+:root[data-theme="dracula"] {
+  color-scheme: dark;
+  --pmt-base-100: oklch(28.822% 0.022 277.508);
+  --pmt-base-200: oklch(26.805% 0.02 277.508);
+  --pmt-base-300: oklch(24.787% 0.019 277.508);
+  --pmt-base-content: oklch(97.747% 0.007 106.545);
+  --pmt-primary: oklch(75.461% 0.183 346.812);
+  --pmt-primary-content: oklch(15.092% 0.036 346.812);
+  --pmt-secondary: oklch(74.202% 0.148 301.883);
+  --pmt-secondary-content: oklch(14.84% 0.029 301.883);
+  --pmt-accent: oklch(83.392% 0.124 66.558);
+  --pmt-accent-content: oklch(16.678% 0.024 66.558);
+  --pmt-neutral: oklch(39.445% 0.032 275.524);
+  --pmt-neutral-content: oklch(87.889% 0.006 275.524);
+  --pmt-info: oklch(88.263% 0.093 212.846);
+  --pmt-info-content: oklch(17.652% 0.018 212.846);
+  --pmt-success: oklch(87.099% 0.219 148.024);
+  --pmt-success-content: oklch(17.419% 0.043 148.024);
+  --pmt-warning: oklch(95.533% 0.134 112.757);
+  --pmt-warning-content: oklch(19.106% 0.026 112.757);
+  --pmt-error: oklch(68.22% 0.206 24.43);
+  --pmt-error-content: oklch(13.644% 0.041 24.43);
+  --pmt-radius: 1rem;
+}
+
+:root[data-theme="luxury"] {
+  color-scheme: dark;
+  --pmt-base-100: oklch(14.076% 0.004 285.822);
+  --pmt-base-200: oklch(20.219% 0.004 308.229);
+  --pmt-base-300: oklch(23.219% 0.004 308.229);
+  --pmt-base-content: oklch(75.687% 0.123 76.89);
+  --pmt-primary: oklch(100% 0 0);
+  --pmt-primary-content: oklch(20% 0 0);
+  --pmt-secondary: oklch(27.581% 0.064 261.069);
+  --pmt-secondary-content: oklch(85.516% 0.012 261.069);
+  --pmt-accent: oklch(36.674% 0.051 338.825);
+  --pmt-accent-content: oklch(87.334% 0.01 338.825);
+  --pmt-neutral: oklch(24.27% 0.057 59.825);
+  --pmt-neutral-content: oklch(93.203% 0.089 90.861);
+  --pmt-info: oklch(79.061% 0.121 237.133);
+  --pmt-info-content: oklch(15.812% 0.024 237.133);
+  --pmt-success: oklch(78.119% 0.192 132.154);
+  --pmt-success-content: oklch(15.623% 0.038 132.154);
+  --pmt-warning: oklch(86.127% 0.136 102.891);
+  --pmt-warning-content: oklch(17.225% 0.027 102.891);
+  --pmt-error: oklch(71.753% 0.176 22.568);
+  --pmt-error-content: oklch(14.35% 0.035 22.568);
+  --pmt-radius: 1rem;
+}
+
+:root[data-theme="autumn"] {
+  color-scheme: light;
+  --pmt-base-100: oklch(95.814% 0 0);
+  --pmt-base-200: oklch(89.107% 0 0);
+  --pmt-base-300: oklch(82.4% 0 0);
+  --pmt-base-content: oklch(19.162% 0 0);
+  --pmt-primary: oklch(40.723% 0.161 17.53);
+  --pmt-primary-content: oklch(88.144% 0.032 17.53);
+  --pmt-secondary: oklch(61.676% 0.169 23.865);
+  --pmt-secondary-content: oklch(12.335% 0.033 23.865);
+  --pmt-accent: oklch(73.425% 0.094 60.729);
+  --pmt-accent-content: oklch(14.685% 0.018 60.729);
+  --pmt-neutral: oklch(54.367% 0.037 51.902);
+  --pmt-neutral-content: oklch(90.873% 0.007 51.902);
+  --pmt-info: oklch(69.224% 0.097 207.284);
+  --pmt-info-content: oklch(13.844% 0.019 207.284);
+  --pmt-success: oklch(60.995% 0.08 174.616);
+  --pmt-success-content: oklch(12.199% 0.016 174.616);
+  --pmt-warning: oklch(70.081% 0.164 56.844);
+  --pmt-warning-content: oklch(14.016% 0.032 56.844);
+  --pmt-error: oklch(53.07% 0.241 24.16);
+  --pmt-error-content: oklch(90.614% 0.048 24.16);
+  --pmt-radius: 1rem;
+}
+
+:root[data-theme="business"] {
+  color-scheme: dark;
+  --pmt-base-100: oklch(24.353% 0 0);
+  --pmt-base-200: oklch(22.648% 0 0);
+  --pmt-base-300: oklch(20.944% 0 0);
+  --pmt-base-content: oklch(84.87% 0 0);
+  --pmt-primary: oklch(41.703% 0.099 251.473);
+  --pmt-primary-content: oklch(88.34% 0.019 251.473);
+  --pmt-secondary: oklch(64.092% 0.027 229.389);
+  --pmt-secondary-content: oklch(12.818% 0.005 229.389);
+  --pmt-accent: oklch(67.271% 0.167 35.791);
+  --pmt-accent-content: oklch(13.454% 0.033 35.791);
+  --pmt-neutral: oklch(27.441% 0.013 253.041);
+  --pmt-neutral-content: oklch(85.488% 0.002 253.041);
+  --pmt-info: oklch(62.616% 0.143 240.033);
+  --pmt-info-content: oklch(12.523% 0.028 240.033);
+  --pmt-success: oklch(70.226% 0.094 156.596);
+  --pmt-success-content: oklch(14.045% 0.018 156.596);
+  --pmt-warning: oklch(77.482% 0.115 81.519);
+  --pmt-warning-content: oklch(15.496% 0.023 81.519);
+  --pmt-error: oklch(51.61% 0.146 29.674);
+  --pmt-error-content: oklch(90.322% 0.029 29.674);
+  --pmt-radius: 0.25rem;
+}
+
+:root[data-theme="coffee"] {
+  color-scheme: dark;
+  --pmt-base-100: oklch(24% 0.023 329.708);
+  --pmt-base-200: oklch(21% 0.021 329.708);
+  --pmt-base-300: oklch(16% 0.019 329.708);
+  --pmt-base-content: oklch(72.354% 0.092 79.129);
+  --pmt-primary: oklch(71.996% 0.123 62.756);
+  --pmt-primary-content: oklch(14.399% 0.024 62.756);
+  --pmt-secondary: oklch(34.465% 0.029 199.194);
+  --pmt-secondary-content: oklch(86.893% 0.005 199.194);
+  --pmt-accent: oklch(42.621% 0.074 224.389);
+  --pmt-accent-content: oklch(88.524% 0.014 224.389);
+  --pmt-neutral: oklch(16.51% 0.015 326.261);
+  --pmt-neutral-content: oklch(83.302% 0.003 326.261);
+  --pmt-info: oklch(79.49% 0.063 184.558);
+  --pmt-info-content: oklch(15.898% 0.012 184.558);
+  --pmt-success: oklch(74.722% 0.072 131.116);
+  --pmt-success-content: oklch(14.944% 0.014 131.116);
+  --pmt-warning: oklch(88.15% 0.14 87.722);
+  --pmt-warning-content: oklch(17.63% 0.028 87.722);
+  --pmt-error: oklch(77.318% 0.128 31.871);
+  --pmt-error-content: oklch(15.463% 0.025 31.871);
+  --pmt-radius: 1rem;
+}
+
+:root[data-theme="dim"] {
+  color-scheme: dark;
+  --pmt-base-100: oklch(30.857% 0.023 264.149);
+  --pmt-base-200: oklch(28.036% 0.019 264.182);
+  --pmt-base-300: oklch(26.346% 0.018 262.177);
+  --pmt-base-content: oklch(82.901% 0.031 222.959);
+  --pmt-primary: oklch(86.133% 0.141 139.549);
+  --pmt-primary-content: oklch(17.226% 0.028 139.549);
+  --pmt-secondary: oklch(73.375% 0.165 35.353);
+  --pmt-secondary-content: oklch(14.675% 0.033 35.353);
+  --pmt-accent: oklch(74.229% 0.133 311.379);
+  --pmt-accent-content: oklch(14.845% 0.026 311.379);
+  --pmt-neutral: oklch(24.731% 0.02 264.094);
+  --pmt-neutral-content: oklch(82.901% 0.031 222.959);
+  --pmt-info: oklch(86.078% 0.142 206.182);
+  --pmt-info-content: oklch(17.215% 0.028 206.182);
+  --pmt-success: oklch(86.171% 0.142 166.534);
+  --pmt-success-content: oklch(17.234% 0.028 166.534);
+  --pmt-warning: oklch(86.163% 0.142 94.818);
+  --pmt-warning-content: oklch(17.232% 0.028 94.818);
+  --pmt-error: oklch(82.418% 0.099 33.756);
+  --pmt-error-content: oklch(16.483% 0.019 33.756);
+  --pmt-radius: 1rem;
+}
+
+:root,
+:root[data-theme] {
+  --pmt-editor-bg: color-mix(in oklab, var(--pmt-base-200) 78%, var(--pmt-base-300) 22%);
+  --ui-radius: var(--pmt-radius);
+  --ui-primary: var(--pmt-primary);
+  --ui-secondary: var(--pmt-secondary);
+  --ui-success: var(--pmt-success);
+  --ui-info: var(--pmt-info);
+  --ui-warning: var(--pmt-warning);
+  --ui-error: var(--pmt-error);
+  --ui-bg: var(--pmt-base-100);
+  --ui-bg-muted: var(--pmt-base-200);
+  --ui-bg-elevated: color-mix(in oklab, var(--pmt-base-100) 35%, var(--pmt-base-200) 65%);
+  --ui-bg-accented: var(--pmt-base-300);
+  --ui-bg-inverted: var(--pmt-base-content);
+  --ui-text-dimmed: color-mix(in oklab, var(--pmt-base-content) 45%, transparent);
+  --ui-text-muted: color-mix(in oklab, var(--pmt-base-content) 60%, transparent);
+  --ui-text-toned: color-mix(in oklab, var(--pmt-base-content) 78%, transparent);
+  --ui-text: var(--pmt-base-content);
+  --ui-text-highlighted: var(--pmt-base-content);
+  --ui-text-inverted: var(--pmt-base-100);
+  --ui-border: color-mix(in oklab, var(--pmt-base-content) 16%, transparent);
+  --ui-border-muted: color-mix(in oklab, var(--pmt-base-content) 12%, transparent);
+  --ui-border-accented: color-mix(in oklab, var(--pmt-base-content) 24%, transparent);
+  --ui-border-inverted: var(--pmt-base-content);
+}
+
+:root,
+:root[data-theme] {
+  --ui-color-primary-50: color-mix(in oklab, white 92%, var(--pmt-primary));
+  --ui-color-primary-100: color-mix(in oklab, white 84%, var(--pmt-primary));
+  --ui-color-primary-200: color-mix(in oklab, white 72%, var(--pmt-primary));
+  --ui-color-primary-300: color-mix(in oklab, white 58%, var(--pmt-primary));
+  --ui-color-primary-400: color-mix(in oklab, white 40%, var(--pmt-primary));
+  --ui-color-primary-500: var(--pmt-primary);
+  --ui-color-primary-600: color-mix(in oklab, black 12%, var(--pmt-primary));
+  --ui-color-primary-700: color-mix(in oklab, black 24%, var(--pmt-primary));
+  --ui-color-primary-800: color-mix(in oklab, black 36%, var(--pmt-primary));
+  --ui-color-primary-900: color-mix(in oklab, black 52%, var(--pmt-primary));
+  --ui-color-primary-950: color-mix(in oklab, black 70%, var(--pmt-primary));
+  --ui-color-secondary-50: color-mix(in oklab, white 92%, var(--pmt-secondary));
+  --ui-color-secondary-100: color-mix(in oklab, white 84%, var(--pmt-secondary));
+  --ui-color-secondary-200: color-mix(in oklab, white 72%, var(--pmt-secondary));
+  --ui-color-secondary-300: color-mix(in oklab, white 58%, var(--pmt-secondary));
+  --ui-color-secondary-400: color-mix(in oklab, white 40%, var(--pmt-secondary));
+  --ui-color-secondary-500: var(--pmt-secondary);
+  --ui-color-secondary-600: color-mix(in oklab, black 12%, var(--pmt-secondary));
+  --ui-color-secondary-700: color-mix(in oklab, black 24%, var(--pmt-secondary));
+  --ui-color-secondary-800: color-mix(in oklab, black 36%, var(--pmt-secondary));
+  --ui-color-secondary-900: color-mix(in oklab, black 52%, var(--pmt-secondary));
+  --ui-color-secondary-950: color-mix(in oklab, black 70%, var(--pmt-secondary));
+  --ui-color-info-50: color-mix(in oklab, white 92%, var(--pmt-info));
+  --ui-color-info-100: color-mix(in oklab, white 84%, var(--pmt-info));
+  --ui-color-info-200: color-mix(in oklab, white 72%, var(--pmt-info));
+  --ui-color-info-300: color-mix(in oklab, white 58%, var(--pmt-info));
+  --ui-color-info-400: color-mix(in oklab, white 40%, var(--pmt-info));
+  --ui-color-info-500: var(--pmt-info);
+  --ui-color-info-600: color-mix(in oklab, black 12%, var(--pmt-info));
+  --ui-color-info-700: color-mix(in oklab, black 24%, var(--pmt-info));
+  --ui-color-info-800: color-mix(in oklab, black 36%, var(--pmt-info));
+  --ui-color-info-900: color-mix(in oklab, black 52%, var(--pmt-info));
+  --ui-color-info-950: color-mix(in oklab, black 70%, var(--pmt-info));
+  --ui-color-success-50: color-mix(in oklab, white 92%, var(--pmt-success));
+  --ui-color-success-100: color-mix(in oklab, white 84%, var(--pmt-success));
+  --ui-color-success-200: color-mix(in oklab, white 72%, var(--pmt-success));
+  --ui-color-success-300: color-mix(in oklab, white 58%, var(--pmt-success));
+  --ui-color-success-400: color-mix(in oklab, white 40%, var(--pmt-success));
+  --ui-color-success-500: var(--pmt-success);
+  --ui-color-success-600: color-mix(in oklab, black 12%, var(--pmt-success));
+  --ui-color-success-700: color-mix(in oklab, black 24%, var(--pmt-success));
+  --ui-color-success-800: color-mix(in oklab, black 36%, var(--pmt-success));
+  --ui-color-success-900: color-mix(in oklab, black 52%, var(--pmt-success));
+  --ui-color-success-950: color-mix(in oklab, black 70%, var(--pmt-success));
+  --ui-color-warning-50: color-mix(in oklab, white 92%, var(--pmt-warning));
+  --ui-color-warning-100: color-mix(in oklab, white 84%, var(--pmt-warning));
+  --ui-color-warning-200: color-mix(in oklab, white 72%, var(--pmt-warning));
+  --ui-color-warning-300: color-mix(in oklab, white 58%, var(--pmt-warning));
+  --ui-color-warning-400: color-mix(in oklab, white 40%, var(--pmt-warning));
+  --ui-color-warning-500: var(--pmt-warning);
+  --ui-color-warning-600: color-mix(in oklab, black 12%, var(--pmt-warning));
+  --ui-color-warning-700: color-mix(in oklab, black 24%, var(--pmt-warning));
+  --ui-color-warning-800: color-mix(in oklab, black 36%, var(--pmt-warning));
+  --ui-color-warning-900: color-mix(in oklab, black 52%, var(--pmt-warning));
+  --ui-color-warning-950: color-mix(in oklab, black 70%, var(--pmt-warning));
+  --ui-color-error-50: color-mix(in oklab, white 92%, var(--pmt-error));
+  --ui-color-error-100: color-mix(in oklab, white 84%, var(--pmt-error));
+  --ui-color-error-200: color-mix(in oklab, white 72%, var(--pmt-error));
+  --ui-color-error-300: color-mix(in oklab, white 58%, var(--pmt-error));
+  --ui-color-error-400: color-mix(in oklab, white 40%, var(--pmt-error));
+  --ui-color-error-500: var(--pmt-error);
+  --ui-color-error-600: color-mix(in oklab, black 12%, var(--pmt-error));
+  --ui-color-error-700: color-mix(in oklab, black 24%, var(--pmt-error));
+  --ui-color-error-800: color-mix(in oklab, black 36%, var(--pmt-error));
+  --ui-color-error-900: color-mix(in oklab, black 52%, var(--pmt-error));
+  --ui-color-error-950: color-mix(in oklab, black 70%, var(--pmt-error));
+}
+
+:root:not(.dark) {
+  --ui-color-neutral-50: var(--pmt-base-100);
+  --ui-color-neutral-100: var(--pmt-base-200);
+  --ui-color-neutral-200: var(--pmt-base-300);
+  --ui-color-neutral-300: color-mix(in oklab, var(--pmt-base-content) 15%, var(--pmt-base-100));
+  --ui-color-neutral-400: color-mix(in oklab, var(--pmt-base-content) 28%, var(--pmt-base-100));
+  --ui-color-neutral-500: color-mix(in oklab, var(--pmt-base-content) 42%, var(--pmt-base-100));
+  --ui-color-neutral-600: color-mix(in oklab, var(--pmt-base-content) 56%, var(--pmt-base-100));
+  --ui-color-neutral-700: color-mix(in oklab, var(--pmt-base-content) 70%, var(--pmt-base-100));
+  --ui-color-neutral-800: color-mix(in oklab, var(--pmt-base-content) 82%, var(--pmt-base-100));
+  --ui-color-neutral-900: color-mix(in oklab, var(--pmt-base-content) 92%, var(--pmt-base-100));
+  --ui-color-neutral-950: color-mix(in oklab, black 14%, var(--pmt-base-content));
+}
+
+:root.dark {
+  --ui-color-neutral-50: color-mix(in oklab, white 8%, var(--pmt-base-content));
+  --ui-color-neutral-100: color-mix(in oklab, var(--pmt-base-content) 94%, var(--pmt-base-100));
+  --ui-color-neutral-200: color-mix(in oklab, var(--pmt-base-content) 86%, var(--pmt-base-100));
+  --ui-color-neutral-300: color-mix(in oklab, var(--pmt-base-content) 76%, var(--pmt-base-100));
+  --ui-color-neutral-400: color-mix(in oklab, var(--pmt-base-content) 64%, var(--pmt-base-100));
+  --ui-color-neutral-500: color-mix(in oklab, var(--pmt-base-content) 52%, var(--pmt-base-100));
+  --ui-color-neutral-600: color-mix(in oklab, var(--pmt-base-content) 40%, var(--pmt-base-100));
+  --ui-color-neutral-700: color-mix(in oklab, var(--pmt-base-content) 28%, var(--pmt-base-100));
+  --ui-color-neutral-800: var(--pmt-base-300);
+  --ui-color-neutral-900: var(--pmt-base-200);
+  --ui-color-neutral-950: var(--pmt-base-100);
+}
+
+@layer base {
+  html,
+  body,
+  #app {
+    min-height: 100%;
+  }
+
+  body {
+    @apply bg-default text-default antialiased;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
