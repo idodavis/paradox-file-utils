@@ -2,7 +2,7 @@
 
 # Paradox Modding Tools
 
-Cross-platform desktop utilities for **Paradox Interactive** game modders. The app is built with **[Wails v3](https://v3.wails.io/)** (**Go** backend, **Svelte** frontend). **Crusader Kings III** and **Europa Universalis V (Partial)** are supported today; the direction is to grow coverage and workflows across Paradox titles, not only CK3.
+Cross-platform desktop utilities for **Paradox Interactive** game modders. The app is built with **[Wails v3](https://v3.wails.io/)** (**Go** backend, **Vue** frontend). **Crusader Kings III** and **Europa Universalis V (Partial)** are supported today; the direction is to grow coverage and workflows across Paradox titles, not only CK3.
 
 ## Download / Use The Tool! (testing)
 
@@ -23,7 +23,7 @@ A **Go** parser (Participle-based) parses typical Paradox `.txt` script for comp
 ## Prerequisites (from source)
 
 - **[Go](https://go.dev/dl/)** (see `go.mod` for the required version)
-- **[Node.js](https://nodejs.org/)** and **npm** (for the Svelte frontend)
+- **[Node.js](https://nodejs.org/)** and **npm** (for the Vue frontend)
 - **[Task](https://taskfile.dev/installation/)** (Taskfile v3)
 - **[Wails v3 CLI](https://v3.wails.io/)** (`wails3`), aligned with the `github.com/wailsapp/wails/v3` version in `go.mod`
 
@@ -82,7 +82,7 @@ Uses the platform’s configured format (e.g. NSIS on Windows). You need the ext
 |------|------|
 | `main.go` | Wails app entry, services, embedded `frontend/dist` |
 | `services/` | Go services exposed to the UI |
-| `frontend/` | Svelte + Vite UI |
+| `frontend/` | Vue + Vite UI |
 | `build/` | Wails build config, icons, platform Taskfiles |
 
 ---

@@ -1,13 +1,18 @@
-import { mount } from "svelte";
-import '../style.css';
-import App from './App.svelte';
-import appIcon from '@assets/PMT-SquareIcon-Mint.png?url';
+/**
+ * Vue app bootstrap.
+ * Registers Nuxt UI and mounts the app.
+ */
+import { createApp } from "vue";
+import ui from "@nuxt/ui/vue-plugin";
+import "./styles/nuxt-ui.css";
+import App from "./App.vue";
+import { createPinia } from "pinia";
+import router from "./router";
 
-const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-if (link) link.href = appIcon;
+const app = createApp(App);
 
-const app = mount(App, {
-  target: document.getElementById('app')!,
-})
+app.use(createPinia());
+app.use(router);
+app.use(ui);
 
-export default app
+app.mount("#app");

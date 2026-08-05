@@ -24,19 +24,6 @@ tasks:
         vars:
           VERSION: "{{.VERSION}}"
           DEV: "{{.DEV}}"
-          FRONTEND_MODE: "{{.FRONTEND_MODE}}"
-          EXTRA_TAGS: "{{.EXTRA_TAGS}}"
-          OBFUSCATED: "{{.OBFUSCATED}}"
-          GARBLE_ARGS: "{{.GARBLE_ARGS}}"
-
-  build:vue:
-    summary: Builds the application with the Vue frontend
-    cmds:
-      - task: "{{.GOOS}}:build"
-        vars:
-          VERSION: "{{.VERSION}}"
-          DEV: "{{.DEV | default true}}"
-          FRONTEND_MODE: "vue"
           EXTRA_TAGS: "{{.EXTRA_TAGS}}"
           OBFUSCATED: "{{.OBFUSCATED}}"
           GARBLE_ARGS: "{{.GARBLE_ARGS}}"

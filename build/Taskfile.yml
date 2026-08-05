@@ -95,7 +95,7 @@ tasks:
     cmds:
       - task: frontend:run
         vars:
-          SCRIPT: '{{if eq .FRONTEND_MODE "vue"}}build:vue{{else if eq .DEV "true"}}build:dev{{else}}build{{end}}'
+          SCRIPT: '{{if eq .DEV "true"}}build:dev{{else}}build{{end}}'
     env:
       PRODUCTION: '{{if eq .DEV "true"}}false{{else}}true{{end}}'
 
