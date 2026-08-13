@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "dev": "vite",
     "build:dev": "vite build --minify false --mode development",
@@ -30,5 +31,9 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vite": "^8.2.1",
     "vue-tsc": "^3.3.9"
+  },
+  "allowScripts": {
+    "vue-demi@0.14.10": true,
+    "esbuild@0.27.7": true
   }
 }

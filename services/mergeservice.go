@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal"
-	parser "paradox-modding-tools/services/internal/interpreter"
+	parser "paradox-modding-tools/services/internal/parser"
 )
 
 const (

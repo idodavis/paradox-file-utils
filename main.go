@@ -1,3 +1,4 @@
+// Package main is the entry point for the Paradox Modding Tools application.
 package main
 
 import (
@@ -11,21 +12,12 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
 
-// Wails uses Go's `embed` package to embed the frontend files into the binary.
-// Any files in the frontend/dist folder will be embedded into the binary and
-// made available to the frontend.
-// See https://pkg.go.dev/embed for more information.
-
 //go:embed all:frontend/dist
 var assets embed.FS
 
-var version = "dev" // This will be replaced by the build process with the actual version number
+var version = "dev"
 
-// main function serves as the application's entry point. It initializes the application, creates a window,
-// and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
-// logs any error that might occur.
 func main() {
-	// Main application initialization
 	dbSvc := &services.DbService{}
 	if err := dbSvc.ServiceStartup(); err != nil {
 		log.Fatalf("db startup: %v", err)
@@ -38,26 +30,36 @@ func main() {
 
 	fileSvc := &services.FileService{}
 	mergeSvc := &services.MergeService{FileService: fileSvc}
-	modDocSvc := &services.ModDocService{FileService: fileSvc, DB: dbSvc.DB}
 	settingsSvc := &services.SettingsService{DB: dbSvc.DB, Version: version}
-	steamSvc := &services.SteamService{DB: dbSvc.DB}
-	invSvc := &services.InventoryService{DB: dbSvc.DB}
+	workspaceSvc := &services.WorkspaceService{DB: dbSvc.DB}
+	wikiSvc := &services.WikiService{DB: dbSvc.DB}
+	patcherSvc := &services.PatcherService{DB: dbSvc.DB, FileService: fileSvc, MergeService: mergeSvc}
+	indexerSvc := &services.IndexerService{DB: dbSvc.DB}
+	scriptLogSvc := &services.ScriptLogService{DB: dbSvc.DB}
+	locSvc := &services.LocService{DB: dbSvc.DB}
+	semanticsSvc := &services.SemanticsService{DB: dbSvc.DB}
+	guiSvc := &services.GuiService{}
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
-		Description: "A demo of using raw HTML & CSS",
+		Description: "Desktop tools for Paradox Interactive game modding",
 		Services: []application.Service{
 			application.NewService(logSvc),
 			application.NewService(dbSvc),
 			application.NewService(fileSvc),
 			application.NewService(&services.BrowserService{}),
 			application.NewService(&services.CompareService{}),
-			application.NewService(modDocSvc),
 			application.NewService(settingsSvc),
-			application.NewService(steamSvc),
 			application.NewService(&services.ClipboardService{}),
-			application.NewService(invSvc),
 			application.NewService(mergeSvc),
+			application.NewService(workspaceSvc),
+			application.NewService(wikiSvc),
+			application.NewService(patcherSvc),
+			application.NewService(indexerSvc),
+			application.NewService(scriptLogSvc),
+			application.NewService(locSvc),
+			application.NewService(semanticsSvc),
+			application.NewService(guiSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),

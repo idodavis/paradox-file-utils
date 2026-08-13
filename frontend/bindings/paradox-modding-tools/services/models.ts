@@ -6,12 +6,32 @@
 import * as repos$0 from "./internal/repos/models.js";
 
 /**
- * DocPathCache is the cached doc path list for a game+install path (JSON-safe for bindings).
+ * AutoLocResult describes where auto-loc wrote stub keys.
  */
-export interface DocPathCache {
-    "paths": string[] | null;
-    "scannedAt": string;
-    "installPath": string;
+export interface AutoLocResult {
+    "count": number;
+    "path": string;
+    "preview": string;
+}
+
+/**
+ * CascadeNode represents a node in cascade simulation results.
+ */
+export interface CascadeNode {
+    "key": string;
+    "depth": number;
+    "edgeType"?: string;
+    "children"?: string[] | null;
+}
+
+/**
+ * DirEntry is one immediate child of a directory (for lazy file trees).
+ */
+export interface DirEntry {
+    "name": string;
+    "relPath": string;
+    "fullPath": string;
+    "isDir": boolean;
 }
 
 export interface FileCollectorFilter {
@@ -57,19 +77,37 @@ export interface FileMergeResult {
     "error"?: string;
 }
 
-export type InventoryItemRow = repos$0.InventoryItemRow;
-
-export type InventorySummary = repos$0.InventorySummary;
-
-export type ItemDetails = repos$0.ItemDetails;
+/**
+ * GuiNode is a simplified widget node for structural preview.
+ */
+export interface GuiNode {
+    "kind": string;
+    "name"?: string;
+    "props"?: { [_ in string]?: string } | null;
+    "children"?: GuiNode[] | null;
+    "width"?: number;
+    "height"?: number;
+    "text"?: string;
+}
 
 /**
- * LatestPatchNotes is the latest patch notes entry for a game (JSON-safe for bindings).
+ * GuiPreview is the parse result for a .gui file.
  */
-export interface LatestPatchNotes {
-    "url": string;
-    "title": string;
-    "contents": string;
+export interface GuiPreview {
+    "path": string;
+    "roots": GuiNode[] | null;
+    "error"?: string;
+}
+
+/**
+ * LocDiagnostic is one missing localization finding.
+ */
+export interface LocDiagnostic {
+    "key": string;
+    "language": string;
+    "filePath": string;
+    "line": number;
+    "source": string;
 }
 
 /**
@@ -96,6 +134,26 @@ export interface MergerOptions {
      */
     "outputFileSuffix": string;
     "outputDir": string;
+}
+
+/**
+ * PatchRunPreview is the result of previewing a patch run.
+ */
+export interface PatchRunPreview {
+    "runId": string;
+    "files": repos$0.PatchRunFile[] | null;
+    "totalFiles": number;
+    "safeCount": number;
+    "reviewCount": number;
+    "skippedCount": number;
+}
+
+/**
+ * PatchVersion is a lightweight version entry from the version index.
+ */
+export interface PatchVersion {
+    "version": string;
+    "url": string;
 }
 
 /**
@@ -132,6 +190,17 @@ export interface ResolvedConflict {
      * "directive", "keyList", "default"
      */
     "reason": string;
+}
+
+/**
+ * SemanticsStatus reports whether a cached semantic model exists for an install.
+ */
+export interface SemanticsStatus {
+    "present": boolean;
+    "installId": string;
+    "gameId"?: string;
+    "scannedAt"?: string;
+    "path"?: string;
 }
 
 export interface TreeNode {

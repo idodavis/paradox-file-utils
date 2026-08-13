@@ -80,6 +80,18 @@ func (f *FileService) ReadFileContent(fullPath string) (string, error) {
 	return string(data), nil
 }
 
+// WriteFileContent writes UTF-8 text to an existing path (no dialog).
+func (f *FileService) WriteFileContent(fullPath, content string) error {
+	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
+	if fullPath == "" || fullPath == "." {
+		return fmt.Errorf("path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		return fmt.Errorf("create parent dir: %w", err)
+	}
+	return os.WriteFile(fullPath, []byte(content), 0o644)
+}
+
 func (f *FileService) SaveFile(title, defaultName, content, ext string) (string, error) {
 	app := application.Get()
 	dialog := app.Dialog.SaveFile()
@@ -300,6 +312,58 @@ type TreeNode struct {
 	RelPath  string     `json:"relPath"`
 	Name     string     `json:"name"`
 	Children []TreeNode `json:"children"`
+}
+
+// DirEntry is one immediate child of a directory (for lazy file trees).
+type DirEntry struct {
+	Name     string `json:"name"`
+	RelPath  string `json:"relPath"`
+	FullPath string `json:"fullPath"`
+	IsDir    bool   `json:"isDir"`
+}
+
+// ListDirectory lists immediate children of dirPath (non-recursive).
+// Files are limited to common Paradox script/loc/gui extensions.
+func (f *FileService) ListDirectory(dirPath string) ([]DirEntry, error) {
+	dirPath = filepath.Clean(filepath.FromSlash(dirPath))
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("list directory: %w", err)
+	}
+	allowed := map[string]bool{
+		".txt": true, ".yml": true, ".yaml": true, ".json": true,
+		".gui": true, ".info": true, ".mod": true,
+	}
+	out := make([]DirEntry, 0, len(entries))
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		full := filepath.Join(dirPath, name)
+		if e.IsDir() {
+			out = append(out, DirEntry{
+				Name: name, RelPath: name, FullPath: full, IsDir: true,
+			})
+			continue
+		}
+		if !allowed[strings.ToLower(filepath.Ext(name))] {
+			continue
+		}
+		out = append(out, DirEntry{
+			Name: name, RelPath: name, FullPath: full, IsDir: false,
+		})
+	}
+	slices.SortFunc(out, func(a, b DirEntry) int {
+		if a.IsDir != b.IsDir {
+			if a.IsDir {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+	return out, nil
 }
 
 // BuildTree builds a file tree from a list of paths

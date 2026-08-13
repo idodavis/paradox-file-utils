@@ -1,0 +1,1189 @@
+{
+  "scriptRoot": "game/in_game",
+  "guiRoots": [
+    "game/in_game/gui",
+    "game/main_menu/gui"
+  ],
+  "locRoots": [
+    "game/main_menu/localization",
+    "game/in_game/localization",
+    "game/loading_screen/localization"
+  ],
+  "documentsFolder": "Europa Universalis V",
+  "scriptDocsRel": "docs",
+  "commonDirs": [
+    "common/advances",
+    "common/age",
+    "common/ai_diplochance",
+    "common/ai_personalities",
+    "common/ai_scripted_expansion_score",
+    "common/ai_scripted_expansion_target",
+    "common/alert_descriptions",
+    "common/area_preferences",
+    "common/artist_types",
+    "common/artist_work",
+    "common/attribute_columns",
+    "common/auto_modifiers",
+    "common/avatars",
+    "common/biases",
+    "common/building_categories",
+    "common/building_types",
+    "common/bureaucracies",
+    "common/cabinet_actions",
+    "common/casus_belli",
+    "common/character_interactions",
+    "common/child_educations",
+    "common/chivalric_orders",
+    "common/climates",
+    "common/country_description_categories",
+    "common/country_interactions",
+    "common/country_ranks",
+    "common/culture_groups",
+    "common/cultures",
+    "common/customizable_localization",
+    "common/death_reason",
+    "common/designated_heir_reason",
+    "common/diplomatic_costs",
+    "common/disasters",
+    "common/diseases",
+    "common/effect_localization",
+    "common/employment_systems",
+    "common/estate_privileges",
+    "common/estates",
+    "common/ethnicities",
+    "common/formable_countries",
+    "common/generic_action_ai_lists",
+    "common/generic_actions",
+    "common/genes",
+    "common/gods",
+    "common/goods",
+    "common/goods_demand",
+    "common/goods_demand_category",
+    "common/government_reforms",
+    "common/government_types",
+    "common/hegemons",
+    "common/heir_selections",
+    "common/historical_scores",
+    "common/holy_site_types",
+    "common/holy_sites",
+    "common/institution",
+    "common/insults",
+    "common/international_organization_land_ownership_rules",
+    "common/international_organization_payments",
+    "common/international_organization_special_statuses",
+    "common/international_organizations",
+    "common/join_war_rules",
+    "common/language_families",
+    "common/languages",
+    "common/laws",
+    "common/levies",
+    "common/location_ranks",
+    "common/mission_task_defs",
+    "common/missions",
+    "common/movements",
+    "common/music_player_tracks",
+    "common/on_action",
+    "common/parliament_agendas",
+    "common/parliament_issues",
+    "common/parliament_types",
+    "common/peace_treaties",
+    "common/persistent_dna",
+    "common/policies",
+    "common/pop_types",
+    "common/prices",
+    "common/production_methods",
+    "common/rebel_demands",
+    "common/recruitment_method",
+    "common/regencies",
+    "common/religion_groups",
+    "common/religions",
+    "common/religious_aspects",
+    "common/religious_factions",
+    "common/religious_figures",
+    "common/religious_focuses",
+    "common/religious_schools",
+    "common/resolutions",
+    "common/rival_criteria",
+    "common/road_types",
+    "common/script_values",
+    "common/scriptable_hints",
+    "common/scripted_country_names",
+    "common/scripted_diplomatic_objectives",
+    "common/scripted_effects",
+    "common/scripted_geography",
+    "common/scripted_guis",
+    "common/scripted_lists",
+    "common/scripted_modifiers",
+    "common/scripted_relations",
+    "common/scripted_rules",
+    "common/scripted_triggers",
+    "common/situations",
+    "common/societal_values",
+    "common/subject_military_stances",
+    "common/subject_types",
+    "common/tests",
+    "common/topography",
+    "common/town_rights",
+    "common/town_setups",
+    "common/trait_flavor",
+    "common/traits",
+    "common/trigger_localization",
+    "common/tutorial_lesson_chains",
+    "common/tutorial_lessons",
+    "common/unit_abilities",
+    "common/unit_categories",
+    "common/unit_formation_preference",
+    "common/unit_types",
+    "common/vegetation",
+    "common/wargoals",
+    "events"
+  ],
+  "locAttrSeed": [
+    "title",
+    "desc",
+    "description",
+    "name",
+    "text",
+    "tooltip",
+    "flavor",
+    "summary",
+    "alert_text"
+  ],
+  "infoHints": [
+    "game/in_game/common/ai_diplochance/ai_diplochance.info",
+    "game/in_game/common/cultures/00_cultures.info",
+    "game/in_game/common/culture_groups/00_culture_groups.info",
+    "game/in_game/common/customizable_localization/customizable_localization.info",
+    "game/in_game/common/genes/_genes.info",
+    "game/in_game/common/heir_selections/00_heir_selections.info",
+    "game/in_game/common/mission_task_defs/missin_task_defs.info",
+    "game/in_game/common/music_player_tracks/music_player_tracks.info",
+    "game/in_game/common/on_action/on_actions.info",
+    "game/in_game/common/policies/policies.info",
+    "game/in_game/common/scripted_geography/scripted_geography.info",
+    "game/in_game/common/scripted_guis/scripted_guis.info",
+    "game/in_game/common/scripted_modifiers/scripted_modifiers.info",
+    "game/in_game/common/scripted_rules/scripted_rules.info",
+    "game/in_game/common/script_values/_script_values.info",
+    "game/in_game/common/traits/_traits.info",
+    "game/in_game/common/trigger_localization/_trigger_localization.info",
+    "game/in_game/common/tutorial_lessons/_tutorial_lesson.info",
+    "game/in_game/common/tutorial_lesson_chains/_tutorial_lesson_chains.info",
+    "game/in_game/gfx/city_materials/materials.info",
+    "game/in_game/gfx/terrain2/terrain_cache/heightmap.info",
+    "game/in_game/gfx/terrain2/terrain_cache/index_map.info",
+    "game/in_game/gfx/terrain2/terrain_cache/intensity_map.info",
+    "game/in_game/gfx/terrain2/terrain_cache/materials.info",
+    "game/in_game/setup/countries/00_readme.info",
+    "game/loading_screen/input_profile/_input_profile.info",
+    "game/main_menu/common/game_rules/_game_rules.info",
+    "game/main_menu/common/scripted_lists/scripted_lists.info",
+    "game/main_menu/gfx/interface/illustrations/units/00_naming_convention.info",
+    "game/main_menu/gfx/unit_graphics/attachments/00_audiotags_units.info",
+    "game/main_menu/gfx/unit_graphics/units/00_units.info",
+    "game/main_menu/gui/scripted_widgets/_scripted_widgets.info"
+  ],
+  "schemas": {
+    "advances": {
+      "name": "Advances",
+      "paths": [
+        "common/advances"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "age": {
+      "name": "Age",
+      "paths": [
+        "common/age"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "ai_diplochance": {
+      "name": "Ai Diplochance",
+      "paths": [
+        "common/ai_diplochance"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "ai_personalities": {
+      "name": "Ai Personalities",
+      "paths": [
+        "common/ai_personalities"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "ai_scripted_expansion_score": {
+      "name": "Ai Scripted Expansion Score",
+      "paths": [
+        "common/ai_scripted_expansion_score"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "ai_scripted_expansion_target": {
+      "name": "Ai Scripted Expansion Target",
+      "paths": [
+        "common/ai_scripted_expansion_target"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "alert_descriptions": {
+      "name": "Alert Descriptions",
+      "paths": [
+        "common/alert_descriptions"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "area_preferences": {
+      "name": "Area Preferences",
+      "paths": [
+        "common/area_preferences"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "artist_types": {
+      "name": "Artist Types",
+      "paths": [
+        "common/artist_types"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "artist_work": {
+      "name": "Artist Work",
+      "paths": [
+        "common/artist_work"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "attribute_columns": {
+      "name": "Attribute Columns",
+      "paths": [
+        "common/attribute_columns"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "auto_modifiers": {
+      "name": "Auto Modifiers",
+      "paths": [
+        "common/auto_modifiers"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "avatars": {
+      "name": "Avatars",
+      "paths": [
+        "common/avatars"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "biases": {
+      "name": "Biases",
+      "paths": [
+        "common/biases"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "building_categories": {
+      "name": "Building Categories",
+      "paths": [
+        "common/building_categories"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "building_types": {
+      "name": "Building Types",
+      "paths": [
+        "common/building_types"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "bureaucracies": {
+      "name": "Bureaucracies",
+      "paths": [
+        "common/bureaucracies"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "cabinet_actions": {
+      "name": "Cabinet Actions",
+      "paths": [
+        "common/cabinet_actions"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "casus_belli": {
+      "name": "Casus Belli",
+      "paths": [
+        "common/casus_belli"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "character_interactions": {
+      "name": "Character Interactions",
+      "paths": [
+        "common/character_interactions"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "child_educations": {
+      "name": "Child Educations",
+      "paths": [
+        "common/child_educations"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "chivalric_orders": {
+      "name": "Chivalric Orders",
+      "paths": [
+        "common/chivalric_orders"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "climates": {
+      "name": "Climates",
+      "paths": [
+        "common/climates"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "country_description_categories": {
+      "name": "Country Description Categories",
+      "paths": [
+        "common/country_description_categories"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "country_interactions": {
+      "name": "Country Interactions",
+      "paths": [
+        "common/country_interactions"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "country_ranks": {
+      "name": "Country Ranks",
+      "paths": [
+        "common/country_ranks"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "culture_groups": {
+      "name": "Culture Groups",
+      "paths": [
+        "common/culture_groups"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "cultures": {
+      "name": "Cultures",
+      "paths": [
+        "common/cultures"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "customizable_localization": {
+      "name": "Customizable Localization",
+      "paths": [
+        "common/customizable_localization"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "death_reason": {
+      "name": "Death Reason",
+      "paths": [
+        "common/death_reason"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "designated_heir_reason": {
+      "name": "Designated Heir Reason",
+      "paths": [
+        "common/designated_heir_reason"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "diplomatic_costs": {
+      "name": "Diplomatic Costs",
+      "paths": [
+        "common/diplomatic_costs"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "disasters": {
+      "name": "Disasters",
+      "paths": [
+        "common/disasters"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "diseases": {
+      "name": "Diseases",
+      "paths": [
+        "common/diseases"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "effect_localization": {
+      "name": "Effect Localization",
+      "paths": [
+        "common/effect_localization"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "employment_systems": {
+      "name": "Employment Systems",
+      "paths": [
+        "common/employment_systems"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "estate_privileges": {
+      "name": "Estate Privileges",
+      "paths": [
+        "common/estate_privileges"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "estates": {
+      "name": "Estates",
+      "paths": [
+        "common/estates"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "ethnicities": {
+      "name": "Ethnicities",
+      "paths": [
+        "common/ethnicities"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "formable_countries": {
+      "name": "Formable Countries",
+      "paths": [
+        "common/formable_countries"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "generic_action_ai_lists": {
+      "name": "Generic Action Ai Lists",
+      "paths": [
+        "common/generic_action_ai_lists"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "generic_actions": {
+      "name": "Generic Actions",
+      "paths": [
+        "common/generic_actions"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "genes": {
+      "name": "Genes",
+      "paths": [
+        "common/genes"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "gods": {
+      "name": "Gods",
+      "paths": [
+        "common/gods"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "goods": {
+      "name": "Goods",
+      "paths": [
+        "common/goods"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "goods_demand": {
+      "name": "Goods Demand",
+      "paths": [
+        "common/goods_demand"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "goods_demand_category": {
+      "name": "Goods Demand Category",
+      "paths": [
+        "common/goods_demand_category"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "government_reforms": {
+      "name": "Government Reforms",
+      "paths": [
+        "common/government_reforms"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "government_types": {
+      "name": "Government Types",
+      "paths": [
+        "common/government_types"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "hegemons": {
+      "name": "Hegemons",
+      "paths": [
+        "common/hegemons"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "heir_selections": {
+      "name": "Heir Selections",
+      "paths": [
+        "common/heir_selections"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "historical_scores": {
+      "name": "Historical Scores",
+      "paths": [
+        "common/historical_scores"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "holy_site_types": {
+      "name": "Holy Site Types",
+      "paths": [
+        "common/holy_site_types"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "holy_sites": {
+      "name": "Holy Sites",
+      "paths": [
+        "common/holy_sites"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "institution": {
+      "name": "Institution",
+      "paths": [
+        "common/institution"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "insults": {
+      "name": "Insults",
+      "paths": [
+        "common/insults"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "international_organization_land_ownership_rules": {
+      "name": "International Organization Land Ownership Rules",
+      "paths": [
+        "common/international_organization_land_ownership_rules"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "international_organization_payments": {
+      "name": "International Organization Payments",
+      "paths": [
+        "common/international_organization_payments"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "international_organization_special_statuses": {
+      "name": "International Organization Special Statuses",
+      "paths": [
+        "common/international_organization_special_statuses"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "international_organizations": {
+      "name": "International Organizations",
+      "paths": [
+        "common/international_organizations"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "join_war_rules": {
+      "name": "Join War Rules",
+      "paths": [
+        "common/join_war_rules"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "language_families": {
+      "name": "Language Families",
+      "paths": [
+        "common/language_families"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "languages": {
+      "name": "Languages",
+      "paths": [
+        "common/languages"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "laws": {
+      "name": "Laws",
+      "paths": [
+        "common/laws"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "levies": {
+      "name": "Levies",
+      "paths": [
+        "common/levies"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "location_ranks": {
+      "name": "Location Ranks",
+      "paths": [
+        "common/location_ranks"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "mission_task_defs": {
+      "name": "Mission Task Defs",
+      "paths": [
+        "common/mission_task_defs"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "missions": {
+      "name": "Missions",
+      "paths": [
+        "common/missions"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "movements": {
+      "name": "Movements",
+      "paths": [
+        "common/movements"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "music_player_tracks": {
+      "name": "Music Player Tracks",
+      "paths": [
+        "common/music_player_tracks"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "on_actions": {
+      "name": "On Actions",
+      "paths": [
+        "common/on_actions",
+        "common/on_action"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "parliament_agendas": {
+      "name": "Parliament Agendas",
+      "paths": [
+        "common/parliament_agendas"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "parliament_issues": {
+      "name": "Parliament Issues",
+      "paths": [
+        "common/parliament_issues"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "parliament_types": {
+      "name": "Parliament Types",
+      "paths": [
+        "common/parliament_types"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "peace_treaties": {
+      "name": "Peace Treaties",
+      "paths": [
+        "common/peace_treaties"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "persistent_dna": {
+      "name": "Persistent Dna",
+      "paths": [
+        "common/persistent_dna"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "policies": {
+      "name": "Policies",
+      "paths": [
+        "common/policies"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "pop_types": {
+      "name": "Pop Types",
+      "paths": [
+        "common/pop_types"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "prices": {
+      "name": "Prices",
+      "paths": [
+        "common/prices"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "production_methods": {
+      "name": "Production Methods",
+      "paths": [
+        "common/production_methods"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "rebel_demands": {
+      "name": "Rebel Demands",
+      "paths": [
+        "common/rebel_demands"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "recruitment_method": {
+      "name": "Recruitment Method",
+      "paths": [
+        "common/recruitment_method"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "regencies": {
+      "name": "Regencies",
+      "paths": [
+        "common/regencies"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "religion_groups": {
+      "name": "Religion Groups",
+      "paths": [
+        "common/religion_groups"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "religions": {
+      "name": "Religions",
+      "paths": [
+        "common/religions"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "religious_aspects": {
+      "name": "Religious Aspects",
+      "paths": [
+        "common/religious_aspects"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "religious_factions": {
+      "name": "Religious Factions",
+      "paths": [
+        "common/religious_factions"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "religious_figures": {
+      "name": "Religious Figures",
+      "paths": [
+        "common/religious_figures"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "religious_focuses": {
+      "name": "Religious Focuses",
+      "paths": [
+        "common/religious_focuses"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "religious_schools": {
+      "name": "Religious Schools",
+      "paths": [
+        "common/religious_schools"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "resolutions": {
+      "name": "Resolutions",
+      "paths": [
+        "common/resolutions"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "rival_criteria": {
+      "name": "Rival Criteria",
+      "paths": [
+        "common/rival_criteria"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "road_types": {
+      "name": "Road Types",
+      "paths": [
+        "common/road_types"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "script_values": {
+      "name": "Script Values",
+      "paths": [
+        "common/script_values"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scriptable_hints": {
+      "name": "Scriptable Hints",
+      "paths": [
+        "common/scriptable_hints"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scripted_country_names": {
+      "name": "Scripted Country Names",
+      "paths": [
+        "common/scripted_country_names"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scripted_diplomatic_objectives": {
+      "name": "Scripted Diplomatic Objectives",
+      "paths": [
+        "common/scripted_diplomatic_objectives"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scripted_effects": {
+      "name": "Scripted Effects",
+      "paths": [
+        "common/scripted_effects"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scripted_geography": {
+      "name": "Scripted Geography",
+      "paths": [
+        "common/scripted_geography"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scripted_guis": {
+      "name": "Scripted Guis",
+      "paths": [
+        "common/scripted_guis"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scripted_lists": {
+      "name": "Scripted Lists",
+      "paths": [
+        "common/scripted_lists"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scripted_modifiers": {
+      "name": "Scripted Modifiers",
+      "paths": [
+        "common/scripted_modifiers"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scripted_relations": {
+      "name": "Scripted Relations",
+      "paths": [
+        "common/scripted_relations"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scripted_rules": {
+      "name": "Scripted Rules",
+      "paths": [
+        "common/scripted_rules"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "scripted_triggers": {
+      "name": "Scripted Triggers",
+      "paths": [
+        "common/scripted_triggers"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "situations": {
+      "name": "Situations",
+      "paths": [
+        "common/situations"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "societal_values": {
+      "name": "Societal Values",
+      "paths": [
+        "common/societal_values"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "subject_military_stances": {
+      "name": "Subject Military Stances",
+      "paths": [
+        "common/subject_military_stances"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "subject_types": {
+      "name": "Subject Types",
+      "paths": [
+        "common/subject_types"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "tests": {
+      "name": "Tests",
+      "paths": [
+        "common/tests"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "topography": {
+      "name": "Topography",
+      "paths": [
+        "common/topography"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "town_rights": {
+      "name": "Town Rights",
+      "paths": [
+        "common/town_rights"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "town_setups": {
+      "name": "Town Setups",
+      "paths": [
+        "common/town_setups"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "trait_flavor": {
+      "name": "Trait Flavor",
+      "paths": [
+        "common/trait_flavor"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "traits": {
+      "name": "Traits",
+      "paths": [
+        "common/traits"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "trigger_localization": {
+      "name": "Trigger Localization",
+      "paths": [
+        "common/trigger_localization"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "tutorial_lesson_chains": {
+      "name": "Tutorial Lesson Chains",
+      "paths": [
+        "common/tutorial_lesson_chains"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "tutorial_lessons": {
+      "name": "Tutorial Lessons",
+      "paths": [
+        "common/tutorial_lessons"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "unit_abilities": {
+      "name": "Unit Abilities",
+      "paths": [
+        "common/unit_abilities"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "unit_categories": {
+      "name": "Unit Categories",
+      "paths": [
+        "common/unit_categories"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "unit_formation_preference": {
+      "name": "Unit Formation Preference",
+      "paths": [
+        "common/unit_formation_preference"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "unit_types": {
+      "name": "Unit Types",
+      "paths": [
+        "common/unit_types"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "vegetation": {
+      "name": "Vegetation",
+      "paths": [
+        "common/vegetation"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "wargoals": {
+      "name": "Wargoals",
+      "paths": [
+        "common/wargoals"
+      ],
+      "keyPattern": "identifier_no_dot",
+      "attributes": []
+    },
+    "events": {
+      "name": "Events",
+      "paths": [
+        "events"
+      ],
+      "keyPattern": "namespaced",
+      "attributes": []
+    }
+  }
+}

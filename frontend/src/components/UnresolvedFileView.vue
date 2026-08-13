@@ -2,12 +2,13 @@
 /**
  * Vanilla Pierre UnresolvedFile host for git-style conflict resolution.
  */
-import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import {
   UnresolvedFile,
   type FileContents,
   type MergeConflictActionPayload,
 } from "@pierre/diffs";
+import { editorTheme, pierreThemeOption } from "../composables/editorTheme";
 
 const props = withDefaults(
   defineProps<{
@@ -29,19 +30,25 @@ const emit = defineEmits<{
 const host = useTemplateRef<HTMLElement>("host");
 let viewer: UnresolvedFile | null = null;
 let workingContents = props.file.contents;
+let resizeObserver: ResizeObserver | null = null;
 
-/** Mount or remount UnresolvedFile for the current conflict-marked file. */
-function mountViewer(): void {
+/** Mount or remount UnresolvedFile once the host has non-zero size. */
+async function mountViewer(): Promise<void> {
+  await nextTick();
   if (!host.value) return;
+  const { clientWidth, clientHeight } = host.value;
+  if (clientWidth < 32 || clientHeight < 32) return;
+
   viewer?.cleanUp();
   host.value.replaceChildren();
   workingContents = props.file.contents;
   emit("update:contents", workingContents);
 
   viewer = new UnresolvedFile({
-    theme: { dark: "pierre-dark", light: "pierre-light" },
+    theme: pierreThemeOption(),
     stickyHeader: true,
     mergeConflictActionsType: "default",
+    maxContextLines: 40,
     onMergeConflictResolve(file, payload) {
       workingContents = file.contents;
       emit("update:contents", workingContents);
@@ -54,16 +61,25 @@ function mountViewer(): void {
   });
 }
 
-onMounted(mountViewer);
+onMounted(() => {
+  void mountViewer();
+  if (!host.value) return;
+  resizeObserver = new ResizeObserver(() => {
+    if (!viewer) void mountViewer();
+  });
+  resizeObserver.observe(host.value);
+});
 
 watch(
-  () => [props.file.name, props.file.contents, props.file.lang] as const,
+  () => [props.file.name, props.file.contents, props.file.lang, editorTheme.value] as const,
   () => {
-    mountViewer();
+    void mountViewer();
   },
 );
 
 onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
   viewer?.cleanUp();
   viewer = null;
 });
@@ -75,12 +91,12 @@ defineExpose({
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-1 flex-col">
+  <div class="flex h-full min-h-0 w-full min-w-60 flex-1 flex-col">
     <div v-if="label" class="shrink-0 border-b border-default bg-muted/50 px-3 py-2 text-sm font-semibold">
       {{ label }}
     </div>
-    <div class="relative min-h-0 flex-1 overflow-hidden">
-      <div ref="host" class="absolute inset-0 overflow-auto" />
+    <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div ref="host" class="absolute inset-0 h-full w-full overflow-auto" />
     </div>
   </div>
 </template>

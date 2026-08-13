@@ -56,6 +56,14 @@ export function GetUserDownloadsDir(): $CancellablePromise<string> {
 }
 
 /**
+ * ListDirectory lists immediate children of dirPath (non-recursive).
+ * Files are limited to common Paradox script/loc/gui extensions.
+ */
+export function ListDirectory(dirPath: string): $CancellablePromise<$models.DirEntry[] | null> {
+    return $Call.ByID(2302512980, dirPath);
+}
+
+/**
  * ReadFileContent reads a file as UTF-8 text.
  */
 export function ReadFileContent(fullPath: string): $CancellablePromise<string> {
@@ -72,6 +80,13 @@ export function SelectDirectory(title: string): $CancellablePromise<string> {
 
 export function SelectSingleFile(title: string, filter: string): $CancellablePromise<string> {
     return $Call.ByID(430312767, title, filter);
+}
+
+/**
+ * WriteFileContent writes UTF-8 text to an existing path (no dialog).
+ */
+export function WriteFileContent(fullPath: string, content: string): $CancellablePromise<void> {
+    return $Call.ByID(981832027, fullPath, content);
 }
 
 /**

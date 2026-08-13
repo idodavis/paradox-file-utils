@@ -71,7 +71,7 @@ const fixedStyle = computed(() =>
   <div
     :class="[
       isHorizontal ? 'flex' : 'flex flex-col',
-      'min-h-0 w-full overflow-hidden rounded-lg border border-default',
+      'min-h-0 h-full w-full overflow-hidden rounded-lg border border-default',
       props.class,
     ]"
   >

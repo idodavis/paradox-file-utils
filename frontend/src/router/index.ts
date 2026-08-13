@@ -1,62 +1,82 @@
 /**
- * Vue router for PMT feature page routing.
+ * Vue router for PMT workspace-centric page routing.
  */
 import { createRouter, createWebHashHistory } from "vue-router";
-import HubPage from "../pages/HubPage.vue";
+import LibraryPage from "../pages/LibraryPage.vue";
+import WizardPage from "../pages/WizardPage.vue";
+import WorkspaceIdePage from "../pages/WorkspaceIdePage.vue";
+import PatchCenterPage from "../pages/PatchCenterPage.vue";
+import PatcherPage from "../pages/PatcherPage.vue";
+import EventGraphPage from "../pages/EventGraphPage.vue";
+import ToolsMergePage from "../pages/ToolsMergePage.vue";
 import SettingsPage from "../pages/SettingsPage.vue";
-import ModdingDocsPage from "../pages/ModdingDocsPage.vue";
-import ComparePage from "../pages/ComparePage.vue";
-import InventoryPage from "../pages/InventoryPage.vue";
-import MergePage from "../pages/MergePage.vue";
 
 const routes = [
   {
     path: "/",
-    redirect: "/hub",
+    redirect: "/library",
   },
   {
-    path: "/hub",
-    name: "hub",
-    component: HubPage,
+    path: "/library",
+    name: "library",
+    component: LibraryPage,
     meta: {
-      title: "Hub",
-      description: "Open the primary PMT tools from the hub.",
+      title: "Library",
+      description: "Browse and manage your modding workspaces.",
     },
   },
   {
-    path: "/modding-docs",
-    name: "modding-docs",
-    component: ModdingDocsPage,
+    path: "/wizard",
+    name: "wizard",
+    component: WizardPage,
     meta: {
-      title: "Modding Docs",
-      description: "Browse script help files and wiki content for CK3 and EU5.",
+      title: "Create Workspace",
+      description: "Set up a new modding workspace.",
     },
   },
   {
-    path: "/compare-tool",
-    name: "compare-tool",
-    component: ComparePage,
+    path: "/workspace/:id",
+    name: "workspace-ide",
+    component: WorkspaceIdePage,
     meta: {
-      title: "File Compare",
-      description: "Compare two file sets or directories side by side.",
+      title: "Workspace",
+      description: "View and edit files in your workspace.",
     },
   },
   {
-    path: "/merge-tool",
-    name: "merge-tool",
-    component: MergePage,
+    path: "/workspace/:id/patch",
+    name: "patch-center",
+    component: PatchCenterPage,
     meta: {
-      title: "Script Merger",
-      description: "Merge script files with presets, preview, results, and manual conflict resolution.",
+      title: "Patch Center",
+      description: "Browse wiki patch notes and import script logs.",
     },
   },
   {
-    path: "/inventory",
-    name: "inventory",
-    component: InventoryPage,
+    path: "/workspace/:id/patcher",
+    name: "patcher",
+    component: PatcherPage,
     meta: {
-      title: "Inventory Explorer",
-      description: "Extract and browse game objects from script files with saved inventories and row details.",
+      title: "Mod Patcher",
+      description: "Update mods between game versions.",
+    },
+  },
+  {
+    path: "/workspace/:id/graph",
+    name: "event-graph",
+    component: EventGraphPage,
+    meta: {
+      title: "Event Graph",
+      description: "Explore script object relationships and cascade effects.",
+    },
+  },
+  {
+    path: "/tools/merge",
+    name: "tools-merge",
+    component: ToolsMergePage,
+    meta: {
+      title: "Ad-hoc Merge",
+      description: "Merge two files or directories without a workspace.",
     },
   },
   {
@@ -65,7 +85,7 @@ const routes = [
     component: SettingsPage,
     meta: {
       title: "Settings",
-      description: "Adjust game directories and reset app data.",
+      description: "App configuration and data management.",
     },
   },
 ];

@@ -2,23 +2,25 @@
 
 # Paradox Modding Tools
 
-Cross-platform desktop utilities for **Paradox Interactive** game modders. The app is built with **[Wails v3](https://v3.wails.io/)** (**Go** backend, **Vue** frontend). **Crusader Kings III** and **Europa Universalis V (Partial)** are supported today; the direction is to grow coverage and workflows across Paradox titles, not only CK3.
+Cross-platform desktop utilities for **Paradox Interactive** game modders. The app is built with **[Wails v3](https://v3.wails.io/)** (**Go** backend, **Vue** frontend) and licensed under **GPL-3.0-or-later**. **Crusader Kings III**, **Europa Universalis V** (partial), and **Victoria 3** are supported today; the direction is to grow coverage and workflows across Paradox titles.
 
 ## Download / Use The Tool! (testing)
 
 Builds are published under [GitHub Releases](https://github.com/idodavis/paradox-modding-tools/releases) for manual download while the modding community tries them out. An in-app updater is planned so testers do not need to fetch every build from Releases; until that ships, **Releases remain the source of binaries**. Release packaging is manual for now; **GitHub Actions** automation for builds and uploads is planned.
 
-## What’s in the app
+## What's in the app
 
-- **Compare tool** — Diff files or whole directory trees (e.g. vanilla vs mod, or two mod versions) to see what changed after patches.
-- **Merge tool** — Merge Paradox-style script pairs using the internal parser underneath for fully automatic merges or for assisted merges alongside merge editor ui.
-- **Inventory** — Explore extracted game/script objects (game-dependent), saved to a local DB file in AppData (Default User files location dependent on OS being used).
-- **Modding docs** — Browse info_file related reference material  written by Paradox for modders. Also embedded Paradox Games Wiki.
-- **Settings** — Game paths, Steam integration, and other preferences backed by a local database.
+- **Workspace Library** — Manage modding workspaces tied to specific game installs and mod folders. Create, switch, and organize your modding projects.
+- **Workspace IDE** — File browser across game, mod, and staging roots with integrated editor/diff viewer. Compare files, switch themes, and navigate to patching tools.
+- **Patch Center** — Browse wiki patch notes for each game version and import game error.log files for analysis.
+- **Mod Patcher** — Update mods between game versions. Preview changes, accept/skip files, resolve conflicts with the merge editor.
+- **Event Graph** — Index script objects and explore relationships. Search definitions, simulate cascade effects.
+- **Ad-hoc Merge** — Merge two files or directories without a workspace using the script merger.
+- **Settings** — App configuration and data management backed by a local database.
 
 ### Paradox script parser (Go)
 
-A **Go** parser (Participle-based) parses typical Paradox `.txt` script for compare/merge and related features. Implementation lives under `services/internal/interpreter/`.
+A **Go** parser (Participle-based) parses typical Paradox `.txt` / `.gui` script for compare/merge and related features. Implementation lives under `services/internal/parser/` with semantics under `services/internal/semantics/` and localization under `services/internal/loc/`.
 
 ## Prerequisites (from source)
 
@@ -67,7 +69,7 @@ task run
 task package
 ```
 
-Uses the platform’s configured format (e.g. NSIS on Windows). You need the extra tooling each format expects (see `build/windows/Taskfile.yml` and sibling platform Taskfiles).
+Uses the platform's configured format (e.g. NSIS on Windows). You need the extra tooling each format expects (see `build/windows/Taskfile.yml` and sibling platform Taskfiles).
 
 ## Other useful tasks
 
@@ -84,6 +86,10 @@ Uses the platform’s configured format (e.g. NSIS on Windows). You need the ext
 | `services/` | Go services exposed to the UI |
 | `frontend/` | Vue + Vite UI |
 | `build/` | Wails build config, icons, platform Taskfiles |
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0 or later** (GPL-3.0-or-later). See the [LICENSE](LICENSE) file for details.
 
 ---
 

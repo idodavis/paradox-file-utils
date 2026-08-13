@@ -8,6 +8,7 @@ import EditorView from "./EditorView.vue";
 import UnresolvedFileView from "./UnresolvedFileView.vue";
 import SplitPane from "./SplitPane.vue";
 import { countConflictMarkers } from "../composables/textMerge";
+import { langForPath } from "../composables/langForPath";
 
 const props = defineProps<{
   fileAPath: string;
@@ -65,14 +66,14 @@ const fileName = computed(() => props.relPath.split(/[/\\]/).pop() ?? props.relP
 const markedFile = computed(() => ({
   name: fileName.value,
   contents: props.markedContent,
-  lang: "hcl" as const,
+  lang: langForPath(props.relPath) as never,
 }));
 
 const sideAItems = computed<CodeViewItem[]>(() => [
   {
     id: `file-a:${props.relPath}:${editVersion.value}`,
     type: "file",
-    file: { name: `${props.labelA}: ${fileName.value}`, contents: props.contentA, lang: "hcl" },
+    file: { name: `${props.labelA}: ${fileName.value}`, contents: props.contentA, lang: langForPath(props.relPath) as never },
     version: editVersion.value,
   },
 ]);
@@ -81,7 +82,7 @@ const sideBItems = computed<CodeViewItem[]>(() => [
   {
     id: `file-b:${props.relPath}:${editVersion.value}`,
     type: "file",
-    file: { name: `${props.labelB}: ${fileName.value}`, contents: props.contentB, lang: "hcl" },
+    file: { name: `${props.labelB}: ${fileName.value}`, contents: props.contentB, lang: langForPath(props.relPath) as never },
     version: editVersion.value,
   },
 ]);
@@ -91,8 +92,8 @@ const abDiffItems = computed<CodeViewItem[]>(() => [
     id: `diff-ab:${props.relPath}:${editVersion.value}`,
     type: "diff",
     fileDiff: parseDiffFromFile(
-      { name: props.labelA, contents: props.contentA, lang: "hcl" },
-      { name: props.labelB, contents: props.contentB, lang: "hcl" },
+      { name: props.labelA, contents: props.contentA, lang: langForPath(props.relPath) as never },
+      { name: props.labelB, contents: props.contentB, lang: langForPath(props.relPath) as never },
     ),
     version: editVersion.value,
   },
@@ -106,7 +107,7 @@ const editableResultItems = computed<CodeViewItem[]>(() => [
     file: {
       name: `Result: ${fileName.value}`,
       contents: workingContent.value,
-      lang: "hcl",
+      lang: langForPath(props.relPath) as never,
       cacheKey: `merge-result:${props.relPath}`,
     },
     version: editVersion.value,
@@ -146,13 +147,8 @@ function save(): void {
 </script>
 
 <template>
-  <UModal
-    :open="true"
-    fullscreen
-    :close="false"
-    :dismissible="false"
-    :ui="{ content: 'bg-default flex flex-col', body: 'p-0 flex-1 min-h-0' }"
-  >
+  <UModal :open="true" fullscreen :close="false" :dismissible="false"
+    :ui="{ content: 'bg-default flex flex-col', body: 'p-0 flex-1 min-h-0' }">
     <template #body>
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
         <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-default bg-muted/80 px-4 py-2">
@@ -163,94 +159,46 @@ function save(): void {
           <UBadge :color="unresolvedCount > 0 ? 'warning' : 'success'" variant="subtle">
             {{ identical ? "Identical" : unresolvedCount > 0 ? `${unresolvedCount} unresolved` : "Resolved" }}
           </UBadge>
-          <UTabs
-            :model-value="layout"
-            :items="layoutItems"
-            :content="false"
-            value-key="value"
-            size="xs"
-            variant="pill"
-            class="w-52"
-            @update:model-value="onLayoutChange"
-          />
+          <UTabs :model-value="layout" :items="layoutItems" :content="false" value-key="value" size="xs" variant="pill"
+            class="w-52" @update:model-value="onLayoutChange" />
           <UButton size="sm" variant="outline" label="Skip" @click="emit('skip')" />
-          <UButton
-            size="sm"
-            color="primary"
-            label="Save & Continue"
-            :disabled="!identical && unresolvedCount > 0"
-            @click="save"
-          />
+          <UButton size="sm" color="primary" label="Save & Continue" :disabled="!identical && unresolvedCount > 0"
+            @click="save" />
           <UButton color="error" variant="ghost" size="sm" label="Cancel" @click="emit('cancel')" />
         </div>
 
         <div class="min-h-0 flex-1 overflow-hidden">
-          <UEmpty
-            v-if="identical"
-            class="h-full"
-            icon="i-lucide-check-circle"
-            title="Files are identical"
-            description="Nothing to merge — continue to write the file as-is."
-          />
+          <UEmpty v-if="identical" class="h-full" icon="i-lucide-check-circle" title="Files are identical"
+            description="Nothing to merge — continue to write the file as-is." />
 
           <!-- Middle: A | Result | B -->
-          <div v-else-if="layout === 'middle'" class="flex h-full min-h-0">
-            <div class="min-h-0 min-w-0 flex-1 overflow-hidden border-r border-default">
+          <div v-else-if="layout === 'middle'" class="flex h-full min-h-0 w-full">
+            <div class="flex h-full min-h-0 min-w-50 flex-1 flex-col overflow-hidden border-r border-default">
               <EditorView :items="sideAItems" :label="labelA" label-class="bg-primary/10 text-primary" />
             </div>
-            <div class="min-h-0 min-w-0 flex-[1.4] overflow-hidden border-r border-default">
-              <UnresolvedFileView
-                v-if="showUnresolved"
-                :key="`u-${relPath}-${editVersion}`"
-                :file="markedFile"
-                label="Result (resolve conflicts)"
-                @resolve="onResolve"
-                @update:contents="onResolve"
-              />
-              <EditorView
-                v-else
-                :key="`e-${relPath}-${editVersion}`"
-                editable
-                :items="editableResultItems"
-                label="Result (editable)"
-                label-class="bg-accent/10 text-accent"
-                @item-edit="onItemEdit"
-              />
+            <div class="flex h-full min-h-0 min-w-[320px] flex-[1.6] flex-col overflow-hidden border-r border-default">
+              <UnresolvedFileView v-if="showUnresolved" :key="`u-${relPath}-${editVersion}`" :file="markedFile"
+                label="Result (resolve conflicts)" @resolve="onResolve" @update:contents="onResolve" />
+              <EditorView v-else :key="`e-${relPath}-${editVersion}`" editable :items="editableResultItems"
+                label="Result (editable)" label-class="bg-accent/10 text-accent" @item-edit="onItemEdit" />
             </div>
-            <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div class="flex h-full min-h-0 min-w-50 flex-1 flex-col overflow-hidden">
               <EditorView :items="sideBItems" :label="labelB" label-class="bg-secondary/10 text-secondary" />
             </div>
           </div>
 
           <!-- Right / Bottom: A↔B + Result -->
-          <SplitPane
-            v-else
-            :orientation="layout === 'right' ? 'horizontal' : 'vertical'"
-            :default-second-size="layout === 'right' ? 520 : 320"
-            fixed-side="second"
-            class="h-full rounded-none border-0"
-          >
+          <SplitPane v-else :orientation="layout === 'right' ? 'horizontal' : 'vertical'"
+            :default-second-size="layout === 'right' ? 520 : 320" fixed-side="second"
+            class="h-full rounded-none border-0">
             <template #first>
               <EditorView :items="abDiffItems" label="A ↔ B" />
             </template>
             <template #second>
-              <UnresolvedFileView
-                v-if="showUnresolved"
-                :key="`u2-${relPath}-${editVersion}`"
-                :file="markedFile"
-                label="Result (resolve conflicts)"
-                @resolve="onResolve"
-                @update:contents="onResolve"
-              />
-              <EditorView
-                v-else
-                :key="`e2-${relPath}-${editVersion}`"
-                editable
-                :items="editableResultItems"
-                label="Result (editable)"
-                label-class="bg-accent/10 text-accent"
-                @item-edit="onItemEdit"
-              />
+              <UnresolvedFileView v-if="showUnresolved" :key="`u2-${relPath}-${editVersion}`" :file="markedFile"
+                label="Result (resolve conflicts)" @resolve="onResolve" @update:contents="onResolve" />
+              <EditorView v-else :key="`e2-${relPath}-${editVersion}`" editable :items="editableResultItems"
+                label="Result (editable)" label-class="bg-accent/10 text-accent" @item-edit="onItemEdit" />
             </template>
           </SplitPane>
         </div>

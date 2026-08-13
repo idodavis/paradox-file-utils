@@ -1,7 +1,7 @@
 /**
  * Helpers for mapping backend file trees onto Nuxt UI UTree `:items`.
  */
-import type { TreeNode } from "@services/models";
+import { TreeNode } from "@services/models";
 
 /** A UTree item with optional select handler and nested children. */
 export type AppTreeItem = {

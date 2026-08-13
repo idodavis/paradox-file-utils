@@ -6,39 +6,53 @@ import * as ClipboardService from "./clipboardservice.js";
 import * as CompareService from "./compareservice.js";
 import * as DbService from "./dbservice.js";
 import * as FileService from "./fileservice.js";
-import * as InventoryService from "./inventoryservice.js";
+import * as GuiService from "./guiservice.js";
+import * as IndexerService from "./indexerservice.js";
+import * as LocService from "./locservice.js";
 import * as LogService from "./logservice.js";
 import * as MergeService from "./mergeservice.js";
-import * as ModDocService from "./moddocservice.js";
+import * as PatcherService from "./patcherservice.js";
+import * as ScriptLogService from "./scriptlogservice.js";
+import * as SemanticsService from "./semanticsservice.js";
 import * as SettingsService from "./settingsservice.js";
-import * as SteamService from "./steamservice.js";
+import * as WikiService from "./wikiservice.js";
+import * as WorkspaceService from "./workspaceservice.js";
 export {
     BrowserService,
     ClipboardService,
     CompareService,
     DbService,
     FileService,
-    InventoryService,
+    GuiService,
+    IndexerService,
+    LocService,
     LogService,
     MergeService,
-    ModDocService,
+    PatcherService,
+    ScriptLogService,
+    SemanticsService,
     SettingsService,
-    SteamService
+    WikiService,
+    WorkspaceService
 };
 
 export type {
-    DocPathCache,
+    AutoLocResult,
+    CascadeNode,
+    DirEntry,
     FileCollectorFilter,
     FileMergeResult,
-    InventoryItemRow,
-    InventorySummary,
-    ItemDetails,
-    LatestPatchNotes,
+    GuiNode,
+    GuiPreview,
+    LocDiagnostic,
     MergePreset,
     MergerOptions,
+    PatchRunPreview,
+    PatchVersion,
     PathMatch,
     PreviewItem,
     ResolvedConflict,
+    SemanticsStatus,
     TreeNode,
     ValidationError
 } from "./models.js";

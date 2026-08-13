@@ -1,3 +1,4 @@
+// Package services provides backend services for the Paradox Modding Tools application.
 package services
 
 import (
@@ -11,7 +12,7 @@ import (
 
 const (
 	appConfigDirName = "Paradox Modding Tools"
-	dbFileName       = "pmt.db"
+	dbFileName       = "pmt-workspace.db"
 )
 
 // DbService manages the SQLite database.
@@ -41,16 +42,19 @@ func (d *DbService) ServiceStartup() error {
 		return fmt.Errorf("open db: %w", err)
 	}
 	d.DB = db
+	// Single writer connection avoids SQLITE_BUSY under worker-pool index jobs.
+	d.DB.SetMaxOpenConns(1)
+	d.DB.SetMaxIdleConns(1)
 
-	// Performance tuning
 	if _, err := d.DB.Exec(`PRAGMA journal_mode = WAL`); err != nil {
 		return fmt.Errorf("set wal mode: %w", err)
+	}
+	if _, err := d.DB.Exec(`PRAGMA busy_timeout = 8000`); err != nil {
+		return fmt.Errorf("set busy timeout: %w", err)
 	}
 	if _, err := d.DB.Exec(`PRAGMA synchronous = NORMAL`); err != nil {
 		return fmt.Errorf("set synchronous normal: %w", err)
 	}
-
-	// Enable foreign keys so ON DELETE CASCADE works
 	if _, err := d.DB.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		return fmt.Errorf("enable foreign keys: %w", err)
 	}
@@ -58,56 +62,145 @@ func (d *DbService) ServiceStartup() error {
 	return d.initSchema()
 }
 
+// initSchema creates tables and seeds initial data. Old tables (inventories, patchnotes, doc_files) are dropped.
 func (d *DbService) initSchema() error {
+	drops := []string{
+		`DROP TABLE IF EXISTS inventory_items`,
+		`DROP TABLE IF EXISTS inventories`,
+		`DROP TABLE IF EXISTS patchnotes`,
+		`DROP TABLE IF EXISTS doc_files`,
+	}
+	for _, q := range drops {
+		if _, err := d.DB.Exec(q); err != nil {
+			return fmt.Errorf("drop old table: %w", err)
+		}
+	}
+
 	migrations := []string{
-		`CREATE TABLE IF NOT EXISTS inventories (
+		// Core game registry (seeded)
+		`CREATE TABLE IF NOT EXISTS games (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
-			game TEXT NOT NULL,
-			base_path TEXT NOT NULL,
-			object_types TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			is_temporary INTEGER DEFAULT 0
+			wiki_api TEXT NOT NULL,
+			script_root TEXT NOT NULL,
+			steam_app_id INTEGER NOT NULL
 		)`,
-		`CREATE TABLE IF NOT EXISTS inventory_items (
-			id INTEGER PRIMARY KEY,
-			inventory_id TEXT NOT NULL,
-			key TEXT NOT NULL,
-			type TEXT NOT NULL,
-			file_path TEXT NOT NULL,
-			line_start INTEGER NOT NULL,
-			line_end INTEGER NOT NULL,
-			raw_text TEXT,
-			"references" TEXT,
-			referrers TEXT,
-			attributes TEXT,
-			UNIQUE(inventory_id, type, key)
-			FOREIGN KEY(inventory_id) REFERENCES inventories(id) ON DELETE CASCADE
+
+		// User-defined game installs (multiple versions)
+		`CREATE TABLE IF NOT EXISTS game_installs (
+			id TEXT PRIMARY KEY,
+			game_id TEXT NOT NULL REFERENCES games(id),
+			name TEXT NOT NULL,
+			path TEXT NOT NULL,
+			version TEXT,
+			is_broken INTEGER DEFAULT 0,
+			created_at TEXT NOT NULL
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_inv_items_lookup ON inventory_items(inventory_id, type)`,
-		`CREATE TABLE IF NOT EXISTS doc_files (
-			game TEXT NOT NULL,
-			install_path_hash TEXT NOT NULL,
-			rel_path TEXT NOT NULL,
-			abs_path TEXT,
-			content TEXT NOT NULL,
+		`CREATE INDEX IF NOT EXISTS idx_game_installs_game ON game_installs(game_id)`,
+
+		// Workspaces group mods and settings per game
+		`CREATE TABLE IF NOT EXISTS workspaces (
+			id TEXT PRIMARY KEY,
+			game_id TEXT NOT NULL REFERENCES games(id),
+			name TEXT NOT NULL,
+			install_id TEXT REFERENCES game_installs(id),
+			staging_dir TEXT,
+			tags TEXT DEFAULT '[]',
+			thumbnail_path TEXT DEFAULT '',
+			is_active INTEGER DEFAULT 0,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_workspaces_game ON workspaces(game_id)`,
+
+		// Mods attached to a workspace
+		`CREATE TABLE IF NOT EXISTS workspace_mods (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			path TEXT NOT NULL,
+			is_broken INTEGER DEFAULT 0,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_workspace_mods_ws ON workspace_mods(workspace_id)`,
+
+		// Wiki patch cache (MediaWiki API)
+		`CREATE TABLE IF NOT EXISTS wiki_patches (
+			game_id TEXT NOT NULL REFERENCES games(id),
+			version TEXT NOT NULL,
 			fetched_at TEXT NOT NULL,
-			PRIMARY KEY (game, install_path_hash, rel_path)
+			source_url TEXT NOT NULL,
+			html_content TEXT NOT NULL,
+			PRIMARY KEY (game_id, version)
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_doc_files_paths ON doc_files(game, install_path_hash)`,
+
+		// Script log imports (error.log analysis)
+		`CREATE TABLE IF NOT EXISTS script_log_imports (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+			path TEXT NOT NULL,
+			imported_at TEXT NOT NULL,
+			summary TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_script_log_ws ON script_log_imports(workspace_id)`,
+
+		// Patch runs (mod version update campaigns)
+		`CREATE TABLE IF NOT EXISTS patch_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+			mod_id TEXT NOT NULL REFERENCES workspace_mods(id),
+			baseline_version TEXT NOT NULL,
+			target_version TEXT NOT NULL,
+			baseline_install_id TEXT REFERENCES game_installs(id),
+			target_install_id TEXT REFERENCES game_installs(id),
+			status TEXT NOT NULL DEFAULT 'pending',
+			staging_dir TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_patch_runs_ws ON patch_runs(workspace_id)`,
+
+		// Per-file decisions within a patch run
+		`CREATE TABLE IF NOT EXISTS patch_run_files (
+			id TEXT PRIMARY KEY,
+			run_id TEXT NOT NULL REFERENCES patch_runs(id) ON DELETE CASCADE,
+			rel_path TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			decision TEXT,
+			preview_path TEXT,
+			stats TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_patch_run_files_run ON patch_run_files(run_id)`,
+
+		// Index objects (definitions extracted from game/mod scripts)
+		`CREATE TABLE IF NOT EXISTS index_objects (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+			obj_type TEXT NOT NULL,
+			obj_key TEXT NOT NULL,
+			file_path TEXT NOT NULL,
+			line INTEGER NOT NULL,
+			summary TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_index_objects_ws ON index_objects(workspace_id, obj_type)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_index_objects_key ON index_objects(workspace_id, obj_type, obj_key)`,
+
+		// Index edges (relationships between indexed objects, e.g. event triggers)
+		`CREATE TABLE IF NOT EXISTS index_edges (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+			from_key TEXT NOT NULL,
+			to_key TEXT NOT NULL,
+			edge_type TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_index_edges_ws ON index_edges(workspace_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_index_edges_from ON index_edges(workspace_id, from_key)`,
+
+		// App settings (unchanged)
 		`CREATE TABLE IF NOT EXISTS app_settings (
 			game TEXT NOT NULL,
 			key TEXT NOT NULL,
 			value TEXT NOT NULL,
 			PRIMARY KEY (game, key)
-		)`,
-		`CREATE TABLE IF NOT EXISTS patchnotes (
-			game TEXT PRIMARY KEY,
-			fetched_at TEXT NOT NULL,
-			title TEXT NOT NULL,
-			contents TEXT NOT NULL,
-			steam_url TEXT,
-			steamdb_url TEXT NOT NULL
 		)`,
 	}
 	for _, m := range migrations {
@@ -115,53 +208,44 @@ func (d *DbService) initSchema() error {
 			return fmt.Errorf("schema: %w", err)
 		}
 	}
-	return d.seedGameConstants()
+	return d.seedGames()
 }
 
-func (d *DbService) seedGameConstants() error {
-	seeds := []struct {
-		game string
-		key  string
-		val  string
+// seedGames inserts the core game definitions (ck3, eu5, vic3).
+func (d *DbService) seedGames() error {
+	games := []struct {
+		id, name, wikiAPI, scriptRoot string
+		steamAppID                    int
 	}{
-		{"ck3", "ck3_steamAppId", "1158310"},
-		{"ck3", "ck3_wikiUrl", "https://ck3.paradoxwikis.com/Modding"},
-		{"ck3", "ck3_scriptRootFolder", "game"},
-		{"ck3", "ck3_docFileName", ".info"},
-		{"eu5", "eu5_steamAppId", "3450310"},
-		{"eu5", "eu5_wikiUrl", "https://eu5.paradoxwikis.com/Modding"},
-		{"eu5", "eu5_scriptRootFolder", "game/in_game"},
-		{"eu5", "eu5_docFileName", "readme.txt"},
+		{"ck3", "Crusader Kings III", "https://ck3.paradoxwikis.com/api.php", "game", 1158310},
+		{"eu5", "Europa Universalis V", "https://eu5.paradoxwikis.com/api.php", "game/in_game", 3450310},
+		{"vic3", "Victoria 3", "https://vic3.paradoxwikis.com/api.php", "game", 529340},
 	}
-	for _, s := range seeds {
-		_, err := d.DB.Exec(`INSERT OR IGNORE INTO app_settings (game, key, value) VALUES (?, ?, ?)`, s.game, s.key, s.val)
+	for _, g := range games {
+		_, err := d.DB.Exec(
+			`INSERT OR IGNORE INTO games (id, name, wiki_api, script_root, steam_app_id) VALUES (?, ?, ?, ?, ?)`,
+			g.id, g.name, g.wikiAPI, g.scriptRoot, g.steamAppID,
+		)
 		if err != nil {
-			return fmt.Errorf("seed %s/%s: %w", s.game, s.key, err)
+			return fmt.Errorf("seed game %s: %w", g.id, err)
 		}
 	}
 	return nil
 }
 
-// ResetData wipes all user data (inventories, doc cache, patchnotes) but preserves app_settings. Re-seeds game constants.
+// ResetData wipes user data (workspaces, mods, installs, runs, indexes) but keeps games and app_settings.
 func (d *DbService) ResetData() error {
 	if d.DB == nil {
 		return fmt.Errorf("database not initialized")
 	}
-	_, err := d.DB.Exec(`DELETE FROM inventory_items`)
-	if err != nil {
-		return fmt.Errorf("delete inventory_items: %w", err)
+	tables := []string{
+		"patch_run_files", "patch_runs", "workspace_mods", "workspaces",
+		"game_installs", "script_log_imports", "index_edges", "index_objects", "wiki_patches",
 	}
-	_, err = d.DB.Exec(`DELETE FROM inventories`)
-	if err != nil {
-		return fmt.Errorf("delete inventories: %w", err)
+	for _, t := range tables {
+		if _, err := d.DB.Exec(`DELETE FROM ` + t); err != nil {
+			return fmt.Errorf("delete %s: %w", t, err)
+		}
 	}
-	_, err = d.DB.Exec(`DELETE FROM doc_files`)
-	if err != nil {
-		return fmt.Errorf("delete doc_files: %w", err)
-	}
-	_, err = d.DB.Exec(`DELETE FROM patchnotes`)
-	if err != nil {
-		return fmt.Errorf("delete patchnotes: %w", err)
-	}
-	return d.seedGameConstants()
+	return nil
 }
