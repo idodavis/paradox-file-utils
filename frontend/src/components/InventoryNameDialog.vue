@@ -4,15 +4,15 @@
  */
 import { computed, ref, watch } from "vue";
 
+const open = defineModel<boolean>({ required: true });
+
 const props = defineProps<{
-  modelValue: boolean;
   mode: "save" | "rename";
   initialName: string;
 }>();
 
 const emit = defineEmits<{
-  (event: "update:modelValue", value: boolean): void;
-  (event: "save", name: string): void;
+  save: [name: string];
 }>();
 
 const name = ref(props.initialName);
@@ -26,14 +26,11 @@ watch(
 );
 
 const title = computed(() => (props.mode === "save" ? "Save inventory" : "Rename inventory"));
-const open = computed({
-  get: () => props.modelValue,
-  set: (value: boolean) => emit("update:modelValue", value),
-});
 
+/** Persist the current name and close the dialog. */
 function submit(): void {
   emit("save", name.value);
-  emit("update:modelValue", false);
+  open.value = false;
 }
 </script>
 

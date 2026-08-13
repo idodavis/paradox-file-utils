@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * Simplified item details drawer for the Inventory page.
+ * Item details panel for the Inventory page.
  */
 import { computed, ref, watch } from "vue";
+import type { TableColumn } from "@nuxt/ui";
 import { CopyToClipboard } from "@services/clipboardservice";
 import { GetAttributes, GetItemDetails } from "@services/inventoryservice";
 import type { InventoryItemRow, ItemDetails } from "@services/models";
@@ -48,45 +49,82 @@ const presentSet = computed(() => {
   if (!attrs || typeof attrs !== "object") return new Set<string>();
   return new Set(Object.keys(attrs).filter((key) => attrs[key]));
 });
+
+type AttributeRow = { name: string; present: boolean };
+
+const attributeRows = computed<AttributeRow[]>(() =>
+  itemAttributes.value.map((name) => ({ name, present: presentSet.value.has(name) })),
+);
+
+const attributeColumns: TableColumn<AttributeRow>[] = [
+  { accessorKey: "name", header: "Attribute" },
+  { id: "present", header: "Present" },
+];
+
+const rawFileName = computed(() => props.row?.filePath.split(/[/\\]/).pop() ?? "item.txt");
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
-    <div v-if="!row" class="text-muted">No item selected</div>
-    <template v-else>
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <UBadge color="primary" class="font-medium">{{ row.type }}</UBadge>
-        <div class="text-sm font-medium">{{ row.key }}</div>
-        <div class="text-xs text-muted">Lines {{ row.lineStart }} - {{ row.lineEnd }}</div>
-      </div>
+  <UEmpty v-if="!row" icon="i-lucide-inbox" title="No item selected" />
+  <div v-else class="space-y-4 p-4">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <UBadge color="primary" class="font-medium">{{ row.type }}</UBadge>
+      <div class="text-sm font-medium">{{ row.key }}</div>
+      <div class="text-xs text-muted">Lines {{ row.lineStart }} - {{ row.lineEnd }}</div>
+    </div>
 
-      <UCard>
-        <div class="text-xs text-muted">File path</div>
-        <div class="font-mono text-sm">{{ row.filePath }}</div>
-      </UCard>
+    <UCard>
+      <div class="text-xs text-muted">File path</div>
+      <div class="font-mono text-sm">{{ row.filePath }}</div>
+    </UCard>
 
-      <div class="grid grid-cols-2 gap-2">
-        <UButton color="neutral" variant="outline" label="Copy Key" @click="CopyToClipboard(row.key)" />
-        <UButton color="neutral" variant="outline" label="Copy Path" @click="CopyToClipboard(row.filePath)" />
-      </div>
+    <div class="flex w-full gap-2">
+      <UButton
+        class="flex-1"
+        color="neutral"
+        variant="outline"
+        label="Copy Key"
+        @click="CopyToClipboard(row.key)"
+      />
+      <UButton
+        class="flex-1"
+        color="neutral"
+        variant="outline"
+        label="Copy Path"
+        @click="CopyToClipboard(row.filePath)"
+      />
+    </div>
 
-      <UCard>
-        <div class="text-base font-medium">Attributes</div>
-        <div class="mt-2 space-y-1">
-          <div v-for="attr in itemAttributes" :key="attr"
-            class="flex items-center justify-between rounded-md border border-default px-2 py-1 text-sm">
-            <span>{{ attr }}</span>
-            <UIcon :name="presentSet.has(attr) ? 'i-lucide-check' : 'i-lucide-minus'"
-              :class="presentSet.has(attr) ? 'text-success' : 'text-muted'" />
-          </div>
-        </div>
-      </UCard>
+    <UCard>
+      <div class="text-base font-medium">Attributes</div>
+      <UTable class="mt-2" :data="attributeRows" :columns="attributeColumns">
+        <template #present-cell="{ row: attrRow }">
+          <UIcon
+            :name="attrRow.original.present ? 'i-lucide-check' : 'i-lucide-minus'"
+            :class="attrRow.original.present ? 'text-success' : 'text-muted'"
+          />
+        </template>
+      </UTable>
+    </UCard>
 
-      <UCard>
-        <div class="text-base font-medium">Raw Text</div>
-        <EditorView :content="details?.rawText ?? ''" :file-name="row.filePath.split(/[/\\]/).pop() ?? ''"
-          placeholder="Unavailable" :read-only="true" class="inventory-raw-scroll mt-2" />
-      </UCard>
-    </template>
+    <UCard>
+      <div class="text-base font-medium">Raw Text</div>
+      <EditorView
+        class="inventory-raw-scroll mt-2"
+        :label="rawFileName"
+        placeholder="Unavailable"
+        :items="[
+          {
+            id: 'file:' + rawFileName,
+            type: 'file',
+            file: {
+              name: rawFileName,
+              contents: details?.rawText ?? '',
+              lang: 'hcl',
+            },
+          },
+        ]"
+      />
+    </UCard>
   </div>
 </template>

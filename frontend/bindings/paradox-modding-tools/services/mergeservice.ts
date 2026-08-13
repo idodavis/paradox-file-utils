@@ -22,13 +22,6 @@ export function GenerateMergeReport(results: $models.FileMergeResult[] | null, t
 }
 
 /**
- * GetMergeConflicts returns structured conflict chunks for the assisted merge editor.
- */
-export function GetMergeConflicts(fileAPath: string, fileBPath: string, options: $models.MergerOptions): $CancellablePromise<$models.MergeConflictChunk[] | null> {
-    return $Call.ByID(2239209270, fileAPath, fileBPath, options);
-}
-
-/**
  * Merge performs the merge for each task (PreviewItem) and writes results. Single entry point for merge operations.
  */
 export function Merge(tasks: $models.PreviewItem[] | null, opts: $models.MergerOptions): $CancellablePromise<$models.FileMergeResult[] | null> {

@@ -5,17 +5,28 @@ import { computed, inject, provide, ref } from "vue";
 import { GetSettings, GetMergePresets, SaveMergePreset, DeleteMergePreset } from "@services/settingsservice";
 import { GetUserDownloadsDir, GetGameScriptRoot, ReadFileContent, WriteWithBOM, SaveFile } from "@services/fileservice";
 import {
-  GetMergeConflicts,
   MergePreview,
   Merge,
   GenerateMergeReport,
   ValidateMergedFiles,
 } from "@services/mergeservice";
-import type { FileMergeResult, MergeConflictChunk, MergePreset, MergerOptions, PreviewItem } from "@services/models";
+import type { FileMergeResult, MergePreset, MergerOptions, PreviewItem } from "@services/models";
 import { useCurrentGame } from "./appContext";
+import { buildConflictMarkedFile } from "./textMerge";
+
+/** Manual merge file state built entirely on the frontend. */
+export type ManualMergeFile = {
+  task: PreviewItem;
+  contentA: string;
+  contentB: string;
+  markedContent: string;
+  conflictCount: number;
+  identical: boolean;
+};
 
 const mergeWorkflowKey = Symbol("merge-workflow");
 
+/** Create isolated merge workflow state and actions for the merge page. */
 export function createMergeWorkflow() {
   const toast = useToast();
   const currentGame = useCurrentGame();
@@ -36,7 +47,7 @@ export function createMergeWorkflow() {
   const modPath = ref("");
   const filePairs = ref<{ pathA: string; pathB: string; outputName: string }[]>([]);
   const outputDir = ref("");
-  const activeTab = ref<"vanilla" | "dirs" | "pairs">("vanilla");
+  const activeTab = ref<string | number>("vanilla");
   const previewItems = ref<PreviewItem[]>([]);
   const selectedRelPaths = ref<Record<string, boolean>>({});
   const mergeResults = ref<FileMergeResult[]>([]);
@@ -50,7 +61,7 @@ export function createMergeWorkflow() {
   const currentPresetName = ref("");
   const presetNameToSave = ref("");
   const defaultOutputDir = ref("");
-  const currentManualFile = ref<{ task: PreviewItem; chunks: MergeConflictChunk[] } | null>(null);
+  const currentManualFile = ref<ManualMergeFile | null>(null);
   const manualMergeQueue = ref<PreviewItem[]>([]);
   const diffSide = ref<"A" | "B">("A");
   const showResultDialog = ref(false);
@@ -61,13 +72,18 @@ export function createMergeWorkflow() {
   const manualQueueTotal = ref(0);
   const manualQueueCurrent = ref(0);
 
-  const labels = computed(() =>
-    activeTab.value === "vanilla"
-      ? { a: "Vanilla", b: "Mod" }
-      : activeTab.value === "dirs"
-        ? { a: "Dir A", b: "Dir B" }
-        : { a: "File A", b: "File B" },
-  );
+  const labels = computed(() => {
+    switch (activeTab.value) {
+      case "vanilla":
+        return { a: "Vanilla", b: "Mod" };
+      case "dirs":
+        return { a: "Dir A", b: "Dir B" };
+      case "pairs":
+        return { a: "File A", b: "File B" };
+      default:
+        return { a: "File A", b: "File B" };
+    }
+  });
   const canRun = computed(() => {
     const installPath = settings.value["ck3.install_path"] ?? settings.value["eu5.install_path"] ?? "";
     return {
@@ -102,9 +118,9 @@ export function createMergeWorkflow() {
   );
   const showAdditionsTab = computed(() => config.value.addAdditionalEntries);
   const activeTabOptions = [
-    { label: "Vanilla vs mod", value: "vanilla" },
-    { label: "Two Directories", value: "dirs" },
-    { label: "File Pairs", value: "pairs" },
+    { label: "Vanilla vs mod", value: "vanilla", slot: "vanilla" },
+    { label: "Two Directories", value: "dirs", slot: "dirs" },
+    { label: "File Pairs", value: "pairs", slot: "pairs" },
   ];
   const resolutionModeOptions = [
     { label: "Auto", value: false },
@@ -287,9 +303,39 @@ export function createMergeWorkflow() {
     }
     const task = manualMergeQueue.value[0];
     try {
-      const chunks = (await GetMergeConflicts(task.pathA, task.pathB, mergeOptions.value)) ?? [];
-      currentManualFile.value = { task, chunks };
-    } catch {
+      const [contentA, contentB] = await Promise.all([
+        ReadFileContent(task.pathA),
+        ReadFileContent(task.pathB),
+      ]);
+      const marked = buildConflictMarkedFile(contentA, contentB, {
+        fileName: task.relPath,
+        labelA: labels.value.a,
+        labelB: labels.value.b,
+      });
+      if (marked.identical) {
+        await WriteWithBOM(task.outputPath, contentA);
+        mergeResults.value.push({
+          filePath: task.relPath,
+          fileAPath: task.pathA,
+          fileBPath: task.pathB,
+          outputPath: task.outputPath,
+          changed: 0,
+          added: 0,
+          resolvedConflicts: [],
+        });
+        advanceManualQueue();
+        return;
+      }
+      currentManualFile.value = {
+        task,
+        contentA,
+        contentB,
+        markedContent: marked.content,
+        conflictCount: marked.conflictCount,
+        identical: marked.identical,
+      };
+    } catch (error) {
+      errorMsg.value = error instanceof Error ? error.message : String(error);
       manualMergeQueue.value.shift();
       manualQueueCurrent.value += 1;
       await processManualQueue();
@@ -487,10 +533,12 @@ export function createMergeWorkflow() {
 
 export type MergeWorkflow = ReturnType<typeof createMergeWorkflow>;
 
+/** Provide merge workflow state to descendant components. */
 export function provideMergeWorkflow(workflow: MergeWorkflow): void {
   provide(mergeWorkflowKey, workflow);
 }
 
+/** Read the provided merge workflow, throwing if missing. */
 export function useMergeWorkflow(): MergeWorkflow {
   const workflow = inject<MergeWorkflow>(mergeWorkflowKey);
   if (!workflow) throw new Error("Merge workflow was not provided.");

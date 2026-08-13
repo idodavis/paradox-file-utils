@@ -153,17 +153,7 @@ func (m *MergeService) Merge(ctx context.Context, tasks []PreviewItem, opts Merg
 	return results, nil
 }
 
-// GetMergeConflicts returns structured conflict chunks for the assisted merge editor.
-func (m *MergeService) GetMergeConflicts(ctx context.Context, fileAPath, fileBPath string, options MergerOptions) ([]MergeConflictChunk, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	items, _, err := m.mergeFileItems(fileAPath, fileBPath, options)
-	if err != nil {
-		return nil, err
-	}
-	return consolidateChunks(items), nil
-}
+// GetMergeConflicts removed — manual merge builds conflict markers on the frontend.
 
 // ValidateMergedFiles runs the Paradox parser on each path and returns parse errors.
 func (m *MergeService) ValidateMergedFiles(paths []string) []ValidationError {

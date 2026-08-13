@@ -34,7 +34,6 @@ export type {
     InventorySummary,
     ItemDetails,
     LatestPatchNotes,
-    MergeConflictChunk,
     MergePreset,
     MergerOptions,
     PathMatch,

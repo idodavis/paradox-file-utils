@@ -7,9 +7,9 @@ require (
 	github.com/frustra/bbcode v0.0.0-20201127003707-6ef347fbe1c8
 	github.com/google/uuid v1.6.0
 	github.com/jmoiron/sqlx v1.4.0
-	github.com/wailsapp/wails/v3 v3.0.0-alpha2.121
+	github.com/wailsapp/wails/v3 v3.0.0-beta.8
 	golang.org/x/sync v0.22.0
-	modernc.org/sqlite v1.55.0
+	modernc.org/sqlite v1.56.0
 )
 
 require (

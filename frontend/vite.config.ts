@@ -1,3 +1,6 @@
+/**
+ * Vite config for the Vue frontend: Vue, Nuxt UI, Wails bindings, and Tailwind.
+ */
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import ui from "@nuxt/ui/vite";

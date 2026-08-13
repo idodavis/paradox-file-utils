@@ -20,6 +20,7 @@ import InventoryCard from "../components/InventoryCard.vue";
 import InventoryDetails from "../components/InventoryDetails.vue";
 import InventoryNameDialog from "../components/InventoryNameDialog.vue";
 import { useCurrentGame } from "../composables/appContext";
+import { normalizeSettings } from "../composables/settings";
 
 const currentGame = useCurrentGame();
 const settings = ref<Record<string, string>>({});
@@ -54,7 +55,9 @@ const nameModalInitialName = computed(() => {
   return savedInventories.value.find((inv) => inv.id === nameModal.value.invId)?.name ?? "";
 });
 const gameInstallPath = computed(() =>
-  currentGame.value === "CK3" ? (settings.value["ck3.install_path"] ?? "") : (settings.value["eu5.install_path"] ?? ""),
+  currentGame.value === "CK3"
+    ? (settings.value["ck3.install_path"] ?? "")
+    : (settings.value["eu5.install_path"] ?? ""),
 );
 const appConstantsHint = computed(() =>
   currentGame.value === "CK3"
@@ -75,6 +78,7 @@ const itemColumns = [
   { accessorKey: "referrersCount", header: "Referrers" },
 ];
 
+/** Clear the current extraction results and selection. */
 function clearAll(): void {
   hasExtraction.value = false;
   extractionErrors.value = [];
@@ -86,12 +90,12 @@ function clearAll(): void {
   itemDetailsOpen.value = false;
 }
 
+/** Load backend settings used for install-path hints. */
 async function loadSettings(): Promise<void> {
-  settings.value = Object.fromEntries(
-    Object.entries((await GetSettings()) ?? {}).filter(([, value]) => value !== undefined),
-  ) as Record<string, string>;
+  settings.value = normalizeSettings(await GetSettings());
 }
 
+/** Refresh supported types and saved inventories for the current game. */
 async function refresh(): Promise<void> {
   const game = currentGame.value;
   const [types, list] = await Promise.all([GetSupportedTypes(game), ListInventoriesForGame(game)]);
@@ -102,6 +106,7 @@ async function refresh(): Promise<void> {
   }
 }
 
+/** Extract inventory items from the selected folder and types. */
 async function doExtract(): Promise<void> {
   if (extractDisabled.value) return;
   loading.value = true;
@@ -126,12 +131,14 @@ async function doExtract(): Promise<void> {
   }
 }
 
+/** Cancel an in-flight extraction request. */
 function cancelExtraction(): void {
   extractionPromise?.cancel?.();
   extractionPromise = null;
   loading.value = false;
 }
 
+/** Load a saved inventory into the results table. */
 async function loadInventory(inv: InventorySummary): Promise<void> {
   currentInventoryId.value = inv.id;
   currentInventoryGame.value = inv.game;
@@ -140,6 +147,7 @@ async function loadInventory(inv: InventorySummary): Promise<void> {
   allItems.value = (await GetInventoryItems(inv.id)) ?? [];
 }
 
+/** Save or rename an inventory from the name dialog. */
 async function handleNameModalSave(name: string): Promise<void> {
   if (!nameModal.value.invId) return;
   if (nameModal.value.mode === "save") {
@@ -151,21 +159,25 @@ async function handleNameModalSave(name: string): Promise<void> {
   await refresh();
 }
 
+/** Delete a saved inventory and clear it if it is currently open. */
 async function handleDelete(inv: InventorySummary): Promise<void> {
   await DeleteInventory(inv.id);
   if (currentInventoryId.value === inv.id) clearAll();
   await refresh();
 }
 
+/** Open the save/rename dialog for the current or given inventory. */
 function openModal(mode: "save" | "rename", inv?: InventorySummary): void {
   nameModal.value = { open: true, mode, invId: currentInventoryId.value ?? inv?.id ?? null };
 }
 
+/** Show details for a selected inventory row. */
 async function loadSelectedRow(row: InventoryItemRow): Promise<void> {
   selectedRow.value = row;
   itemDetailsOpen.value = true;
 }
 
+/** Handle a UTable row select event. */
 function selectInventoryRow(_event: Event, row: TableRow<InventoryItemRow>): void {
   void loadSelectedRow(row.original);
 }
@@ -191,101 +203,150 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4">
-    <UCard>
-      <template #header>
-        <div class="text-xs font-semibold uppercase tracking-wide text-primary">Inventory explorer</div>
-        <div class="text-2xl font-bold">Inventory Tool</div>
-        <div class="mt-2 text-sm text-muted">
-          Extract and browse game objects from script files with saved inventories and row details.
-        </div>
-      </template>
-
-      <div class="space-y-4">
-        <FileSelector v-model="file" label="Folder to extract" dialog-title="Select a folder" mode="folder"
-          placeholder="Folder containing the inventory (e.g. mod folder, game files)" hint="Game install path: " />
-        <div class="text-xs text-muted">Game install path: {{ gameInstallPath || "(not set)" }}</div>
-        <div class="text-xs text-muted">Script root hint: {{ appConstantsHint || "(not set)" }}</div>
-        <div>
-          <div class="mb-2 text-sm font-medium">Object types</div>
-          <div class="flex flex-wrap items-center gap-2">
-            <USelect v-model="selectedTypes" :items="supportedTypes" multiple :disabled="typesDisabled"
-              class="min-w-[18rem]" />
-            <UButton label="All" color="neutral" variant="outline" :disabled="typesDisabled"
-              @click="selectedTypes = [...supportedTypes]" />
-            <UButton label="None" color="neutral" variant="outline" :disabled="typesDisabled || !selectedTypes.length"
-              @click="selectedTypes = []" />
-          </div>
-          <div class="mt-1 text-xs text-muted">Note: gfx/, gui/, and music/ types are not currently supported.</div>
-        </div>
-
-        <div class="flex items-center justify-between gap-2">
-          <UButton label="Clear Results" color="error" variant="outline" :disabled="loading" @click="clearAll" />
-          <UButton :loading="loading" :disabled="extractDisabled" :label="loading ? 'Cancel' : 'Extract'"
-            @click="loading ? cancelExtraction() : doExtract()" />
-        </div>
+  <div class="flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden p-3">
+    <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
+      <div>
+        <h1 class="text-lg font-semibold">Inventory</h1>
+        <p class="text-xs text-muted">Extract and browse script objects</p>
       </div>
-    </UCard>
+      <div class="text-xs text-muted">
+        {{ gameInstallPath || "Install path not set" }}
+      </div>
+    </div>
 
-    <UAlert v-if="extractionErrors.length" color="warning" variant="subtle"
-      :title="`Errors (${extractionErrors.length})`" description="Extraction returned one or more errors.">
+    <UAccordion
+      :items="[{ label: 'Extract', icon: 'i-lucide-folder-search', value: 'extract' }]"
+      :default-value="hasExtraction ? undefined : 'extract'"
+      :unmount-on-hide="false"
+      class="shrink-0"
+    >
       <template #body>
-        <ul class="mt-2 list-disc pl-5 text-sm">
-          <li v-for="error in extractionErrors" :key="error">{{ error }}</li>
-        </ul>
-      </template>
-    </UAlert>
-
-    <UCard v-if="savedInventories.length">
-      <template #header>
-        <div class="flex items-center justify-between">
-          <div class="text-base font-medium">Saved inventories</div>
-          <UBadge color="neutral" variant="subtle">{{ savedInventories.length }}</UBadge>
-        </div>
-      </template>
-
-      <div class="inventory-saved-scroll overflow-x-auto">
-        <div class="flex min-w-max gap-4 p-3">
-          <div v-for="inv in savedInventories" :key="inv.id" class="inventory-card-width">
-            <InventoryCard :inv="inv" :active="currentInventoryId === inv.id" @load="loadInventory"
-              @rename="openModal('rename', $event)" @delete="handleDelete" />
+        <div class="space-y-2 pb-2">
+          <FileSelector
+            v-model="file"
+            label="Folder to extract"
+            dialog-title="Select a folder"
+            mode="folder"
+            placeholder="Mod or game folder"
+          />
+          <UFormField label="Object types" help="gfx/, gui/, and music/ types are not supported.">
+            <UFieldGroup class="w-full">
+              <USelect
+                v-model="selectedTypes"
+                :items="supportedTypes"
+                multiple
+                :disabled="typesDisabled"
+                class="min-w-64 flex-1"
+                size="sm"
+              />
+              <UButton
+                label="All"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                :disabled="typesDisabled"
+                @click="selectedTypes = [...supportedTypes]"
+              />
+              <UButton
+                label="None"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                :disabled="typesDisabled || !selectedTypes.length"
+                @click="selectedTypes = []"
+              />
+            </UFieldGroup>
+          </UFormField>
+          <div class="flex justify-between gap-2">
+            <UButton label="Clear" color="error" variant="ghost" size="sm" :disabled="loading" @click="clearAll" />
+            <UButton
+              :loading="loading"
+              :disabled="extractDisabled"
+              :label="loading ? 'Cancel' : 'Extract'"
+              size="sm"
+              @click="loading ? cancelExtraction() : doExtract()"
+            />
           </div>
         </div>
-      </div>
-    </UCard>
+      </template>
+    </UAccordion>
 
-    <UCard v-if="hasExtraction">
-      <template #header>
-        <div class="flex items-center justify-between">
-          <div class="text-base font-medium">{{ allItems.length.toLocaleString() }} items found</div>
-          <UButton v-if="isCurrentTemp" label="Save Inventory" @click="openModal('save')" />
+    <UAlert
+      v-if="extractionErrors.length"
+      color="warning"
+      variant="subtle"
+      class="shrink-0"
+      :title="`Errors (${extractionErrors.length})`"
+    />
+
+    <div v-if="savedInventories.length" class="shrink-0 overflow-x-auto">
+      <div class="flex min-w-max gap-3 p-1">
+        <div v-for="inv in savedInventories" :key="inv.id" class="inventory-card-width">
+          <InventoryCard
+            :inv="inv"
+            :active="currentInventoryId === inv.id"
+            @load="loadInventory"
+            @rename="openModal('rename', $event)"
+            @delete="handleDelete"
+          />
+        </div>
+      </div>
+    </div>
+
+    <div class="min-h-0 flex-1 overflow-hidden rounded-lg border border-default">
+      <template v-if="hasExtraction">
+        <div class="flex items-center justify-between border-b border-default px-3 py-2">
+          <div class="text-sm font-medium">{{ allItems.length.toLocaleString() }} items</div>
+          <UButton v-if="isCurrentTemp" label="Save Inventory" size="sm" @click="openModal('save')" />
+        </div>
+        <div class="h-[calc(100%-5.5rem)] overflow-auto">
+          <UTable :data="pagedItems" :columns="itemColumns" @select="selectInventoryRow">
+            <template #type-cell="{ row }">
+              <span class="font-medium text-highlighted">{{ row.original.type }}</span>
+            </template>
+            <template #lines-cell="{ row }">
+              {{ row.original.lineStart }} - {{ row.original.lineEnd }}
+            </template>
+          </UTable>
+        </div>
+        <div class="flex items-center justify-end gap-3 border-t border-default px-3 py-2">
+          <span class="text-xs text-muted">Page {{ currentPage }} / {{ totalPages }}</span>
+          <UPagination
+            v-model:page="currentPage"
+            :items-per-page="rowsPerPage"
+            :total="allItems.length"
+            color="neutral"
+            active-color="primary"
+            size="sm"
+          />
         </div>
       </template>
-
-      <UTable :data="pagedItems" :columns="itemColumns" @select="selectInventoryRow">
-        <template #type-cell="{ row }">
-          <span class="font-medium text-highlighted">{{ row.original.type }}</span>
-        </template>
-        <template #lines-cell="{ row }"> {{ row.original.lineStart }} - {{ row.original.lineEnd }} </template>
-      </UTable>
-
-      <div class="mt-3 flex items-center justify-end gap-3">
-        <span class="text-xs text-muted">Page {{ currentPage }} / {{ totalPages }}</span>
-        <UPagination v-model:page="currentPage" :items-per-page="rowsPerPage" :total="allItems.length" color="neutral"
-          active-color="primary" />
-      </div>
-    </UCard>
-
-    <div v-else class="py-8 text-center text-muted">No inventory. Select a path and types, then Extract.</div>
+      <UEmpty
+        v-else
+        class="h-full"
+        icon="i-lucide-folder-search"
+        title="No inventory"
+        description="Select a path and types, then Extract."
+      />
+    </div>
 
     <UModal v-model:open="itemDetailsOpen" title="Item Details" :ui="{ content: 'sm:max-w-4xl' }">
       <template #body>
-        <InventoryDetails :inventory-id="currentInventoryId" :item-type="selectedRow?.type ?? null"
-          :item-key="selectedRow?.key ?? null" :row="selectedRow" :game="currentGame" />
+        <InventoryDetails
+          :inventory-id="currentInventoryId"
+          :item-type="selectedRow?.type ?? null"
+          :item-key="selectedRow?.key ?? null"
+          :row="selectedRow"
+          :game="currentGame"
+        />
       </template>
     </UModal>
 
-    <InventoryNameDialog v-model="nameModal.open" :mode="nameModal.mode" :initial-name="nameModalInitialName"
-      @save="handleNameModalSave" />
+    <InventoryNameDialog
+      v-model="nameModal.open"
+      :mode="nameModal.mode"
+      :initial-name="nameModalInitialName"
+      @save="handleNameModalSave"
+    />
   </div>
 </template>

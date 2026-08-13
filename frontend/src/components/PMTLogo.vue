@@ -2,8 +2,8 @@
 /**
  * PMT brand mark used in the Vue app.
  */
-import logoIcon from "../../src/assets/PMT-Logo-Icon.svg?url";
-import logoText from "../../src/assets/PMT-Logo-Text.svg?url";
+import logoIcon from "@assets/PMT-Logo-Icon.svg?url";
+import logoText from "@assets/PMT-Logo-Text.svg?url";
 
 withDefaults(
   defineProps<{

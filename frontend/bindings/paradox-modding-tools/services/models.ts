@@ -73,23 +73,6 @@ export interface LatestPatchNotes {
 }
 
 /**
- * MergeConflictChunk is a unit of content for the assisted merge editor (and internal merge iteration).
- * ObjA/ObjB are internal-only; JSON output omits them.
- */
-export interface MergeConflictChunk {
-    /**
-     * "unchanged", "added", or "conflict"
-     */
-    "type": string;
-    "textA": string;
-    "textB": string;
-    "startLineA": number;
-    "startLineB": number;
-    "endLineA": number;
-    "endLineB": number;
-}
-
-/**
  * MergePreset holds a named merge options profile (JSON-safe for bindings)
  */
 export interface MergePreset {

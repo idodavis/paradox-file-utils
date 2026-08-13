@@ -1,53 +1,50 @@
 <script setup lang="ts">
 /**
  * Vue 3 wrapper around @pierre/diffs CodeView.
- * Supports rendering single files, diffs, or custom CodeViewItem arrays with built-in virtualization.
+ * Renders files or diffs with optional per-item edit mode.
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import { CodeView, type CodeViewItem } from "@pierre/diffs";
+import { Editor } from "@pierre/diffs/edit";
 
 const props = withDefaults(
   defineProps<{
-    /** Direct list of CodeView items. Takes precedence if provided. */
+    /** Direct list of CodeView items. */
     items?: CodeViewItem[];
-    /** Placeholder message when no content or items are available. */
+    /** Placeholder when no items are available. */
     placeholder?: string;
     /** Optional top header label text. */
     label?: string;
     /** CSS class for top header label. */
     labelClass?: string;
+    /** Enable Pierre edit mode for items with edit: true. */
+    editable?: boolean;
   }>(),
   {
     placeholder: "Missing Code Content",
     labelClass: "bg-muted text-default",
-  }
+    editable: false,
+  },
 );
 
-const container = ref<HTMLElement | null>(null);
+const emit = defineEmits<{
+  /** Live edited contents for an editable item. */
+  "item-edit": [payload: { id: string; contents: string }];
+}>();
+
+const container = useTemplateRef<HTMLElement>("container");
 let viewer: CodeView | null = null;
 
-/**
- * Computes the active CodeView items to render based on props.
- */
-const activeItems = computed<CodeViewItem[]>(() => {
-  if (props.items && props.items.length > 0) {
-    return props.items;
-  }
-  return [];
-});
+/** Active CodeView items derived from props. */
+const activeItems = computed<CodeViewItem[]>(() => props.items ?? []);
 
-/**
- * Syncs current items to the CodeView viewer instance.
- */
-function updateViewerItems() {
-  if (!viewer) return;
-  viewer.setItems(activeItems.value);
+/** Sync current items to the CodeView viewer instance. */
+function updateViewerItems(): void {
+  viewer?.setItems(activeItems.value);
 }
 
 onMounted(() => {
   if (!container.value) return;
-
-  // Initialize CodeView instance
   viewer = new CodeView({
     theme: { dark: "pierre-dark", light: "pierre-light" },
     stickyHeaders: true,
@@ -55,32 +52,18 @@ onMounted(() => {
     enableGutterUtility: false,
     layout: { paddingTop: 0, paddingBottom: 0, gap: 12 },
     renderHeaderMetadata(_headerData, context) {
-      return context.item.type === 'diff' ? context.item.fileDiff.type : 'file';
+      return context.item.type === "diff" ? context.item.fileDiff.type : "file";
     },
-    // renderGutterUtility(getHoveredLine, context) {
-    //   const hoveredLine = getHoveredLine();
-    //   if (hoveredLine == null || context.item.type !== 'diff') {
-    //     return undefined;
-    //   }
-
-    //   // const button = document.createElement('button');
-    //   // button.type = 'button';
-    //   // button.textContent = 'Comment on line ' + hoveredLine.lineNumber;
-    //   // return button;
-    // }
+    createEditor: props.editable ? () => new Editor() : undefined,
+    onItemEditChange(item, file) {
+      emit("item-edit", { id: item.id, contents: file.contents });
+    },
   });
-
-  // Attach virtualized viewer to host element
   viewer.setup(container.value);
-
-  // Set initial items
   updateViewerItems();
 });
 
-// Reactively update items whenever props change
-watch(activeItems, () => {
-  updateViewerItems();
-});
+watch(activeItems, updateViewerItems);
 
 onBeforeUnmount(() => {
   viewer?.cleanUp();
@@ -89,17 +72,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col h-full">
-    <!-- Viewer Host Container -->
+  <div class="flex h-full min-h-0 flex-1 flex-col">
+    <div v-if="label" class="shrink-0 px-3 py-2 text-sm font-semibold" :class="labelClass">
+      {{ label }}
+    </div>
     <div class="relative min-h-0 flex-1 overflow-hidden">
-      <!-- CodeView mounts inside this container and manages scrolling -->
-      <div ref="container" class="absolute inset-0 overflow-auto"></div>
-
-      <!-- Placeholder overlay when empty -->
-      <div v-if="activeItems.length === 0"
-        class="pointer-events-none absolute inset-0 flex select-none items-center justify-center text-sm text-muted">
-        {{ placeholder }}
-      </div>
+      <div ref="container" class="absolute inset-0 overflow-auto" />
+      <UEmpty
+        v-if="activeItems.length === 0"
+        class="pointer-events-none absolute inset-0"
+        icon="i-lucide-file-code"
+        :title="placeholder"
+      />
     </div>
   </div>
 </template>

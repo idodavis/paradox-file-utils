@@ -4,8 +4,8 @@
  */
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import ck3Bg from "../../src/assets/CK3-All_Under_Heaven.jpg";
-import eu5Bg from "../../src/assets/EUV-Release.jpg";
+import ck3Bg from "@assets/CK3-All_Under_Heaven.jpg";
+import eu5Bg from "@assets/EUV-Release.jpg";
 import { OpenURL } from "@services/browserservice";
 import { GetLatestPatchNotes } from "@services/steamservice";
 import type { LatestPatchNotes } from "@services/models";
@@ -42,14 +42,17 @@ const patchNotesDialogOpen = ref(false);
 const backgroundImage = computed(() => (currentGame.value === "EU5" ? eu5Bg : ck3Bg));
 const currentPatchNotes = computed(() => latestPatchNotes.value[currentGame.value]);
 
+/** Navigate to a tool page by route name. */
 function openTool(routeName: string): void {
   void router.push({ name: routeName });
 }
 
+/** Open the patch notes modal when notes are available. */
 async function openPatchNotes(): Promise<void> {
   if (currentPatchNotes.value) patchNotesDialogOpen.value = true;
 }
 
+/** Open the current patch notes URL in the system browser. */
 async function openPatchNotesUrl(): Promise<void> {
   if (currentPatchNotes.value?.url) await OpenURL(currentPatchNotes.value.url);
 }
@@ -82,10 +85,9 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="w-full lg:w-auto">
-      <UCard class="w-full cursor-pointer shadow-xl bg-elevated/85 transition-colors hover:bg-elevated lg:max-w-[25rem]"
-        @click="openPatchNotes">
-        <img :src="backgroundImage" alt="Game Wallpaper" class="aspect-[4/3] w-full object-cover opacity-85" />
+    <div class="w-full cursor-pointer lg:w-auto" @click="openPatchNotes">
+      <UCard class="w-full shadow-xl bg-elevated/85 transition-colors hover:bg-elevated lg:max-w-100">
+        <img :src="backgroundImage" alt="Game Wallpaper" class="aspect-4/3 w-full object-cover opacity-85" />
         <template #header>
           <div class="mb-2 inline-flex rounded-full bg-secondary px-3 py-1 text-sm font-medium text-secondary-content">
             Latest Patch Notes
@@ -93,9 +95,10 @@ onMounted(async () => {
           <div class="text-base font-semibold">{{ currentPatchNotes?.title ?? "Loading latest patch notes..." }}</div>
         </template>
 
-        <div class="text-sm text-muted line-clamp-6">
-          {{ currentPatchNotes?.contents ?? "Loading latest patch notes..." }}
+        <div v-if="currentPatchNotes" class="line-clamp-6 text-sm text-muted">
+          {{ currentPatchNotes.contents }}
         </div>
+        <UEmpty v-else icon="i-lucide-newspaper" title="Loading latest patch notes..." />
 
         <template #footer>
           <div class="flex justify-end">
