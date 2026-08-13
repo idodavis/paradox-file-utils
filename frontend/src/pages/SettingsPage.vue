@@ -1,21 +1,21 @@
 <script setup lang="ts">
 /**
- * Settings page: theme, data reset, workspace library link.
+ * Settings page: fonts, data reset, workspace library link.
  */
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { GetSettings, SaveSettings } from "@services/settingsservice";
+import { storeToRefs } from "pinia";
 import { ResetData } from "@services/dbservice";
-import { normalizeSettings } from "../composables/settings";
+import { useSettingsStore } from "../stores/settings";
 
 const router = useRouter();
-const loading = ref(false);
-const saving = ref(false);
+const settings = useSettingsStore();
+const { fontScale, editorFontSize, loading, saving } = storeToRefs(settings);
+
 const resetting = ref(false);
 const resetOpen = ref(false);
 const message = ref("");
 const messageKind = ref<"positive" | "negative" | "info">("info");
-const settings = ref<Record<string, string>>({});
 
 const messageColor = computed(() => {
   switch (messageKind.value) {
@@ -40,27 +40,27 @@ function setMessage(text: string, kind: "positive" | "negative" | "info" = "info
 
 /** Reload settings. */
 async function load(): Promise<void> {
-  loading.value = true;
   try {
-    settings.value = normalizeSettings(await GetSettings());
+    await settings.load();
     setMessage("Settings loaded.", "info");
   } catch (error) {
-    setMessage(`Failed to load: ${error instanceof Error ? error.message : String(error)}`, "negative");
-  } finally {
-    loading.value = false;
+    setMessage(
+      `Failed to load: ${error instanceof Error ? error.message : String(error)}`,
+      "negative",
+    );
   }
 }
 
 /** Save settings. */
 async function save(): Promise<void> {
-  saving.value = true;
   try {
-    await SaveSettings(settings.value);
+    await settings.save();
     setMessage("Settings saved.", "positive");
   } catch (error) {
-    setMessage(`Save failed: ${error instanceof Error ? error.message : String(error)}`, "negative");
-  } finally {
-    saving.value = false;
+    setMessage(
+      `Save failed: ${error instanceof Error ? error.message : String(error)}`,
+      "negative",
+    );
   }
 }
 
@@ -73,7 +73,10 @@ async function resetData(): Promise<void> {
     await load();
     setMessage("Data reset complete.", "positive");
   } catch (error) {
-    setMessage(`Reset failed: ${error instanceof Error ? error.message : String(error)}`, "negative");
+    setMessage(
+      `Reset failed: ${error instanceof Error ? error.message : String(error)}`,
+      "negative",
+    );
   } finally {
     resetting.value = false;
   }
@@ -97,13 +100,75 @@ onMounted(load);
               <h1 class="text-lg font-semibold">Settings</h1>
               <p class="text-xs text-muted">App configuration and data management</p>
             </div>
-            <UButton label="Library" icon="i-lucide-library" color="neutral" variant="outline" size="sm"
-              @click="goToLibrary" />
+            <UButton
+              label="Library"
+              icon="i-lucide-library"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              @click="goToLibrary"
+            />
           </div>
         </template>
 
         <div class="space-y-4">
           <UAlert v-if="message" :color="messageColor" variant="subtle" :description="message" />
+
+          <UCard variant="subtle">
+            <template #header>
+              <span class="font-medium">Appearance</span>
+            </template>
+            <div class="space-y-4">
+              <UFormField
+                label="UI scale"
+                :description="`App chrome at ${fontScale}% (Nuxt UI / explorer)`"
+              >
+                <div class="flex items-center gap-3">
+                  <UButton
+                    icon="i-lucide-minus"
+                    size="xs"
+                    color="neutral"
+                    variant="outline"
+                    :disabled="fontScale <= settings.FONT_SCALE_MIN"
+                    @click="settings.setFontScale(fontScale - 5)"
+                  />
+                  <span class="w-12 text-center text-sm tabular-nums">{{ fontScale }}%</span>
+                  <UButton
+                    icon="i-lucide-plus"
+                    size="xs"
+                    color="neutral"
+                    variant="outline"
+                    :disabled="fontScale >= settings.FONT_SCALE_MAX"
+                    @click="settings.setFontScale(fontScale + 5)"
+                  />
+                </div>
+              </UFormField>
+              <UFormField
+                label="Editor font size"
+                :description="`Pierre code surface at ${editorFontSize}px`"
+              >
+                <div class="flex items-center gap-3">
+                  <UButton
+                    icon="i-lucide-minus"
+                    size="xs"
+                    color="neutral"
+                    variant="outline"
+                    :disabled="editorFontSize <= settings.EDITOR_FONT_MIN"
+                    @click="settings.setEditorFontSize(editorFontSize - 1)"
+                  />
+                  <span class="w-12 text-center text-sm tabular-nums">{{ editorFontSize }}px</span>
+                  <UButton
+                    icon="i-lucide-plus"
+                    size="xs"
+                    color="neutral"
+                    variant="outline"
+                    :disabled="editorFontSize >= settings.EDITOR_FONT_MAX"
+                    @click="settings.setEditorFontSize(editorFontSize + 1)"
+                  />
+                </div>
+              </UFormField>
+            </div>
+          </UCard>
 
           <UCard variant="subtle">
             <template #header>
@@ -121,10 +186,23 @@ onMounted(load);
           <hr class="border-default" />
 
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <UButton label="Reset all data" color="error" variant="outline" size="sm" :loading="resetting"
-              @click="resetOpen = true" />
+            <UButton
+              label="Reset all data"
+              color="error"
+              variant="outline"
+              size="sm"
+              :loading="resetting"
+              @click="resetOpen = true"
+            />
             <div class="flex gap-2">
-              <UButton label="Reload" color="neutral" variant="outline" size="sm" :loading="loading" @click="load" />
+              <UButton
+                label="Reload"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                :loading="loading"
+                @click="load"
+              />
               <UButton label="Save" size="sm" :loading="saving" @click="save" />
             </div>
           </div>
@@ -132,8 +210,11 @@ onMounted(load);
       </UCard>
     </div>
 
-    <UModal v-model:open="resetOpen" title="Reset all data?"
-      description="This will delete workspaces, indexes, patch cache, and script logs. Settings will be kept.">
+    <UModal
+      v-model:open="resetOpen"
+      title="Reset all data?"
+      description="This will delete workspaces, indexes, patch cache, and script logs. Settings will be kept."
+    >
       <template #footer="{ close }">
         <UButton label="Cancel" color="neutral" variant="outline" @click="close" />
         <UButton label="Reset" color="error" :loading="resetting" @click="resetData" />

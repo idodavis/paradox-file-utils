@@ -25,6 +25,15 @@ export interface CascadeNode {
 }
 
 /**
+ * ContentSearchHit is a line match from SearchInFiles.
+ */
+export interface ContentSearchHit {
+    "fullPath": string;
+    "line": number;
+    "text": string;
+}
+
+/**
  * DirEntry is one immediate child of a directory (for lazy file trees).
  */
 export interface DirEntry {
@@ -75,6 +84,15 @@ export interface FileMergeResult {
     "entriesAdded"?: string[] | null;
     "resolvedConflicts"?: ResolvedConflict[] | null;
     "error"?: string;
+}
+
+/**
+ * FileSearchHit is a path match from SearchByName.
+ */
+export interface FileSearchHit {
+    "fullPath": string;
+    "name": string;
+    "isDir": boolean;
 }
 
 /**

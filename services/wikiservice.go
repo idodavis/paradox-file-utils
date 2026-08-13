@@ -58,6 +58,11 @@ func setWikiHeaders(req *http.Request, wikiAPI string) {
 	}
 }
 
+// normalizePatchVersion trims whitespace and trailing dots ("1.12." → "1.12").
+func normalizePatchVersion(v string) string {
+	return strings.TrimRight(strings.TrimSpace(v), ".")
+}
+
 // ListVersions fetches the patch list from /Patches wiki page and returns versions.
 func (w *WikiService) ListVersions(gameID string) ([]PatchVersion, error) {
 	info := game.Get(gameID)
@@ -116,11 +121,14 @@ func (w *WikiService) parseVersionsFromHTML(html, gameID string) []PatchVersion 
 			version = m[3]
 			href = fmt.Sprintf("/Patch_%s", version)
 		}
+		version = normalizePatchVersion(version)
 		if version == "" || seen[version] {
 			continue
 		}
 		seen[version] = true
 
+		// Prefer a URL that already uses the normalized page title.
+		href = strings.Replace(href, "Patch_"+version+".", "Patch_"+version, 1)
 		fullURL := href
 		if !strings.HasPrefix(href, "http") {
 			fullURL = baseURL + href
@@ -131,11 +139,16 @@ func (w *WikiService) parseVersionsFromHTML(html, gameID string) []PatchVersion 
 	return versions
 }
 
-// GetPatchModdingSection fetches a patch page and extracts the Modding section HTML.
+// GetPatchModdingSection fetches a patch page and caches full HTML plus the Modding section.
 func (w *WikiService) GetPatchModdingSection(gameID, version string) (*repos.WikiPatch, error) {
+	version = normalizePatchVersion(version)
+	if version == "" {
+		return nil, fmt.Errorf("version is required")
+	}
+
 	repo := w.getRepo()
 	cached, err := repo.Get(gameID, version)
-	if err == nil && cached != nil {
+	if err == nil && cached != nil && cached.HTMLContent != "" {
 		return cached, nil
 	}
 
@@ -144,8 +157,11 @@ func (w *WikiService) GetPatchModdingSection(gameID, version string) (*repos.Wik
 		return nil, fmt.Errorf("unknown game: %s", gameID)
 	}
 
-	pageTitle := fmt.Sprintf("Patch_%s", url.PathEscape(version))
-	apiURL := fmt.Sprintf("%s?action=parse&page=%s&format=json&prop=text", info.WikiAPI, pageTitle)
+	pageTitle := "Patch_" + version
+	apiURL := fmt.Sprintf(
+		"%s?action=parse&page=%s&format=json&prop=text",
+		info.WikiAPI, url.QueryEscape(pageTitle),
+	)
 
 	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
@@ -181,7 +197,8 @@ func (w *WikiService) GetPatchModdingSection(gameID, version string) (*repos.Wik
 		Version:     version,
 		FetchedAt:   time.Now().UTC().Format(time.RFC3339),
 		SourceURL:   sourceURL,
-		HTMLContent: moddingHTML,
+		HTMLContent: text,
+		ModdingHTML: moddingHTML,
 	}
 
 	_ = repo.Upsert(patch)

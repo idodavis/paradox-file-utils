@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -320,6 +322,194 @@ type DirEntry struct {
 	RelPath  string `json:"relPath"`
 	FullPath string `json:"fullPath"`
 	IsDir    bool   `json:"isDir"`
+}
+
+// CreateFile creates an empty UTF-8 file (parents created as needed).
+func (f *FileService) CreateFile(fullPath string) error {
+	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
+	if fullPath == "" || fullPath == "." {
+		return fmt.Errorf("path is required")
+	}
+	if _, err := os.Stat(fullPath); err == nil {
+		return fmt.Errorf("already exists: %s", fullPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		return fmt.Errorf("create parent dir: %w", err)
+	}
+	return os.WriteFile(fullPath, []byte{}, 0o644)
+}
+
+// CreateDir creates a directory (parents created as needed).
+func (f *FileService) CreateDir(fullPath string) error {
+	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
+	if fullPath == "" || fullPath == "." {
+		return fmt.Errorf("path is required")
+	}
+	return os.MkdirAll(fullPath, 0o755)
+}
+
+// RenamePath renames or moves a file or directory.
+func (f *FileService) RenamePath(oldPath, newPath string) error {
+	oldPath = filepath.Clean(filepath.FromSlash(oldPath))
+	newPath = filepath.Clean(filepath.FromSlash(newPath))
+	if oldPath == "" || newPath == "" {
+		return fmt.Errorf("path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
+		return fmt.Errorf("create parent dir: %w", err)
+	}
+	return os.Rename(oldPath, newPath)
+}
+
+// DeletePath removes a file or directory recursively.
+func (f *FileService) DeletePath(fullPath string) error {
+	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
+	if fullPath == "" || fullPath == "." {
+		return fmt.Errorf("path is required")
+	}
+	return os.RemoveAll(fullPath)
+}
+
+// RevealInOs opens the OS file manager on a folder, or selects a file in its parent.
+func (f *FileService) RevealInOs(fullPath string) error {
+	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
+	if fullPath == "" {
+		return fmt.Errorf("path is required")
+	}
+	fi, err := os.Stat(fullPath)
+	isDir := err == nil && fi.IsDir()
+	switch runtime.GOOS {
+	case "windows":
+		if isDir {
+			return exec.Command("explorer", fullPath).Start()
+		}
+		return exec.Command("explorer", "/select,", fullPath).Start()
+	case "darwin":
+		if isDir {
+			return exec.Command("open", fullPath).Start()
+		}
+		return exec.Command("open", "-R", fullPath).Start()
+	default:
+		target := fullPath
+		if !isDir {
+			target = filepath.Dir(fullPath)
+		}
+		return exec.Command("xdg-open", target).Start()
+	}
+}
+
+// FileSearchHit is a path match from SearchByName.
+type FileSearchHit struct {
+	FullPath string `json:"fullPath"`
+	Name     string `json:"name"`
+	IsDir    bool   `json:"isDir"`
+}
+
+// ContentSearchHit is a line match from SearchInFiles.
+type ContentSearchHit struct {
+	FullPath string `json:"fullPath"`
+	Line     int    `json:"line"`
+	Text     string `json:"text"`
+}
+
+var searchExts = map[string]bool{
+	".txt": true, ".yml": true, ".yaml": true, ".json": true,
+	".gui": true, ".info": true, ".mod": true,
+}
+
+// SearchByName finds files/folders under roots whose names contain query (case-insensitive).
+func (f *FileService) SearchByName(roots []string, query string, limit int) ([]FileSearchHit, error) {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" || len(roots) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	out := make([]FileSearchHit, 0, limit)
+	for _, root := range roots {
+		root = filepath.Clean(filepath.FromSlash(root))
+		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || len(out) >= limit {
+				return fs.SkipAll
+			}
+			name := d.Name()
+			if strings.HasPrefix(name, ".") {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.Contains(strings.ToLower(name), query) {
+				return nil
+			}
+			if !d.IsDir() && !searchExts[strings.ToLower(filepath.Ext(name))] {
+				return nil
+			}
+			out = append(out, FileSearchHit{FullPath: path, Name: name, IsDir: d.IsDir()})
+			return nil
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+// SearchInFiles finds lines under roots containing query (case-insensitive), capped per call.
+func (f *FileService) SearchInFiles(roots []string, query string, limit int) ([]ContentSearchHit, error) {
+	query = strings.TrimSpace(query)
+	if query == "" || len(roots) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	qLower := strings.ToLower(query)
+	out := make([]ContentSearchHit, 0, limit)
+	for _, root := range roots {
+		root = filepath.Clean(filepath.FromSlash(root))
+		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || len(out) >= limit {
+				return fs.SkipAll
+			}
+			if d.IsDir() {
+				if strings.HasPrefix(d.Name(), ".") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !searchExts[strings.ToLower(filepath.Ext(d.Name()))] {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			lines := strings.Split(string(data), "\n")
+			for i, line := range lines {
+				if len(out) >= limit {
+					return fs.SkipAll
+				}
+				if strings.Contains(strings.ToLower(line), qLower) {
+					text := strings.TrimRight(line, "\r")
+					if len(text) > 240 {
+						text = text[:240] + "…"
+					}
+					out = append(out, ContentSearchHit{
+						FullPath: path,
+						Line:     i + 1,
+						Text:     text,
+					})
+				}
+			}
+			return nil
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 // ListDirectory lists immediate children of dirPath (non-recursive).

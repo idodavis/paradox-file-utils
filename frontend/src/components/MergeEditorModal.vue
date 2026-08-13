@@ -6,7 +6,6 @@ import { computed, ref, watch } from "vue";
 import { parseDiffFromFile, type CodeViewItem } from "@pierre/diffs";
 import EditorView from "./EditorView.vue";
 import UnresolvedFileView from "./UnresolvedFileView.vue";
-import SplitPane from "./SplitPane.vue";
 import { countConflictMarkers } from "../composables/textMerge";
 import { langForPath } from "../composables/langForPath";
 
@@ -174,33 +173,41 @@ function save(): void {
           <!-- Middle: A | Result | B -->
           <div v-else-if="layout === 'middle'" class="flex h-full min-h-0 w-full">
             <div class="flex h-full min-h-0 min-w-50 flex-1 flex-col overflow-hidden border-r border-default">
-              <EditorView :items="sideAItems" :label="labelA" label-class="bg-primary/10 text-primary" />
+              <EditorView :items="sideAItems" :label="labelA" label-class="bg-primary/10 text-primary" readonly />
             </div>
             <div class="flex h-full min-h-0 min-w-[320px] flex-[1.6] flex-col overflow-hidden border-r border-default">
               <UnresolvedFileView v-if="showUnresolved" :key="`u-${relPath}-${editVersion}`" :file="markedFile"
                 label="Result (resolve conflicts)" @resolve="onResolve" @update:contents="onResolve" />
-              <EditorView v-else :key="`e-${relPath}-${editVersion}`" editable :items="editableResultItems"
+              <EditorView v-else :key="`e-${relPath}-${editVersion}`" :items="editableResultItems"
                 label="Result (editable)" label-class="bg-accent/10 text-accent" @item-edit="onItemEdit" />
             </div>
             <div class="flex h-full min-h-0 min-w-50 flex-1 flex-col overflow-hidden">
-              <EditorView :items="sideBItems" :label="labelB" label-class="bg-secondary/10 text-secondary" />
+              <EditorView :items="sideBItems" :label="labelB" label-class="bg-secondary/10 text-secondary" readonly />
             </div>
           </div>
 
           <!-- Right / Bottom: A↔B + Result -->
-          <SplitPane v-else :orientation="layout === 'right' ? 'horizontal' : 'vertical'"
-            :default-second-size="layout === 'right' ? 520 : 320" fixed-side="second"
-            class="h-full rounded-none border-0">
-            <template #first>
-              <EditorView :items="abDiffItems" label="A ↔ B" />
-            </template>
-            <template #second>
+          <div
+            v-else
+            class="flex h-full min-h-0 w-full"
+            :class="layout === 'right' ? 'flex-row' : 'flex-col'"
+          >
+            <div
+              class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-default"
+              :class="layout === 'right' ? 'border-r' : 'border-b'"
+            >
+              <EditorView :items="abDiffItems" label="A ↔ B" readonly />
+            </div>
+            <div
+              class="flex min-h-0 flex-col overflow-hidden"
+              :class="layout === 'right' ? 'w-[min(40%,520px)] shrink-0' : 'h-[min(40%,320px)] shrink-0'"
+            >
               <UnresolvedFileView v-if="showUnresolved" :key="`u2-${relPath}-${editVersion}`" :file="markedFile"
                 label="Result (resolve conflicts)" @resolve="onResolve" @update:contents="onResolve" />
-              <EditorView v-else :key="`e2-${relPath}-${editVersion}`" editable :items="editableResultItems"
+              <EditorView v-else :key="`e2-${relPath}-${editVersion}`" :items="editableResultItems"
                 label="Result (editable)" label-class="bg-accent/10 text-accent" @item-edit="onItemEdit" />
-            </template>
-          </SplitPane>
+            </div>
+          </div>
         </div>
       </div>
     </template>

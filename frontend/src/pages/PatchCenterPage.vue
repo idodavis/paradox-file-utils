@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Patch Center: wiki versions list, patch HTML, script log import.
+ * Patch Center: wiki versions list, modding + full patch notes, script log import.
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -26,6 +26,7 @@ const scriptLogs = ref<ScriptLogImport[]>([]);
 const logPath = ref("");
 const loading = ref(false);
 const error = ref("");
+const showFullNotes = ref(false);
 const wikiBlocked = computed(() => /Cloudflare|wiki API blocked/i.test(error.value));
 
 /** Load workspace and wiki versions. */
@@ -53,7 +54,10 @@ async function loadPatch(): Promise<void> {
   loading.value = true;
   error.value = "";
   try {
-    patchContent.value = await GetPatchModdingSection(workspace.value.gameId, selectedVersion.value);
+    patchContent.value = await GetPatchModdingSection(
+      workspace.value.gameId,
+      selectedVersion.value,
+    );
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
     patchContent.value = null;
@@ -88,9 +92,10 @@ function parseLogSummary(log: ScriptLogImport): ScriptLogSummary | null {
 
 /** Open the selected patch page in the system browser. */
 async function openWiki(): Promise<void> {
-  const url = patchContent.value?.sourceUrl
-    ?? versions.value.find((v) => v.version === selectedVersion.value)?.url
-    ?? "";
+  const url =
+    patchContent.value?.sourceUrl ??
+    versions.value.find((v) => v.version === selectedVersion.value)?.url ??
+    "";
   if (!url) return;
   try {
     await OpenURL(url);
@@ -99,7 +104,10 @@ async function openWiki(): Promise<void> {
   }
 }
 
-watch(selectedVersion, loadPatch);
+watch(selectedVersion, () => {
+  showFullNotes.value = false;
+  void loadPatch();
+});
 watch(workspaceId, loadData, { immediate: true });
 
 onMounted(loadData);
@@ -192,33 +200,63 @@ onMounted(loadData);
         </UCard>
       </div>
 
-      <UCard class="min-h-0 min-w-0 flex-1" :ui="{ body: 'overflow-auto' }">
+      <UCard class="min-h-0 min-w-0 flex-1" :ui="{ body: 'overflow-auto space-y-4' }">
         <template #header>
-          <div class="flex items-center justify-between">
-            <span class="font-semibold">Patch {{ selectedVersion ?? "..." }} - Modding Changes</span>
-            <a
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-semibold">Patch {{ selectedVersion ?? "…" }}</span>
+            <UButton
               v-if="patchContent?.sourceUrl"
-              :href="patchContent.sourceUrl"
-              target="_blank"
-              class="text-sm text-primary hover:underline"
-            >
-              View on Wiki
-            </a>
+              label="View on Wiki"
+              icon="i-lucide-external-link"
+              size="xs"
+              variant="ghost"
+              @click="openWiki"
+            />
           </div>
         </template>
+
         <div v-if="loading" class="flex items-center justify-center py-8">
-          <UButton loading variant="ghost" label="Loading..." />
+          <UButton loading variant="ghost" label="Loading…" />
         </div>
-        <div
-          v-else-if="patchContent?.htmlContent"
-          class="prose prose-sm max-w-none dark:prose-invert"
-          v-html="patchContent.htmlContent"
-        />
+
+        <template v-else-if="patchContent">
+          <section>
+            <h3 class="mb-2 text-sm font-semibold">Modding changes</h3>
+            <div
+              v-if="patchContent.moddingHtml"
+              class="prose prose-sm max-w-none dark:prose-invert"
+              v-html="patchContent.moddingHtml"
+            />
+            <UEmpty
+              v-else
+              icon="i-lucide-file-text"
+              title="No modding section"
+              description="This patch may not have documented modding changes."
+            />
+          </section>
+
+          <section v-if="patchContent.htmlContent" class="border-t border-default pt-3">
+            <UButton
+              :label="showFullNotes ? 'Hide full patch notes' : 'Show full patch notes'"
+              :icon="showFullNotes ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              @click="showFullNotes = !showFullNotes"
+            />
+            <div
+              v-if="showFullNotes"
+              class="prose prose-sm mt-2 max-w-none dark:prose-invert"
+              v-html="patchContent.htmlContent"
+            />
+          </section>
+        </template>
+
         <UEmpty
           v-else
           icon="i-lucide-file-text"
-          title="No modding section"
-          description="This patch may not have documented modding changes."
+          title="Select a version"
+          description="Pick a patch version to load notes from the wiki."
         />
       </UCard>
     </div>

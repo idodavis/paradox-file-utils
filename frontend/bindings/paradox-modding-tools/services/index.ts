@@ -39,9 +39,11 @@ export {
 export type {
     AutoLocResult,
     CascadeNode,
+    ContentSearchHit,
     DirEntry,
     FileCollectorFilter,
     FileMergeResult,
+    FileSearchHit,
     GuiNode,
     GuiPreview,
     LocDiagnostic,

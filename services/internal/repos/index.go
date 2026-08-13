@@ -107,6 +107,32 @@ func (r *IndexRepository) InsertEdge(edge *IndexEdge) error {
 	return err
 }
 
+// InsertEdges inserts many edges in one transaction.
+func (r *IndexRepository) InsertEdges(edges []IndexEdge) error {
+	if len(edges) == 0 {
+		return nil
+	}
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	stmt, err := tx.Preparex(
+		`INSERT INTO index_edges (id, workspace_id, from_key, to_key, edge_type) VALUES (?, ?, ?, ?, ?)`,
+	)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for i := range edges {
+		e := &edges[i]
+		if _, err := stmt.Exec(e.ID, e.WorkspaceID, e.FromKey, e.ToKey, e.EdgeType); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // Search searches indexed objects by key or summary pattern.
 func (r *IndexRepository) Search(workspaceID, query string) ([]IndexObject, error) {
 	var out []IndexObject
@@ -136,7 +162,11 @@ func (r *IndexRepository) ListObjects(workspaceID, typeFilter string) ([]IndexOb
 // ListEventObjects returns all event objects for a workspace.
 func (r *IndexRepository) ListEventObjects(workspaceID string) ([]IndexObject, error) {
 	var out []IndexObject
-	err := r.db.Select(&out, `SELECT id, obj_type, obj_key, file_path FROM index_objects WHERE workspace_id = ? AND obj_type = 'events'`, workspaceID)
+	err := r.db.Select(&out,
+		`SELECT id, obj_type, obj_key, file_path FROM index_objects
+		 WHERE workspace_id = ? AND obj_type IN ('events', 'event')`,
+		workspaceID,
+	)
 	return out, err
 }
 

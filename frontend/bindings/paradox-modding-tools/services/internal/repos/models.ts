@@ -80,7 +80,7 @@ export interface ScriptLogImport {
 }
 
 /**
- * WikiPatch is a cached wiki patch entry.
+ * WikiPatch is a cached wiki patch entry (full page + modding excerpt).
  */
 export interface WikiPatch {
     "gameId": string;
@@ -88,6 +88,7 @@ export interface WikiPatch {
     "fetchedAt": string;
     "sourceUrl": string;
     "htmlContent": string;
+    "moddingHtml": string;
 }
 
 /**

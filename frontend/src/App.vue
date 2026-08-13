@@ -7,35 +7,24 @@ import { useRoute, useRouter } from "vue-router";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import appIcon from "@assets/PMT-SquareIcon-Mint.png?url";
 import PMTLogo from "./components/PMTLogo.vue";
-import HelpDialog from "./components/HelpDialog.vue";
-import {
-  createWorkspaceContext,
-  provideWorkspaceContext,
-  GAME_OPTIONS,
-} from "./composables/workspaceContext";
-import { normalizeSettings } from "./composables/settings";
+import { GAME_OPTIONS, useWorkspaceStore } from "./stores/workspace";
+import { useSettingsStore } from "./stores/settings";
 import {
   THEME_SWATCHES,
   themeMenuItems,
   type ThemeMenuItem,
   type ThemeSwatchColors,
 } from "./composables/themeSwatches";
-import {
-  CheckForUpdates,
-  GetSettings,
-  GetVersion,
-  SaveSettings,
-} from "@services/settingsservice";
+import { CheckForUpdates, GetVersion } from "@services/settingsservice";
 
 const route = useRoute();
 const router = useRouter();
+const ws = useWorkspaceStore();
+const settings = useSettingsStore();
 
 const DARK_THEMES = new Set(["PMT", "dracula", "luxury", "business", "coffee", "dim"]);
 const themeNames = ["PMT", "retro", "pastel", "dracula", "luxury", "autumn", "business", "coffee", "dim"] as const;
 const themeItems = themeMenuItems(themeNames);
-
-const wsContext = createWorkspaceContext();
-provideWorkspaceContext(wsContext);
 
 const currentTheme = ref("PMT");
 const currentThemeSwatches = computed(
@@ -43,7 +32,6 @@ const currentThemeSwatches = computed(
 );
 const version = ref("...");
 const helpOpen = ref(false);
-const appSettings = ref<Record<string, string>>({});
 
 const currentTitle = computed(() => String(route.meta.title ?? "Tools"));
 const currentDescription = computed(() => String(route.meta.description ?? ""));
@@ -56,30 +44,25 @@ const headerItems = computed(() => [
 
 const workspaceDropdownItems = computed<DropdownMenuItem[][]>(() => {
   const items: DropdownMenuItem[][] = [];
-  const all = wsContext.workspaces.value;
-  const activeId = wsContext.activeWorkspaceId.value;
-  const activeGame = wsContext.activeWorkspace.value?.gameId
-    ?? wsContext.currentGameId.value;
+  const all = ws.workspaces;
+  const activeId = ws.activeWorkspaceId;
+  const activeGame = ws.activeWorkspace?.gameId ?? ws.currentGameId;
 
-  const toItem = (ws: (typeof all)[number]): DropdownMenuItem => ({
-    label: ws.name,
-    icon: ws.id === activeId ? "i-lucide-check" : "i-lucide-folder",
+  const toItem = (workspace: (typeof all)[number]): DropdownMenuItem => ({
+    label: workspace.name,
+    icon: workspace.id === activeId ? "i-lucide-check" : "i-lucide-folder",
     onSelect: () => {
-      wsContext.setActiveWorkspace(ws.id);
-      void router.push({ name: "workspace-ide", params: { id: ws.id } });
+      ws.setActiveWorkspace(workspace.id);
+      void router.push({ name: "workspace-ide", params: { id: workspace.id } });
     },
   });
 
-  const sameGame = all.filter((ws) => ws.gameId === activeGame);
-  const otherGames = GAME_OPTIONS
-    .map((g) => g.value)
-    .filter((id) => id !== activeGame);
+  const sameGame = all.filter((w) => w.gameId === activeGame);
+  const otherGames = GAME_OPTIONS.map((g) => g.value).filter((id) => id !== activeGame);
 
-  if (sameGame.length) {
-    items.push(sameGame.slice(0, 8).map(toItem));
-  }
+  if (sameGame.length) items.push(sameGame.slice(0, 8).map(toItem));
   for (const gameId of otherGames) {
-    const group = all.filter((ws) => ws.gameId === gameId);
+    const group = all.filter((w) => w.gameId === gameId);
     if (!group.length) continue;
     items.push([
       { label: gameId.toUpperCase(), type: "label" as const, disabled: true },
@@ -101,21 +84,9 @@ function setTheme(theme: string): void {
   document.documentElement.classList.toggle("dark", DARK_THEMES.has(theme));
 }
 
-/** Merge a settings key. */
-function updateSettings(key: string, value: string): void {
-  appSettings.value = { ...appSettings.value, [key]: value };
-}
-
-/** Load settings and apply saved theme. */
-async function loadSettings(): Promise<void> {
-  appSettings.value = normalizeSettings(await GetSettings());
-  setTheme(appSettings.value["_global.theme"] ?? "PMT");
-}
-
-/** Persist the theme. */
+/** Persist the theme via settings store. */
 async function saveTheme(theme: string): Promise<void> {
-  updateSettings("_global.theme", theme);
-  await SaveSettings(appSettings.value);
+  await settings.set("_global.theme", theme);
 }
 
 /** Load version string. */
@@ -155,7 +126,8 @@ watch(
 );
 
 onMounted(async () => {
-  await Promise.all([loadSettings(), loadVersion(), wsContext.refresh()]);
+  await Promise.all([settings.load(), loadVersion(), ws.refresh()]);
+  setTheme(settings.values["_global.theme"] ?? "PMT");
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (link) link.href = appIcon;
 });
@@ -172,34 +144,63 @@ onMounted(async () => {
           </div>
           <div class="flex items-center gap-2">
             <UDropdownMenu :items="workspaceDropdownItems">
-              <UButton :label="wsContext.activeWorkspaceName.value" trailing-icon="i-lucide-chevron-down"
-                color="neutral" variant="outline" class="max-w-48 truncate" />
+              <UButton
+                :label="ws.activeWorkspaceName"
+                trailing-icon="i-lucide-chevron-down"
+                color="neutral"
+                variant="outline"
+                class="max-w-48 truncate"
+              />
             </UDropdownMenu>
-            <USelectMenu v-model="currentTheme" :items="themeItems" value-key="value" :ui="{
-              content: 'min-w-44',
-              base: 'w-auto gap-1.5 ps-2 pe-2',
-              leading: 'static inset-auto',
-              trailing: 'static inset-auto',
-              value: 'hidden',
-            }" @update:model-value="onThemeChange">
+            <USelectMenu
+              v-model="currentTheme"
+              :items="themeItems"
+              value-key="value"
+              :ui="{
+                content: 'min-w-44',
+                base: 'w-auto gap-1.5 ps-2 pe-2',
+                leading: 'static inset-auto',
+                trailing: 'static inset-auto',
+                value: 'hidden',
+              }"
+              @update:model-value="onThemeChange"
+            >
               <template #leading>
-                <span class="inline-flex shrink-0 overflow-hidden rounded-sm border border-default" aria-hidden="true">
-                  <span v-for="(color, i) in currentThemeSwatches" :key="i" class="size-3.5"
-                    :style="{ backgroundColor: color }" />
+                <span
+                  class="inline-flex shrink-0 overflow-hidden rounded-sm border border-default"
+                  aria-hidden="true"
+                >
+                  <span
+                    v-for="(color, i) in currentThemeSwatches"
+                    :key="i"
+                    class="size-3.5"
+                    :style="{ backgroundColor: color }"
+                  />
                 </span>
               </template>
               <template #default>
                 <span class="sr-only">{{ currentTheme }}</span>
               </template>
               <template #item-leading="{ item }">
-                <span class="inline-flex shrink-0 overflow-hidden rounded-sm border border-default" aria-hidden="true">
-                  <span v-for="(color, i) in itemSwatches(item as ThemeMenuItem)" :key="i" class="size-3.5"
-                    :style="{ backgroundColor: color }" />
+                <span
+                  class="inline-flex shrink-0 overflow-hidden rounded-sm border border-default"
+                  aria-hidden="true"
+                >
+                  <span
+                    v-for="(color, i) in itemSwatches(item as ThemeMenuItem)"
+                    :key="i"
+                    class="size-3.5"
+                    :style="{ backgroundColor: color }"
+                  />
                 </span>
               </template>
             </USelectMenu>
-            <UButton icon="i-lucide-settings" color="neutral" variant="ghost"
-              @click="router.push({ name: 'settings' })" />
+            <UButton
+              icon="i-lucide-settings"
+              color="neutral"
+              variant="ghost"
+              @click="router.push({ name: 'settings' })"
+            />
           </div>
         </div>
       </header>
@@ -211,17 +212,45 @@ onMounted(async () => {
       </main>
 
       <footer
-        class="z-10 flex shrink-0 items-center justify-between border-t border-default bg-default px-2 text-sm text-default">
+        class="z-10 flex shrink-0 items-center justify-between border-t border-default bg-default px-2 text-sm text-default"
+      >
         <PMTLogo :icon-height="25" :text-height="30" />
         <div class="flex items-center gap-2">
-          <UButton :label="`Help for ${currentTitle}`" icon="i-lucide-circle-help" color="neutral" variant="ghost"
-            size="sm" @click="helpOpen = true" />
-          <UButton :label="version" icon="i-lucide-refresh-cw" color="neutral" variant="ghost" size="sm"
-            @click="checkForUpdates" />
+          <UButton
+            :label="`Help for ${currentTitle}`"
+            icon="i-lucide-circle-help"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            @click="helpOpen = true"
+          />
+          <UButton
+            :label="version"
+            icon="i-lucide-refresh-cw"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            @click="checkForUpdates"
+          />
         </div>
       </footer>
 
-      <HelpDialog v-model="helpOpen" :title="currentTitle" :description="currentDescription" />
+      <UModal
+        v-model:open="helpOpen"
+        :title="currentTitle"
+        :description="currentDescription"
+        :ui="{ content: 'sm:max-w-2xl' }"
+      >
+        <template #footer="{ close }">
+          <UButton
+            label="Close"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-x"
+            @click="close"
+          />
+        </template>
+      </UModal>
     </div>
   </UApp>
 </template>

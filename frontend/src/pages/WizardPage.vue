@@ -22,7 +22,7 @@ const router = useRouter();
 const ctx = useWorkspaceContext();
 
 const step = ref(1);
-const selectedGame = ref<GameId>(ctx.currentGameId.value);
+const selectedGame = ref<GameId>(ctx.currentGameId);
 const installs = ref<GameInstall[]>([]);
 const selectedInstallId = ref<string | null>(null);
 const newInstallPath = ref("");

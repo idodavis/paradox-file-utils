@@ -160,6 +160,22 @@ func (i *IndexerService) ReindexWorkspace(workspaceID string) (int, error) {
 	}
 	count += n
 
+	if err := ctx.Err(); err != nil {
+		emitCancelled(workspaceID)
+		return count, nil
+	}
+	emitProgress(eventIndexProgress, ProgressEvent{
+		Job: "index", Phase: "edges", WorkspaceID: workspaceID,
+		Message: "Building event edges…",
+	})
+	if _, err := i.buildEventEdgesCtx(ctx, workspaceID); err != nil {
+		if errors.Is(err, context.Canceled) {
+			emitCancelled(workspaceID)
+			return count, nil
+		}
+		return count, fmt.Errorf("build edges: %w", err)
+	}
+
 	emitProgress(eventIndexProgress, ProgressEvent{
 		Job: "index", Phase: "done", Done: count, Total: count, WorkspaceID: workspaceID,
 		Message: fmt.Sprintf("Indexed %d objects", count),
@@ -480,6 +496,20 @@ func (i *IndexerService) BuildEventEdges(workspaceID string) (int, error) {
 	if workspaceID == "" {
 		return 0, fmt.Errorf("workspace id is required")
 	}
+	ctx := i.beginJob()
+	defer i.clearJob()
+	n, err := i.buildEventEdgesCtx(ctx, workspaceID)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			emitCancelled(workspaceID)
+			return n, nil
+		}
+		return n, err
+	}
+	return n, nil
+}
+
+func (i *IndexerService) buildEventEdgesCtx(ctx context.Context, workspaceID string) (int, error) {
 	repo := i.getRepo()
 
 	if err := repo.ClearEdges(workspaceID); err != nil {
@@ -494,49 +524,122 @@ func (i *IndexerService) BuildEventEdges(workspaceID string) (int, error) {
 	triggerRe := regexp.MustCompile(`trigger_event\s*=\s*\{\s*id\s*=\s*([a-zA-Z0-9_.]+)`)
 	fireRe := regexp.MustCompile(`fire_(?:on_action|scripted_effect)\s*=\s*([a-zA-Z0-9_.]+)`)
 
-	count := 0
 	total := len(objs)
-	for idx, obj := range objs {
-		content, err := os.ReadFile(obj.FilePath)
-		if err != nil {
-			continue
-		}
-		contentStr := string(content)
+	if total == 0 {
+		return 0, nil
+	}
 
-		for _, m := range triggerRe.FindAllStringSubmatch(contentStr, -1) {
-			if len(m) > 1 {
-				edge := &repos.IndexEdge{
-					ID:          uuid.New().String(),
-					WorkspaceID: workspaceID,
-					FromKey:     obj.ObjKey,
-					ToKey:       m[1],
-					EdgeType:    "triggers",
+	workers := runtime.NumCPU()
+	if workers < 2 {
+		workers = 2
+	}
+	if workers > 8 {
+		workers = 8
+	}
+
+	type edgeBatch struct {
+		edges []repos.IndexEdge
+	}
+	jobs := make(chan repos.IndexObject, workers*2)
+	results := make(chan edgeBatch, workers*2)
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for obj := range jobs {
+				if ctx.Err() != nil {
+					return
 				}
-				_ = repo.InsertEdge(edge)
-				count++
+				content, err := os.ReadFile(obj.FilePath)
+				if err != nil {
+					select {
+					case <-ctx.Done():
+						return
+					case results <- edgeBatch{}:
+					}
+					continue
+				}
+				contentStr := string(content)
+				var edges []repos.IndexEdge
+				for _, m := range triggerRe.FindAllStringSubmatch(contentStr, -1) {
+					if len(m) > 1 {
+						edges = append(edges, repos.IndexEdge{
+							ID: uuid.New().String(), WorkspaceID: workspaceID,
+							FromKey: obj.ObjKey, ToKey: m[1], EdgeType: "triggers",
+						})
+					}
+				}
+				for _, m := range fireRe.FindAllStringSubmatch(contentStr, -1) {
+					if len(m) > 1 {
+						edges = append(edges, repos.IndexEdge{
+							ID: uuid.New().String(), WorkspaceID: workspaceID,
+							FromKey: obj.ObjKey, ToKey: m[1], EdgeType: "fires",
+						})
+					}
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case results <- edgeBatch{edges: edges}:
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, obj := range objs {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- obj:
 			}
 		}
-		for _, m := range fireRe.FindAllStringSubmatch(contentStr, -1) {
-			if len(m) > 1 {
-				edge := &repos.IndexEdge{
-					ID:          uuid.New().String(),
-					WorkspaceID: workspaceID,
-					FromKey:     obj.ObjKey,
-					ToKey:       m[1],
-					EdgeType:    "fires",
-				}
-				_ = repo.InsertEdge(edge)
-				count++
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	count := 0
+	done := 0
+	batch := make([]repos.IndexEdge, 0, 128)
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		if err := repo.InsertEdges(batch); err != nil {
+			return err
+		}
+		count += len(batch)
+		batch = batch[:0]
+		return nil
+	}
+
+	for r := range results {
+		if err := ctx.Err(); err != nil {
+			_ = flush()
+			return count, err
+		}
+		batch = append(batch, r.edges...)
+		if len(batch) >= 128 {
+			if err := flush(); err != nil {
+				return count, err
 			}
 		}
-		if total > 0 && (idx+1 == total || (idx+1)%50 == 0) {
+		done++
+		if done == total || done%50 == 0 {
 			emitProgress(eventIndexProgress, ProgressEvent{
-				Job: "index", Phase: "edges", Done: idx + 1, Total: total,
+				Job: "index", Phase: "edges", Done: done, Total: total,
 				WorkspaceID: workspaceID, Message: "Building edges…",
 			})
 		}
 	}
-
+	if err := flush(); err != nil {
+		return count, err
+	}
 	return count, nil
 }
 

@@ -130,6 +130,7 @@ func (d *DbService) initSchema() error {
 			fetched_at TEXT NOT NULL,
 			source_url TEXT NOT NULL,
 			html_content TEXT NOT NULL,
+			modding_html TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (game_id, version)
 		)`,
 
@@ -208,7 +209,33 @@ func (d *DbService) initSchema() error {
 			return fmt.Errorf("schema: %w", err)
 		}
 	}
+	if err := d.ensureWikiPatchColumns(); err != nil {
+		return err
+	}
 	return d.seedGames()
+}
+
+// ensureWikiPatchColumns adds modding_html on older DBs and clears stale caches once.
+func (d *DbService) ensureWikiPatchColumns() error {
+	var n int
+	if err := d.DB.Get(&n,
+		`SELECT COUNT(*) FROM pragma_table_info('wiki_patches') WHERE name = 'modding_html'`,
+	); err != nil {
+		return fmt.Errorf("check wiki_patches columns: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	if _, err := d.DB.Exec(
+		`ALTER TABLE wiki_patches ADD COLUMN modding_html TEXT NOT NULL DEFAULT ''`,
+	); err != nil {
+		return fmt.Errorf("add wiki_patches.modding_html: %w", err)
+	}
+	// Old rows stored modding-only HTML in html_content; force refetch.
+	if _, err := d.DB.Exec(`DELETE FROM wiki_patches`); err != nil {
+		return fmt.Errorf("clear stale wiki_patches: %w", err)
+	}
+	return nil
 }
 
 // seedGames inserts the core game definitions (ck3, eu5, vic3).

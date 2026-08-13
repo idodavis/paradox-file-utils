@@ -10,14 +10,14 @@ import { Workspace } from "@services/internal/repos/models";
 const router = useRouter();
 const ctx = useWorkspaceContext();
 
-const showWizardPrompt = computed(() => !ctx.loading.value && !ctx.hasWorkspaces.value);
+const showWizardPrompt = computed(() => !ctx.loading && !ctx.hasWorkspaces);
 
 /** Workspaces grouped by game for sectioned library browsing. */
 const sections = computed(() =>
   GAME_OPTIONS.map((g) => ({
     gameId: g.value,
     label: g.label,
-    workspaces: ctx.workspaces.value.filter((ws) => ws.gameId === g.value),
+    workspaces: ctx.workspaces.filter((ws) => ws.gameId === g.value),
   })).filter((s) => s.workspaces.length > 0),
 );
 
@@ -54,16 +54,16 @@ onMounted(() => {
         <p class="text-sm text-muted">Manage your modding workspaces</p>
       </div>
       <UButton
-        v-if="!showWizardPrompt && !ctx.loading.value"
+        v-if="!showWizardPrompt && !ctx.loading"
         label="New Workspace"
         icon="i-lucide-plus"
         @click="createWorkspace"
       />
     </div>
 
-    <UAlert v-if="ctx.error.value" color="error" variant="subtle" :description="ctx.error.value" class="mb-4" />
+    <UAlert v-if="ctx.error" color="error" variant="subtle" :description="ctx.error" class="mb-4" />
 
-    <div v-if="ctx.loading.value" class="flex flex-1 items-center justify-center">
+    <div v-if="ctx.loading" class="flex flex-1 items-center justify-center">
       <UButton loading variant="ghost" label="Loading workspaces..." />
     </div>
 
@@ -81,27 +81,27 @@ onMounted(() => {
 
     <template v-else>
       <div
-        v-if="ctx.activeWorkspace.value"
+        v-if="ctx.activeWorkspace"
         class="mb-4 cursor-pointer"
-        @click="openWorkspace(ctx.activeWorkspace.value)"
+        @click="openWorkspace(ctx.activeWorkspace)"
       >
         <UCard class="transition-shadow hover:shadow-md">
           <template #header>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <UBadge color="primary" variant="subtle">Active</UBadge>
-                <span class="font-semibold">{{ ctx.activeWorkspace.value.name }}</span>
+                <span class="font-semibold">{{ ctx.activeWorkspace.name }}</span>
               </div>
               <UBadge color="neutral" variant="outline">
-                {{ ctx.activeWorkspace.value.gameId.toUpperCase() }}
+                {{ ctx.activeWorkspace.gameId.toUpperCase() }}
               </UBadge>
             </div>
           </template>
           <div class="text-sm text-muted">
-            <p>{{ ctx.workspaceMods.value.length }} mod(s) attached</p>
-            <div v-if="parseTags(ctx.activeWorkspace.value).length" class="mt-1 flex flex-wrap gap-1">
+            <p>{{ ctx.workspaceMods.length }} mod(s) attached</p>
+            <div v-if="parseTags(ctx.activeWorkspace).length" class="mt-1 flex flex-wrap gap-1">
               <UBadge
-                v-for="tag in parseTags(ctx.activeWorkspace.value)"
+                v-for="tag in parseTags(ctx.activeWorkspace)"
                 :key="tag"
                 color="secondary"
                 variant="subtle"
@@ -127,7 +127,7 @@ onMounted(() => {
           >
             <UCard
               class="h-full transition-shadow hover:shadow-md"
-              :class="{ 'ring-2 ring-primary': ws.id === ctx.activeWorkspaceId.value }"
+              :class="{ 'ring-2 ring-primary': ws.id === ctx.activeWorkspaceId }"
             >
               <template #header>
                 <div class="flex items-center justify-between gap-2">

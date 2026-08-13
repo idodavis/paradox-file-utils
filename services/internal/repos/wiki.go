@@ -3,13 +3,14 @@ package repos
 
 import "github.com/jmoiron/sqlx"
 
-// WikiPatch is a cached wiki patch entry.
+// WikiPatch is a cached wiki patch entry (full page + modding excerpt).
 type WikiPatch struct {
 	GameID      string `json:"gameId" db:"game_id"`
 	Version     string `json:"version" db:"version"`
 	FetchedAt   string `json:"fetchedAt" db:"fetched_at"`
 	SourceURL   string `json:"sourceUrl" db:"source_url"`
 	HTMLContent string `json:"htmlContent" db:"html_content"`
+	ModdingHTML string `json:"moddingHtml" db:"modding_html"`
 }
 
 // WikiRepository handles wiki_patches database operations.
@@ -26,7 +27,8 @@ func NewWikiRepository(db *sqlx.DB) *WikiRepository {
 func (r *WikiRepository) Get(gameID, version string) (*WikiPatch, error) {
 	var patch WikiPatch
 	err := r.db.Get(&patch,
-		`SELECT game_id, version, fetched_at, source_url, html_content FROM wiki_patches WHERE game_id = ? AND version = ?`,
+		`SELECT game_id, version, fetched_at, source_url, html_content, modding_html
+		 FROM wiki_patches WHERE game_id = ? AND version = ?`,
 		gameID, version,
 	)
 	if err != nil {
@@ -38,9 +40,16 @@ func (r *WikiRepository) Get(gameID, version string) (*WikiPatch, error) {
 // Upsert inserts or updates a wiki patch cache entry.
 func (r *WikiRepository) Upsert(patch *WikiPatch) error {
 	_, err := r.db.Exec(
-		`INSERT INTO wiki_patches (game_id, version, fetched_at, source_url, html_content) VALUES (?, ?, ?, ?, ?)
-		 ON CONFLICT(game_id, version) DO UPDATE SET fetched_at=excluded.fetched_at, source_url=excluded.source_url, html_content=excluded.html_content`,
-		patch.GameID, patch.Version, patch.FetchedAt, patch.SourceURL, patch.HTMLContent,
+		`INSERT INTO wiki_patches
+		 (game_id, version, fetched_at, source_url, html_content, modding_html)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(game_id, version) DO UPDATE SET
+		   fetched_at=excluded.fetched_at,
+		   source_url=excluded.source_url,
+		   html_content=excluded.html_content,
+		   modding_html=excluded.modding_html`,
+		patch.GameID, patch.Version, patch.FetchedAt, patch.SourceURL,
+		patch.HTMLContent, patch.ModdingHTML,
 	)
 	return err
 }
@@ -49,7 +58,8 @@ func (r *WikiRepository) Upsert(patch *WikiPatch) error {
 func (r *WikiRepository) ListByGame(gameID string) ([]WikiPatch, error) {
 	var out []WikiPatch
 	err := r.db.Select(&out,
-		`SELECT game_id, version, fetched_at, source_url, html_content FROM wiki_patches WHERE game_id = ? ORDER BY version DESC`,
+		`SELECT game_id, version, fetched_at, source_url, html_content, modding_html
+		 FROM wiki_patches WHERE game_id = ? ORDER BY version DESC`,
 		gameID,
 	)
 	return out, err

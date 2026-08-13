@@ -12,7 +12,6 @@ import {
   CancelIndex,
   SearchIndex,
   ListIndexObjects,
-  BuildEventEdges,
   SimulateCascade,
   CountIndexObjects,
 } from "@services/indexerservice";
@@ -35,7 +34,6 @@ const selectedObject = ref<IndexObject | null>(null);
 const cascadeNodes = ref<CascadeNode[]>([]);
 const typeFilter = ref("");
 const indexCount = ref(0);
-const edgeCount = ref(0);
 const hadIndex = ref(false);
 const semantics = ref<SemanticsStatus | null>(null);
 
@@ -44,11 +42,11 @@ let offProgress: (() => void) | null = null;
 
 const typeOptions = [
   { label: "All", value: "" },
-  { label: "Events", value: "event" },
-  { label: "Decisions", value: "decision" },
-  { label: "Traits", value: "trait" },
-  { label: "Scripted Effects", value: "scripted_effect" },
-  { label: "Scripted Triggers", value: "scripted_trigger" },
+  { label: "Events", value: "events" },
+  { label: "Decisions", value: "decisions" },
+  { label: "Traits", value: "traits" },
+  { label: "Scripted Effects", value: "scripted_effects" },
+  { label: "Scripted Triggers", value: "scripted_triggers" },
 ];
 
 const indexActionLabel = computed(() => (hadIndex.value ? "Reindex" : "Index"));
@@ -61,8 +59,10 @@ function isCancelled(msg: string): boolean {
   return /cancelled/i.test(msg);
 }
 
-/** Navigate immediately; cancel runs on unmount. */
+/** Navigate immediately; cancel any in-flight index first. */
 function goBack(): void {
+  if (indexing.value) void CancelIndex();
+  indexing.value = false;
   void router.push({ name: "workspace-ide", params: { id: workspaceId.value } });
 }
 
@@ -92,7 +92,7 @@ async function loadWorkspace(): Promise<void> {
   }
 }
 
-/** Index the workspace (cancellable; does not block navigation). */
+/** Index the workspace (edges included; cancellable; does not block navigation). */
 async function reindex(): Promise<void> {
   const id = workspaceId.value;
   if (!id || indexing.value) return;
@@ -104,8 +104,6 @@ async function reindex(): Promise<void> {
     indexCount.value = await ReindexWorkspace(id);
     if (workspaceId.value !== id) return;
     hadIndex.value = indexCount.value > 0;
-    edgeCount.value = await BuildEventEdges(id);
-    if (workspaceId.value !== id) return;
     progressLabel.value = "";
     progressPercent.value = 0;
     await search();
@@ -206,7 +204,7 @@ onBeforeUnmount(() => {
         <UTooltip text="Back to workspace IDE"><UButton icon="i-lucide-arrow-left" variant="ghost" size="sm" @click="goBack"  /></UTooltip>
         <span class="font-semibold">Event Graph</span>
         <UBadge v-if="indexCount" color="neutral" variant="outline" size="xs">
-          {{ indexCount }} objects | {{ edgeCount }} edges
+          {{ indexCount }} objects
         </UBadge>
         <UBadge
           v-if="semantics"
@@ -260,15 +258,10 @@ onBeforeUnmount(() => {
       <div class="w-full max-w-md text-center text-xs text-muted">
         {{ progressLabel || "Starting…" }} · you can navigate away
       </div>
-      <div class="h-2 w-full max-w-md overflow-hidden rounded bg-muted">
-        <div
-          class="h-full rounded bg-primary transition-all"
-          :style="{
-            width: progressPercent > 0 ? `${Math.min(100, progressPercent)}%` : '33%',
-            animation: progressPercent > 0 ? undefined : 'pulse 1.5s ease-in-out infinite',
-          }"
-        />
-      </div>
+      <UProgress
+        class="w-full max-w-md"
+        :model-value="progressPercent > 0 ? Math.min(100, progressPercent) : null"
+      />
     </div>
 
     <div class="flex min-h-0 flex-1 gap-3 overflow-hidden p-3">

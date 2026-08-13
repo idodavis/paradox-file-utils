@@ -19,7 +19,7 @@ import * as repos$0 from "./internal/repos/models.js";
 import * as $models from "./models.js";
 
 /**
- * GetPatchModdingSection fetches a patch page and extracts the Modding section HTML.
+ * GetPatchModdingSection fetches a patch page and caches full HTML plus the Modding section.
  */
 export function GetPatchModdingSection(gameID: string, version: string): $CancellablePromise<repos$0.WikiPatch | null> {
     return $Call.ByID(3794037054, gameID, version);

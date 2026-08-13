@@ -37,6 +37,27 @@ export function CollectFilesFromPath(inputPath: string, filter: $models.FileColl
 }
 
 /**
+ * CreateDir creates a directory (parents created as needed).
+ */
+export function CreateDir(fullPath: string): $CancellablePromise<void> {
+    return $Call.ByID(555002884, fullPath);
+}
+
+/**
+ * CreateFile creates an empty UTF-8 file (parents created as needed).
+ */
+export function CreateFile(fullPath: string): $CancellablePromise<void> {
+    return $Call.ByID(3776326579, fullPath);
+}
+
+/**
+ * DeletePath removes a file or directory recursively.
+ */
+export function DeletePath(fullPath: string): $CancellablePromise<void> {
+    return $Call.ByID(3710022161, fullPath);
+}
+
+/**
  * FindMatchingPaths finds paths that exist in both sets. When matchByFilenameOnly is true,
  * matches only by filename (e.g. for zz_mod_file.txt where paths differ).
  */
@@ -70,8 +91,36 @@ export function ReadFileContent(fullPath: string): $CancellablePromise<string> {
     return $Call.ByID(1203948956, fullPath);
 }
 
+/**
+ * RenamePath renames or moves a file or directory.
+ */
+export function RenamePath(oldPath: string, newPath: string): $CancellablePromise<void> {
+    return $Call.ByID(1727956732, oldPath, newPath);
+}
+
+/**
+ * RevealInOs opens the OS file manager on a folder, or selects a file in its parent.
+ */
+export function RevealInOs(fullPath: string): $CancellablePromise<void> {
+    return $Call.ByID(3885004865, fullPath);
+}
+
 export function SaveFile(title: string, defaultName: string, content: string, ext: string): $CancellablePromise<string> {
     return $Call.ByID(3260874390, title, defaultName, content, ext);
+}
+
+/**
+ * SearchByName finds files/folders under roots whose names contain query (case-insensitive).
+ */
+export function SearchByName(roots: string[] | null, query: string, limit: number): $CancellablePromise<$models.FileSearchHit[] | null> {
+    return $Call.ByID(1738961875, roots, query, limit);
+}
+
+/**
+ * SearchInFiles finds lines under roots containing query (case-insensitive), capped per call.
+ */
+export function SearchInFiles(roots: string[] | null, query: string, limit: number): $CancellablePromise<$models.ContentSearchHit[] | null> {
+    return $Call.ByID(3368868933, roots, query, limit);
 }
 
 export function SelectDirectory(title: string): $CancellablePromise<string> {
