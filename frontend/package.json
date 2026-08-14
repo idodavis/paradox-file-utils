@@ -37,6 +37,7 @@
     "@codingame/monaco-vscode-textmate-service-override": "^36.0.0",
     "@codingame/monaco-vscode-theme-defaults-default-extension": "^36.0.0",
     "@codingame/monaco-vscode-theme-service-override": "^36.0.0",
+    "@codingame/monaco-vscode-theme-seti-default-extension": "^36.0.0",
     "@codingame/monaco-vscode-view-status-bar-service-override": "^36.0.0",
     "@codingame/monaco-vscode-view-title-bar-service-override": "^36.0.0",
     "@codingame/monaco-vscode-workbench-service-override": "^36.0.0",

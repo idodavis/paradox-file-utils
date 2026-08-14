@@ -1,5 +1,5 @@
 /**
- * Register Paradox languages + PMT file/folder icon theme with the workbench.
+ * Register Paradox languages (grammars + language ids) with the workbench.
  */
 import { registerExtension } from "@codingame/monaco-vscode-api/extensions";
 import { ExtensionHostKind } from "@codingame/monaco-vscode-extensions-service-override";
@@ -7,38 +7,7 @@ import paradoxGrammar from "../syntaxes/paradox.tmLanguage.json";
 import paradoxGuiGrammar from "../syntaxes/paradox-gui.tmLanguage.json";
 import paradoxLocGrammar from "../syntaxes/paradox-loc.tmLanguage.json";
 import paradoxInfoGrammar from "../syntaxes/paradox-info.tmLanguage.json";
-
-import iconThemeUrl from "./fileicons/pmt-icon-theme.json?url";
-import folderIcon from "./fileicons/folder.svg?url";
-import folderOpenIcon from "./fileicons/folder-open.svg?url";
-import gameRootIcon from "./fileicons/game-root.svg?url";
-import modRootIcon from "./fileicons/mod-root.svg?url";
-import stagingRootIcon from "./fileicons/staging-root.svg?url";
-import fileIcon from "./fileicons/file.svg?url";
-import paradoxIcon from "./fileicons/paradox.svg?url";
-import paradoxGuiIcon from "./fileicons/paradox-gui.svg?url";
-import paradoxLocIcon from "./fileicons/paradox-loc.svg?url";
-import paradoxModIcon from "./fileicons/paradox-mod.svg?url";
-import markdownIcon from "./fileicons/markdown.svg?url";
-import imageIcon from "./fileicons/image.svg?url";
-import jsonIcon from "./fileicons/json.svg?url";
-
-const ICON_FILES: Record<string, string> = {
-  "./fileicons/pmt-icon-theme.json": iconThemeUrl,
-  "./fileicons/folder.svg": folderIcon,
-  "./fileicons/folder-open.svg": folderOpenIcon,
-  "./fileicons/game-root.svg": gameRootIcon,
-  "./fileicons/mod-root.svg": modRootIcon,
-  "./fileicons/staging-root.svg": stagingRootIcon,
-  "./fileicons/file.svg": fileIcon,
-  "./fileicons/paradox.svg": paradoxIcon,
-  "./fileicons/paradox-gui.svg": paradoxGuiIcon,
-  "./fileicons/paradox-loc.svg": paradoxLocIcon,
-  "./fileicons/paradox-mod.svg": paradoxModIcon,
-  "./fileicons/markdown.svg": markdownIcon,
-  "./fileicons/image.svg": imageIcon,
-  "./fileicons/json.svg": jsonIcon,
-};
+import { registerPmtFileIcons } from "./fileIcons";
 
 /** Contribute Paradox grammars, language ids, and the PMT icon theme. */
 export async function registerParadoxLanguages(): Promise<void> {
@@ -93,21 +62,11 @@ export async function registerParadoxLanguages(): Promise<void> {
             path: "./syntaxes/paradox-info.tmLanguage.json",
           },
         ],
-        iconThemes: [
-          {
-            id: "pmt-icons",
-            label: "PMT Icons",
-            path: "./fileicons/pmt-icon-theme.json",
-          },
-        ],
       },
     },
     ExtensionHostKind.LocalProcess,
   );
 
-  for (const [path, url] of Object.entries(ICON_FILES)) {
-    registerFileUrl(path, url);
-  }
   registerFileUrl(
     "./syntaxes/paradox.tmLanguage.json",
     `data:application/json,${encodeURIComponent(JSON.stringify(paradoxGrammar))}`,
@@ -126,4 +85,5 @@ export async function registerParadoxLanguages(): Promise<void> {
   );
 
   await whenReady();
+  await registerPmtFileIcons();
 }

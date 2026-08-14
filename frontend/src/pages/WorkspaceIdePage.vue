@@ -38,7 +38,7 @@ async function boot(): Promise<void> {
       document.documentElement.dataset.theme ||
       "PMT";
     // Sets roots immediately (picked up if init is still running), then remounts.
-    await setWorkbenchRoots(roots, theme, settings.editorFontSize);
+    await setWorkbenchRoots(roots, theme);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // HMR / double-init noise — workbench is usable; don't alarm the user.

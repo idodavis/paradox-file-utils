@@ -156,7 +156,7 @@ async function onThemeChange(theme: string | null): Promise<void> {
   setTheme(theme);
   await saveTheme(theme);
   if (isWorkbenchReady()) {
-    await applyWorkbenchTheme(theme, settings.editorFontSize);
+    await applyWorkbenchTheme(theme);
   }
 }
 
@@ -189,7 +189,6 @@ watch(
       try {
         await ensureWorkbench(el, {
           theme: currentTheme.value,
-          editorFontSize: settings.editorFontSize,
         });
       } catch (e) {
         console.error("workbench init", e);
@@ -208,7 +207,6 @@ onMounted(async () => {
     try {
       await ensureWorkbench(workbenchHost.value, {
         theme: currentTheme.value,
-        editorFontSize: settings.editorFontSize,
       });
     } catch (e) {
       console.error("workbench init", e);

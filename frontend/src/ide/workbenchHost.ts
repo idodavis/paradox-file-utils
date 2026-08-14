@@ -50,6 +50,7 @@ import {
   initFile,
 } from "@codingame/monaco-vscode-files-service-override";
 import "@codingame/monaco-vscode-theme-defaults-default-extension";
+import "@codingame/monaco-vscode-theme-seti-default-extension";
 import "vscode/localExtensionHost";
 import * as monaco from "monaco-editor";
 import * as vscode from "vscode";
@@ -57,9 +58,8 @@ import { WailsFileSystemProvider, type IdeRoot } from "./fsBridge";
 import { workspaceFileJson } from "./workspaceFolders";
 import {
   applyWorkbenchTheme,
-  colorCustomizationsForTheme,
+  workbenchSettingsForTheme,
   lockWorkbenchTheme,
-  setThemeHost,
 } from "./themeBridge";
 import { registerParadoxLanguages } from "./paradoxLanguages";
 import { registerLanguageClient } from "./languageClient";
@@ -67,7 +67,6 @@ import { registerLanguageClient } from "./languageClient";
 /** Options applied on first workbench initialize. */
 export type WorkbenchInitOpts = {
   theme?: string;
-  editorFontSize?: number;
 };
 
 const WS_ID = "pmt-app-workspace";
@@ -213,14 +212,10 @@ async function reloadWorkspaceFromFile(): Promise<void> {
   });
 }
 
-async function runInitialize(
-  theme: string,
-  editorFontSize: number,
-): Promise<void> {
+async function runInitialize(theme: string): Promise<void> {
   if (!containerEl) {
     throw new Error("Workbench container not set");
   }
-  setThemeHost(containerEl);
   setupWorkers();
   await createIndexedDBProviders();
 
@@ -237,7 +232,7 @@ async function runInitialize(
   await initUserConfiguration(
     JSON.stringify(
       {
-        ...colorCustomizationsForTheme(theme, editorFontSize),
+        ...workbenchSettingsForTheme(theme),
         "workbench.startupEditor": "none",
         "window.title": "PMT${separator}${activeEditorShort}",
         "files.autoSave": "off",
@@ -265,13 +260,11 @@ async function runInitialize(
   langClient?.dispose();
   langClient = registerLanguageClient();
   themeLock?.dispose();
-  themeLock = lockWorkbenchTheme(() => {
-    const name =
-      document.documentElement.dataset.theme || theme;
-    return { themeName: name, editorFontSize };
-  });
+  themeLock = lockWorkbenchTheme(
+    () => document.documentElement.dataset.theme || theme,
+  );
   markReady();
-  await applyWorkbenchTheme(theme, editorFontSize);
+  await applyWorkbenchTheme(theme);
   if (currentRoots.length) {
     await initFile(WS_FILE, workspaceFileJson(currentRoots), {
       overwrite: true,
@@ -290,20 +283,18 @@ export async function ensureWorkbench(
 ): Promise<void> {
   if (container) {
     containerEl = container;
-    setThemeHost(container);
   }
   const theme = opts?.theme ?? "PMT";
-  const editorFontSize = opts?.editorFontSize ?? 14;
 
   if (!containerEl) {
     throw new Error("Workbench container not set");
   }
 
-  initPromise ??= runInitialize(theme, editorFontSize);
+  initPromise ??= runInitialize(theme);
   await initPromise;
 
   if (ready && opts?.theme) {
-    await applyWorkbenchTheme(theme, editorFontSize);
+    await applyWorkbenchTheme(theme);
   }
 }
 
@@ -311,7 +302,6 @@ export async function ensureWorkbench(
 export async function setWorkbenchRoots(
   roots: IdeRoot[],
   themeName: string,
-  editorFontSize: number,
 ): Promise<void> {
   currentRoots = roots;
   fsProvider.setRoots(roots);
@@ -336,5 +326,5 @@ export async function setWorkbenchRoots(
     );
   }
 
-  await applyWorkbenchTheme(themeName, editorFontSize);
+  await applyWorkbenchTheme(themeName);
 }

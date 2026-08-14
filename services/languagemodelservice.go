@@ -38,13 +38,17 @@ func (s *LanguageModelService) getWS() *repos.WorkspaceRepository {
 	return s.ws
 }
 
-func (s *LanguageModelService) beginJob() context.Context {
+// beginJob cancels any prior job and returns a child of parent (Wails call ctx).
+func (s *LanguageModelService) beginJob(parent context.Context) context.Context {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.cancel != nil {
 		s.cancel()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
 	return ctx
 }
@@ -66,11 +70,14 @@ func (s *LanguageModelService) Cancel() {
 }
 
 // RebuildWorkspaceModel walks install/mod/staging roots and writes the JSON model.
-func (s *LanguageModelService) RebuildWorkspaceModel(workspaceID string) (int, error) {
+// ctx is the Wails binding call context (cancelled when the frontend aborts the call).
+func (s *LanguageModelService) RebuildWorkspaceModel(
+	ctx context.Context, workspaceID string,
+) (int, error) {
 	if workspaceID == "" {
 		return 0, fmt.Errorf("workspace id is required")
 	}
-	ctx := s.beginJob()
+	jobCtx := s.beginJob(ctx)
 	defer s.clearJob()
 
 	wsRepo := s.getWS()
@@ -116,19 +123,22 @@ func (s *LanguageModelService) RebuildWorkspaceModel(workspaceID string) (int, e
 		}
 	}
 
-	emitProgress(eventLangModelProgress, ProgressEvent{
-		Job: "langmodel", Phase: "build", WorkspaceID: workspaceID,
-		Message: "Building language model…",
-	})
+	if err := jobCtx.Err(); err != nil {
+		return s.cancelled(workspaceID)
+	}
 
-	m, err := langmodel.Build(ctx, workspaceID, cachePath, roots)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
+	m, err := langmodel.Build(
+		jobCtx, workspaceID, cachePath, roots,
+		func(phase string, done, total int, message string) {
 			emitProgress(eventLangModelProgress, ProgressEvent{
-				Job: "langmodel", Phase: "cancelled", WorkspaceID: workspaceID,
-				Message: "Cancelled",
+				Job: "langmodel", Phase: phase, Done: done, Total: total,
+				WorkspaceID: workspaceID, Message: message,
 			})
-			return 0, nil
+		},
+	)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(jobCtx.Err(), context.Canceled) {
+			return s.cancelled(workspaceID)
 		}
 		return 0, err
 	}
@@ -138,9 +148,17 @@ func (s *LanguageModelService) RebuildWorkspaceModel(workspaceID string) (int, e
 	n := len(m.Definitions)
 	emitProgress(eventLangModelProgress, ProgressEvent{
 		Job: "langmodel", Phase: "done", Done: n, Total: n, WorkspaceID: workspaceID,
-		Message: fmt.Sprintf("Built %d definitions", n),
+		Message: fmt.Sprintf("Built %d definitions", n), Percent: 100,
 	})
 	return n, nil
+}
+
+func (s *LanguageModelService) cancelled(workspaceID string) (int, error) {
+	emitProgress(eventLangModelProgress, ProgressEvent{
+		Job: "langmodel", Phase: "cancelled", WorkspaceID: workspaceID,
+		Message: "Cancelled",
+	})
+	return 0, fmt.Errorf("cancelled")
 }
 
 // GetModelStatus returns cache presence for a workspace.

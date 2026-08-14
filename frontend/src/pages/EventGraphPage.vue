@@ -4,7 +4,8 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Events } from "@wailsio/runtime";
+import { CancelError, Events } from "@wailsio/runtime";
+import type { CancellablePromise } from "@wailsio/runtime";
 import { GetWorkspace } from "@services/workspaceservice";
 import { Workspace } from "@services/internal/repos/models";
 import {
@@ -39,6 +40,7 @@ const typeFilter = ref("");
 const defCount = ref(0);
 
 let offProgress: (() => void) | null = null;
+let rebuildCall: CancellablePromise<number> | null = null;
 
 const typeOptions = [
   { label: "All", value: "" },
@@ -49,8 +51,31 @@ const typeOptions = [
   { label: "Scripted Triggers", value: "scripted_triggers" },
 ];
 
-function isCancelled(msg: string): boolean {
-  return /cancelled/i.test(msg);
+/** True when a rebuild was aborted by the user or Wails call cancel. */
+function isCancelled(err: unknown): boolean {
+  if (err instanceof CancelError) return true;
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /cancelled|canceled/i.test(msg);
+}
+
+/** Unpack Wails event.data (object or single-element array). */
+function progressPayload(e: unknown): {
+  message?: string;
+  percent?: number;
+  phase?: string;
+  done?: number;
+  total?: number;
+} | null {
+  const raw = (e as { data?: unknown })?.data;
+  const detail = Array.isArray(raw) ? raw[0] : raw;
+  if (!detail || typeof detail !== "object") return null;
+  return detail as {
+    message?: string;
+    percent?: number;
+    phase?: string;
+    done?: number;
+    total?: number;
+  };
 }
 
 /** Load workspace + model status. */
@@ -68,19 +93,33 @@ async function load(): Promise<void> {
   }
 }
 
+/** Abort in-flight rebuild (service cancel + Wails call cancel). */
+function cancelRebuild(): void {
+  void Cancel();
+  rebuildCall?.cancel();
+  rebuildCall = null;
+}
+
 /** Rebuild workspace language model. */
 async function rebuild(): Promise<void> {
+  if (indexing.value) return;
   indexing.value = true;
   progressLabel.value = "Building language model…";
   progressPercent.value = 0;
   error.value = "";
+  const call = RebuildWorkspaceModel(workspaceId.value);
+  rebuildCall = call;
   try {
-    defCount.value = await RebuildWorkspaceModel(workspaceId.value);
+    defCount.value = await call;
     await runSearch();
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (!isCancelled(msg)) error.value = msg;
+    if (!isCancelled(e)) {
+      error.value = e instanceof Error ? e.message : String(e);
+    }
+    const st = await GetModelStatus(workspaceId.value).catch(() => null);
+    defCount.value = st?.defCount ?? defCount.value;
   } finally {
+    if (rebuildCall === call) rebuildCall = null;
     indexing.value = false;
   }
 }
@@ -123,11 +162,20 @@ async function openInIde(): Promise<void> {
 
 onMounted(() => {
   offProgress = Events.On("langmodel:progress", (e: unknown) => {
-    const detail = (e as { data?: { message?: string; percent?: number } })
-      ?.data;
-    if (detail?.message) progressLabel.value = detail.message;
-    if (typeof detail?.percent === "number") {
+    const detail = progressPayload(e);
+    if (!detail) return;
+    if (detail.message) progressLabel.value = detail.message;
+    if (typeof detail.percent === "number" && detail.percent > 0) {
       progressPercent.value = detail.percent;
+    } else if (
+      typeof detail.done === "number" &&
+      typeof detail.total === "number" &&
+      detail.total > 0
+    ) {
+      progressPercent.value = (detail.done / detail.total) * 100;
+    }
+    if (detail.phase === "cancelled") {
+      progressLabel.value = "Cancelled";
     }
   });
   void load();
@@ -138,7 +186,7 @@ watch([searchQuery, typeFilter], () => void runSearch());
 
 onBeforeUnmount(() => {
   offProgress?.();
-  Cancel();
+  cancelRebuild();
 });
 </script>
 
@@ -168,6 +216,7 @@ onBeforeUnmount(() => {
           icon="i-lucide-refresh-cw"
           size="sm"
           :loading="indexing"
+          :disabled="indexing"
           @click="rebuild"
         />
         <UButton
@@ -176,7 +225,7 @@ onBeforeUnmount(() => {
           size="sm"
           color="neutral"
           variant="outline"
-          @click="Cancel()"
+          @click="cancelRebuild"
         />
       </div>
     </div>

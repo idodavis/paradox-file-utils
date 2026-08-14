@@ -1,5 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
-  <path fill="#5ec4a8" d="M2 3.5h5l1.5 1.5H14v8H2z"/>
-  <path fill="#3aa88c" d="M2 5h12v8H2z"/>
-  <path fill="#1a1d24" d="M6 7.5h1.5v1.5H9V10.5H7.5V12H6v-1.5H4.5V9H6z"/>
+  <!-- Mod workspace root -->
+  <path fill="#4db6a0" d="M2 3.2h5.2l1.3 1.4H14V13.5H2z"/>
+  <path fill="#2f9784" d="M2 5h12v8.5H2z"/>
+  <path fill="#0f1a18"
+    d="M7.2 7.2h1.6v1.6H10.4v1.6H8.8v1.6H7.2V10.4H5.6V8.8h1.6z"/>
 </svg>

@@ -1,5 +1,5 @@
 /**
- * Pinia store for persisted app settings (fonts, theme keys, misc).
+ * Pinia store for persisted app settings (UI scale, theme keys, misc).
  */
 import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
@@ -8,23 +8,20 @@ import { normalizeSettings } from "../composables/settings";
 
 const FONT_SCALE_MIN = 85;
 const FONT_SCALE_MAX = 130;
-const EDITOR_FONT_MIN = 11;
-const EDITOR_FONT_MAX = 18;
 
 /** Clamp a number into an inclusive range. */
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
-/** Apply UI font scale and editor font size to the document. */
-export function applyFontCss(fontScale: number, editorFontSize: number): void {
+/** Apply UI font scale to the document (workbench owns its own editor font). */
+export function applyFontCss(fontScale: number): void {
   const root = document.documentElement;
   root.style.setProperty("--pmt-font-scale", String(fontScale / 100));
   root.style.fontSize = `${(16 * fontScale) / 100}px`;
-  root.style.setProperty("--editor-font-size", `${editorFontSize}px`);
 }
 
-/** App-wide settings including dual font preferences. */
+/** App-wide settings including UI scale. */
 export const useSettingsStore = defineStore("settings", () => {
   const values = ref<Record<string, string>>({});
   const loading = ref(false);
@@ -33,20 +30,13 @@ export const useSettingsStore = defineStore("settings", () => {
   const fontScale = computed(() =>
     clamp(Number(values.value["ui.fontScale"]) || 100, FONT_SCALE_MIN, FONT_SCALE_MAX),
   );
-  const editorFontSize = computed(() =>
-    clamp(
-      Number(values.value["editor.fontSize"]) || 13,
-      EDITOR_FONT_MIN,
-      EDITOR_FONT_MAX,
-    ),
-  );
 
   /** Load settings from the backend and apply fonts. */
   async function load(): Promise<void> {
     loading.value = true;
     try {
       values.value = normalizeSettings(await GetSettings());
-      applyFontCss(fontScale.value, editorFontSize.value);
+      applyFontCss(fontScale.value);
     } finally {
       loading.value = false;
     }
@@ -65,8 +55,8 @@ export const useSettingsStore = defineStore("settings", () => {
   /** Set one key and optionally persist immediately. */
   async function set(key: string, value: string, persist = true): Promise<void> {
     values.value = { ...values.value, [key]: value };
-    if (key === "ui.fontScale" || key === "editor.fontSize") {
-      applyFontCss(fontScale.value, editorFontSize.value);
+    if (key === "ui.fontScale") {
+      applyFontCss(fontScale.value);
     }
     if (persist) await save();
   }
@@ -79,16 +69,8 @@ export const useSettingsStore = defineStore("settings", () => {
     );
   }
 
-  /** Update Pierre editor font size (px) and persist. */
-  async function setEditorFontSize(px: number): Promise<void> {
-    await set(
-      "editor.fontSize",
-      String(clamp(px, EDITOR_FONT_MIN, EDITOR_FONT_MAX)),
-    );
-  }
-
-  watch([fontScale, editorFontSize], ([scale, size]) => {
-    applyFontCss(scale, size);
+  watch(fontScale, (scale) => {
+    applyFontCss(scale);
   });
 
   return {
@@ -96,15 +78,11 @@ export const useSettingsStore = defineStore("settings", () => {
     loading,
     saving,
     fontScale,
-    editorFontSize,
     load,
     save,
     set,
     setFontScale,
-    setEditorFontSize,
     FONT_SCALE_MIN,
     FONT_SCALE_MAX,
-    EDITOR_FONT_MIN,
-    EDITOR_FONT_MAX,
   };
 });

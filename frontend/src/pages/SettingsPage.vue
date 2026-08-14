@@ -10,7 +10,7 @@ import { useSettingsStore } from "../stores/settings";
 
 const router = useRouter();
 const settings = useSettingsStore();
-const { fontScale, editorFontSize, loading, saving } = storeToRefs(settings);
+const { fontScale, loading, saving } = storeToRefs(settings);
 
 const resetting = ref(false);
 const resetOpen = ref(false);
@@ -121,7 +121,7 @@ onMounted(load);
             <div class="space-y-4">
               <UFormField
                 label="UI scale"
-                :description="`App chrome at ${fontScale}% (Nuxt UI / explorer)`"
+                :description="`App chrome at ${fontScale}% (editor font is set in the workbench)`"
               >
                 <div class="flex items-center gap-3">
                   <UButton
@@ -140,30 +140,6 @@ onMounted(load);
                     variant="outline"
                     :disabled="fontScale >= settings.FONT_SCALE_MAX"
                     @click="settings.setFontScale(fontScale + 5)"
-                  />
-                </div>
-              </UFormField>
-              <UFormField
-                label="Editor font size"
-                :description="`Pierre code surface at ${editorFontSize}px`"
-              >
-                <div class="flex items-center gap-3">
-                  <UButton
-                    icon="i-lucide-minus"
-                    size="xs"
-                    color="neutral"
-                    variant="outline"
-                    :disabled="editorFontSize <= settings.EDITOR_FONT_MIN"
-                    @click="settings.setEditorFontSize(editorFontSize - 1)"
-                  />
-                  <span class="w-12 text-center text-sm tabular-nums">{{ editorFontSize }}px</span>
-                  <UButton
-                    icon="i-lucide-plus"
-                    size="xs"
-                    color="neutral"
-                    variant="outline"
-                    :disabled="editorFontSize >= settings.EDITOR_FONT_MAX"
-                    @click="settings.setEditorFontSize(editorFontSize + 1)"
                   />
                 </div>
               </UFormField>

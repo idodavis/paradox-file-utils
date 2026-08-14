@@ -69,6 +69,7 @@ export function Hover(workspaceID: string, path: string, line: number, character
 
 /**
  * RebuildWorkspaceModel walks install/mod/staging roots and writes the JSON model.
+ * ctx is the Wails binding call context (cancelled when the frontend aborts the call).
  */
 export function RebuildWorkspaceModel(workspaceID: string): $CancellablePromise<number> {
     return $Call.ByID(3173802769, workspaceID);
