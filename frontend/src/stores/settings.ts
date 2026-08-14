@@ -16,12 +16,12 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
-/** Apply UI font scale and Pierre editor font size to the document. */
+/** Apply UI font scale and editor font size to the document. */
 export function applyFontCss(fontScale: number, editorFontSize: number): void {
   const root = document.documentElement;
   root.style.setProperty("--pmt-font-scale", String(fontScale / 100));
   root.style.fontSize = `${(16 * fontScale) / 100}px`;
-  root.style.setProperty("--diffs-font-size", `${editorFontSize}px`);
+  root.style.setProperty("--editor-font-size", `${editorFontSize}px`);
 }
 
 /** App-wide settings including dual font preferences. */

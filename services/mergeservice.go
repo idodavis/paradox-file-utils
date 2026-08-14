@@ -66,7 +66,7 @@ type ResolvedConflict struct {
 	Reason   string `json:"reason"`   // "directive", "keyList", "default"
 }
 
-// MergeConflictChunk is a unit of content for the assisted merge editor (and internal merge iteration).
+// MergeConflictChunk is a unit of content used while iterating merge conflicts.
 // ObjA/ObjB are internal-only; JSON output omits them.
 type MergeConflictChunk struct {
 	Type       string        `json:"type"` // "unchanged", "added", or "conflict"
@@ -78,20 +78,6 @@ type MergeConflictChunk struct {
 	EndLineB   int           `json:"endLineB"`
 	ObjA       *scriptObject `json:"-"`
 	ObjB       *scriptObject `json:"-"`
-}
-
-// MergePair is a user-specified file pair for explicit merging.
-type MergePair struct {
-	PathA      string `json:"pathA"`
-	PathB      string `json:"pathB"`
-	OutputName string `json:"outputName"` // e.g. "merged_events.txt"; empty = use PathA basename
-}
-
-// ValidationError describes a parse error in a merged file.
-type ValidationError struct {
-	Path  string `json:"path"`
-	Line  int    `json:"line"`
-	Error string `json:"error"`
 }
 
 // scriptObject represents a parsed top-level entry (assignment or object) with its comments.
@@ -153,64 +139,6 @@ func (m *MergeService) Merge(ctx context.Context, tasks []PreviewItem, opts Merg
 	return results, nil
 }
 
-// GetMergeConflicts removed — manual merge builds conflict markers on the frontend.
-
-// ValidateMergedFiles runs the Paradox parser on each path and returns parse errors.
-func (m *MergeService) ValidateMergedFiles(paths []string) []ValidationError {
-	results := parser.ValidatePaths(paths)
-	errs := make([]ValidationError, len(results))
-	for i, r := range results {
-		errs[i] = ValidationError{Path: r.Path, Line: r.Line, Error: r.Error}
-	}
-	return errs
-}
-
-// GenerateMergeReport builds a Markdown report from merge results.
-func (m *MergeService) GenerateMergeReport(results []FileMergeResult, totalAdded, totalChanged, totalRemoved int, labelA, labelB string) string {
-	if labelA == "" {
-		labelA = "A"
-	}
-	if labelB == "" {
-		labelB = "B"
-	}
-	sideLabel := map[string]string{"A": labelA, "B": labelB}
-	var b strings.Builder
-	fmt.Fprintf(&b, "# Merge Report\n\n**Summary:** %d files · +%d added · %d changed · -%d removed\n\n", len(results), totalAdded, totalChanged, totalRemoved)
-	for _, r := range results {
-		fmt.Fprintf(&b, "## %s\n\n", r.FilePath)
-		if r.Error != "" {
-			fmt.Fprintf(&b, "**Error:** %s\n\n", r.Error)
-			continue
-		}
-		fmt.Fprintf(&b, "**Stats:** +%d added, %d changed\n\n", r.Added, r.Changed)
-		for _, sec := range []struct {
-			title string
-			items []string
-		}{{"Added", r.EntriesAdded}, {"Changed", r.EntriesChanged}} {
-			if len(sec.items) == 0 {
-				continue
-			}
-			b.WriteString("### " + sec.title + "\n")
-			for _, k := range sec.items {
-				b.WriteString("- " + k + "\n")
-			}
-			b.WriteString("\n")
-		}
-		if len(r.ResolvedConflicts) > 0 {
-			b.WriteString("### Resolved Conflicts\n")
-			for _, c := range r.ResolvedConflicts {
-				side := sideLabel[c.UsedSide]
-				if side == "" {
-					side = c.UsedSide
-				}
-				fmt.Fprintf(&b, "- **%s**: Used %s (%s)\n", c.Key, side, c.Reason)
-			}
-			b.WriteString("\n")
-		}
-	}
-	return b.String()
-}
-
 func outputPathWithSuffix(outputDir, relPath, suffix string) string {
 	if suffix == "" {
 		return filepath.Join(outputDir, relPath)
@@ -230,6 +158,21 @@ func parsePrecedenceFromComment(comment string) string {
 	return ""
 }
 
+// normalizeMergeKey strips surrounding quotes so "foo" and foo match.
+func normalizeMergeKey(key string) string {
+	key = strings.TrimSpace(key)
+	if len(key) >= 2 {
+		if (key[0] == '"' && key[len(key)-1] == '"') ||
+			(key[0] == '\'' && key[len(key)-1] == '\'') {
+			return key[1 : len(key)-1]
+		}
+	}
+	return key
+}
+
+// parseFileObjects uses the shared Paradox parser for top-level object keys.
+// Semantic typing (install cache / langmodel) can later refine matching when keys
+// collide across types; for now matching is by normalized top-level key only.
 func parseFileObjects(path string) ([]scriptObject, string, error) {
 	f, err := parser.ParseFile(path)
 	if err != nil {
@@ -269,7 +212,7 @@ func parseFileObjects(path string) ([]scriptObject, string, error) {
 			}
 
 			objects = append(objects, scriptObject{
-				Key:        expr.Key,
+				Key:        normalizeMergeKey(expr.Key),
 				RawText:    pendingPreamble.String(),
 				ValueText:  expr.GetRawText(),
 				Comments:   pendingComments,

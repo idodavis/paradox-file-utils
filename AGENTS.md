@@ -16,7 +16,7 @@
 - Paradox Modding Tools is a Wails v3 desktop app (Go backend, Vue 3 + Nuxt UI + Pinia frontend) for Paradox modders, licensed under GPL-3.0-or-later.
 - CK3, EU5 (partial), and Vic3 are the current game targets; the longer-term goal is broader Paradox-title support.
 - Local develop/build flows use Taskfile (`task dev`, `task build`) with the Wails v3 CLI (`wails3`).
-- Frontend editing/diff/merge UI is centered on `@pierre/diffs` (Monaco removed); highlighting leans on Shiki.
+- Workspace IDE embeds monaco-vscode-api workbench (Monaco + VS Code services); product chrome stays Nuxt.
 - The Paradox/Jomini script parser lives under `services/internal/parser/`; classification under `services/internal/semantics/` (bootstrap JSON + install scan cache); localization YAML under `services/internal/loc/`.
 - Per-game thin bootstrap packs (`semantics/bootstrap/{ck3,eu5,vic3}.json`) are prefilled from installs; large semantics are generated at scan-time via `semantics/scanner`.
 - Product direction is workspace-centric: library of workspaces (mods + game versions, grouped by game), workspace IDE, patch center, mod patcher, event graph, and ad-hoc tools.

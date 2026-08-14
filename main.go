@@ -34,11 +34,10 @@ func main() {
 	workspaceSvc := &services.WorkspaceService{DB: dbSvc.DB}
 	wikiSvc := &services.WikiService{DB: dbSvc.DB}
 	patcherSvc := &services.PatcherService{DB: dbSvc.DB, FileService: fileSvc, MergeService: mergeSvc}
-	indexerSvc := &services.IndexerService{DB: dbSvc.DB}
+	langModelSvc := &services.LanguageModelService{DB: dbSvc.DB}
+	graphSvc := &services.GraphService{}
 	scriptLogSvc := &services.ScriptLogService{DB: dbSvc.DB}
-	locSvc := &services.LocService{DB: dbSvc.DB}
 	semanticsSvc := &services.SemanticsService{DB: dbSvc.DB}
-	guiSvc := &services.GuiService{}
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
@@ -48,18 +47,15 @@ func main() {
 			application.NewService(dbSvc),
 			application.NewService(fileSvc),
 			application.NewService(&services.BrowserService{}),
-			application.NewService(&services.CompareService{}),
 			application.NewService(settingsSvc),
-			application.NewService(&services.ClipboardService{}),
 			application.NewService(mergeSvc),
 			application.NewService(workspaceSvc),
 			application.NewService(wikiSvc),
 			application.NewService(patcherSvc),
-			application.NewService(indexerSvc),
+			application.NewService(langModelSvc),
+			application.NewService(graphSvc),
 			application.NewService(scriptLogSvc),
-			application.NewService(locSvc),
 			application.NewService(semanticsSvc),
-			application.NewService(guiSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
@@ -69,19 +65,21 @@ func main() {
 		},
 	})
 
-	// Initialize the GitHub updater provider with the specified repository.
-	// This allows the application to check for updates from the GitHub repository releases.
-	// Using SHA256SUMS sidecar for checksum verification of downloaded updates.
-	gh, err := github.New(github.Config{Repository: "idodavis/paradox-modding-tools", ChecksumAsset: "SHA256SUMS"})
+	gh, err := github.New(github.Config{
+		Repository:   "idodavis/paradox-modding-tools",
+		ChecksumAsset: "SHA256SUMS",
+	})
 	if err != nil {
 		log.Fatalf("github.New: %v", err)
 	}
 
-	if err := app.Updater.Init(updater.Config{CurrentVersion: version, Providers: []updater.Provider{gh}}); err != nil {
+	if err := app.Updater.Init(updater.Config{
+		CurrentVersion: version,
+		Providers:      []updater.Provider{gh},
+	}); err != nil {
 		log.Fatalf("updater.Init: %v", err)
 	}
 
-	// Main App Window
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Paradox Modding Tools",
 		Width:  1300,
@@ -94,7 +92,6 @@ func main() {
 		URL: "/",
 	})
 
-	// Run the application. This blocks until the application has been exited.
 	if err := app.Run(); err != nil {
 		log.Fatalf("app.Run: %v", err)
 	}

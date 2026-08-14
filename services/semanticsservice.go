@@ -17,8 +17,8 @@ import (
 
 // SemanticsService rebuilds and applies per-install semantic caches.
 type SemanticsService struct {
-	DB   *sqlx.DB
-	repo *repos.IndexRepository
+	DB *sqlx.DB
+	ws *repos.WorkspaceRepository
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -33,11 +33,11 @@ type SemanticsStatus struct {
 	Path      string `json:"path,omitempty"`
 }
 
-func (s *SemanticsService) getRepo() *repos.IndexRepository {
-	if s.repo == nil {
-		s.repo = repos.NewIndexRepository(s.DB)
+func (s *SemanticsService) getWS() *repos.WorkspaceRepository {
+	if s.ws == nil {
+		s.ws = repos.NewWorkspaceRepository(s.DB)
 	}
-	return s.repo
+	return s.ws
 }
 
 func (s *SemanticsService) beginJob() context.Context {
@@ -75,7 +75,7 @@ func (s *SemanticsService) RebuildSemantics(installID string) (*scanner.Cache, e
 	ctx := s.beginJob()
 	defer s.clearJob()
 
-	path, gameID, err := s.getRepo().GetInstallPath(installID)
+	path, gameID, err := s.getWS().GetInstallPath(installID)
 	if err != nil {
 		return nil, fmt.Errorf("install: %w", err)
 	}
@@ -107,7 +107,7 @@ func (s *SemanticsService) RebuildWorkspaceSemantics(workspaceID string) (*scann
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace id is required")
 	}
-	_, installID, err := s.getRepo().GetWorkspaceInfo(workspaceID)
+	_, installID, err := s.getWS().GetWorkspaceInfo(workspaceID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("workspace not found")
@@ -130,7 +130,7 @@ func (s *SemanticsService) GetSemanticsStatus(workspaceID string) (*SemanticsSta
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace id is required")
 	}
-	gameID, installID, err := s.getRepo().GetWorkspaceInfo(workspaceID)
+	gameID, installID, err := s.getWS().GetWorkspaceInfo(workspaceID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("workspace not found")
@@ -151,7 +151,6 @@ func (s *SemanticsService) GetSemanticsStatus(workspaceID string) (*SemanticsSta
 		if errors.Is(err, os.ErrNotExist) || os.IsNotExist(err) {
 			return st, nil
 		}
-		// Missing file surfaces as read error from os.ReadFile.
 		if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
 			return st, nil
 		}

@@ -15,13 +15,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * GenerateMergeReport builds a Markdown report from merge results.
- */
-export function GenerateMergeReport(results: $models.FileMergeResult[] | null, totalAdded: number, totalChanged: number, totalRemoved: number, labelA: string, labelB: string): $CancellablePromise<string> {
-    return $Call.ByID(1204015806, results, totalAdded, totalChanged, totalRemoved, labelA, labelB);
-}
-
-/**
  * Merge performs the merge for each task (PreviewItem) and writes results. Single entry point for merge operations.
  */
 export function Merge(tasks: $models.PreviewItem[] | null, opts: $models.MergerOptions): $CancellablePromise<$models.FileMergeResult[] | null> {
@@ -33,11 +26,4 @@ export function Merge(tasks: $models.PreviewItem[] | null, opts: $models.MergerO
  */
 export function MergePreview(pathA: string, pathB: string, outputDir: string, opts: $models.MergerOptions): $CancellablePromise<$models.PreviewItem[] | null> {
     return $Call.ByID(2633360575, pathA, pathB, outputDir, opts);
-}
-
-/**
- * ValidateMergedFiles runs the Paradox parser on each path and returns parse errors.
- */
-export function ValidateMergedFiles(paths: string[] | null): $CancellablePromise<$models.ValidationError[] | null> {
-    return $Call.ByID(31895744, paths);
 }

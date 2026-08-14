@@ -263,6 +263,7 @@ func ParseFile(filename string) (*ParadoxFile, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer r.Close()
 	paradoxScript, err := paradoxParser.Parse("", r)
 	if err != nil {
 		return nil, err

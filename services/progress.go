@@ -5,7 +5,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// ProgressEvent is a phase/progress update for index/semantics jobs.
+// ProgressEvent is a phase/progress update for language-model/semantics jobs.
 type ProgressEvent struct {
 	Job         string  `json:"job"`
 	Phase       string  `json:"phase"`
@@ -17,8 +17,8 @@ type ProgressEvent struct {
 }
 
 const (
-	eventIndexProgress     = "index:progress"
 	eventSemanticsProgress = "semantics:progress"
+	eventLangModelProgress = "langmodel:progress"
 )
 
 // emitProgress sends a progress event to the frontend when the app is running.

@@ -43,7 +43,7 @@ export function DefaultStagingDir(workspaceID: string): $CancellablePromise<stri
 }
 
 /**
- * DeleteWorkspace removes a workspace and cascades deletes to mods, runs, indexes.
+ * DeleteWorkspace removes a workspace and cascades deletes to mods and runs.
  */
 export function DeleteWorkspace(id: string): $CancellablePromise<void> {
     return $Call.ByID(1615435582, id);

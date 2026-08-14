@@ -168,7 +168,7 @@ func (w *WorkspaceService) UpdateWorkspace(id, name, installID, stagingDir, tags
 	return nil
 }
 
-// DeleteWorkspace removes a workspace and cascades deletes to mods, runs, indexes.
+// DeleteWorkspace removes a workspace and cascades deletes to mods and runs.
 func (w *WorkspaceService) DeleteWorkspace(id string) error {
 	if err := w.getRepo().DeleteWorkspace(id); err != nil {
 		return fmt.Errorf("delete workspace: %w", err)

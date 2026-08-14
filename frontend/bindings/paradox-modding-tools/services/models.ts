@@ -3,16 +3,10 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as langmodel$0 from "./internal/langmodel/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as repos$0 from "./internal/repos/models.js";
-
-/**
- * AutoLocResult describes where auto-loc wrote stub keys.
- */
-export interface AutoLocResult {
-    "count": number;
-    "path": string;
-    "preview": string;
-}
 
 /**
  * CascadeNode represents a node in cascade simulation results.
@@ -22,15 +16,6 @@ export interface CascadeNode {
     "depth": number;
     "edgeType"?: string;
     "children"?: string[] | null;
-}
-
-/**
- * ContentSearchHit is a line match from SearchInFiles.
- */
-export interface ContentSearchHit {
-    "fullPath": string;
-    "line": number;
-    "text": string;
 }
 
 /**
@@ -87,45 +72,25 @@ export interface FileMergeResult {
 }
 
 /**
- * FileSearchHit is a path match from SearchByName.
+ * GraphDef is a definition returned to the frontend.
  */
-export interface FileSearchHit {
-    "fullPath": string;
-    "name": string;
-    "isDir": boolean;
-}
-
-/**
- * GuiNode is a simplified widget node for structural preview.
- */
-export interface GuiNode {
-    "kind": string;
-    "name"?: string;
-    "props"?: { [_ in string]?: string } | null;
-    "children"?: GuiNode[] | null;
-    "width"?: number;
-    "height"?: number;
-    "text"?: string;
-}
-
-/**
- * GuiPreview is the parse result for a .gui file.
- */
-export interface GuiPreview {
-    "path": string;
-    "roots": GuiNode[] | null;
-    "error"?: string;
-}
-
-/**
- * LocDiagnostic is one missing localization finding.
- */
-export interface LocDiagnostic {
+export interface GraphDef {
+    "type": string;
     "key": string;
-    "language": string;
     "filePath": string;
     "line": number;
-    "source": string;
+    "col": number;
+    "endLine": number;
+    "summary": string;
+}
+
+/**
+ * GraphEdge is a reference edge between keys.
+ */
+export interface GraphEdge {
+    "fromKey": string;
+    "toKey": string;
+    "edgeType": string;
 }
 
 /**
@@ -155,6 +120,21 @@ export interface MergerOptions {
 }
 
 /**
+ * ModelStatus reports whether a cached language model exists.
+ */
+export type ModelStatus = langmodel$0.Status;
+
+/**
+ * NeighborResult is a key plus its inbound/outbound edges.
+ */
+export interface NeighborResult {
+    "key": string;
+    "defs": GraphDef[] | null;
+    "outgoing": GraphEdge[] | null;
+    "incoming": GraphEdge[] | null;
+}
+
+/**
  * PatchRunPreview is the result of previewing a patch run.
  */
 export interface PatchRunPreview {
@@ -180,6 +160,17 @@ export interface PatchVersion {
 export interface PathMatch {
     "pathA": string;
     "pathB": string;
+}
+
+/**
+ * PathStat describes a filesystem node for the workbench FS bridge.
+ */
+export interface PathStat {
+    "exists": boolean;
+    "isDir": boolean;
+    "size": number;
+    "mtimeMs": number;
+    "ctimeMs": number;
 }
 
 /**
@@ -219,19 +210,4 @@ export interface SemanticsStatus {
     "gameId"?: string;
     "scannedAt"?: string;
     "path"?: string;
-}
-
-export interface TreeNode {
-    "relPath": string;
-    "name": string;
-    "children": TreeNode[] | null;
-}
-
-/**
- * ValidationError describes a parse error in a merged file.
- */
-export interface ValidationError {
-    "path": string;
-    "line": number;
-    "error": string;
 }

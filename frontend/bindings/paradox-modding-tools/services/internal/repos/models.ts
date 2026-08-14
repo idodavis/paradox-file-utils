@@ -26,19 +26,6 @@ export interface GameInstall {
 }
 
 /**
- * IndexObject represents an indexed definition from scripts.
- */
-export interface IndexObject {
-    "id": string;
-    "workspaceId": string;
-    "objType": string;
-    "objKey": string;
-    "filePath": string;
-    "line": number;
-    "summary": string;
-}
-
-/**
  * PatchRun represents a mod update campaign from baseline to target version.
  */
 export interface PatchRun {

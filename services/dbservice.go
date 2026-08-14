@@ -172,30 +172,6 @@ func (d *DbService) initSchema() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_patch_run_files_run ON patch_run_files(run_id)`,
 
-		// Index objects (definitions extracted from game/mod scripts)
-		`CREATE TABLE IF NOT EXISTS index_objects (
-			id TEXT PRIMARY KEY,
-			workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-			obj_type TEXT NOT NULL,
-			obj_key TEXT NOT NULL,
-			file_path TEXT NOT NULL,
-			line INTEGER NOT NULL,
-			summary TEXT
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_index_objects_ws ON index_objects(workspace_id, obj_type)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_index_objects_key ON index_objects(workspace_id, obj_type, obj_key)`,
-
-		// Index edges (relationships between indexed objects, e.g. event triggers)
-		`CREATE TABLE IF NOT EXISTS index_edges (
-			id TEXT PRIMARY KEY,
-			workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-			from_key TEXT NOT NULL,
-			to_key TEXT NOT NULL,
-			edge_type TEXT NOT NULL
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_index_edges_ws ON index_edges(workspace_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_index_edges_from ON index_edges(workspace_id, from_key)`,
-
 		// App settings (unchanged)
 		`CREATE TABLE IF NOT EXISTS app_settings (
 			game TEXT NOT NULL,
@@ -260,14 +236,14 @@ func (d *DbService) seedGames() error {
 	return nil
 }
 
-// ResetData wipes user data (workspaces, mods, installs, runs, indexes) but keeps games and app_settings.
+// ResetData wipes user data (workspaces, mods, installs, runs) but keeps games and app_settings.
 func (d *DbService) ResetData() error {
 	if d.DB == nil {
 		return fmt.Errorf("database not initialized")
 	}
 	tables := []string{
 		"patch_run_files", "patch_runs", "workspace_mods", "workspaces",
-		"game_installs", "script_log_imports", "index_edges", "index_objects", "wiki_patches",
+		"game_installs", "script_log_imports", "wiki_patches",
 	}
 	for _, t := range tables {
 		if _, err := d.DB.Exec(`DELETE FROM ` + t); err != nil {

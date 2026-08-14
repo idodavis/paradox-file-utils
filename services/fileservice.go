@@ -1,26 +1,21 @@
 package services
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-const (
-	scriptRootFolderCK3 = "game"
-	scriptRootFolderEU5 = "game/in_game"
-	utf8BOM             = "\uFEFF"
-)
+const utf8BOM = "\uFEFF"
 
-// FileService provides directory/file selection dialogs and game script root / doc path discovery.
+// FileService provides directory/file selection dialogs and filesystem helpers for merge/IDE.
 type FileService struct{}
 
 // GetUserDownloadsDir returns the user's Downloads directory (e.g. ~/Downloads).
@@ -72,65 +67,12 @@ func (f *FileService) WriteWithBOM(outputPath, content string) error {
 	return os.WriteFile(outputPath, []byte(content), 0o644)
 }
 
-// ReadFileContent reads a file as UTF-8 text.
-func (f *FileService) ReadFileContent(fullPath string) (string, error) {
-	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
-	data, err := os.ReadFile(fullPath)
-	if err != nil {
-		return "", fmt.Errorf("read file: %w", err)
-	}
-	return string(data), nil
+func encodeBase64(data []byte) string {
+	return base64.StdEncoding.EncodeToString(data)
 }
 
-// WriteFileContent writes UTF-8 text to an existing path (no dialog).
-func (f *FileService) WriteFileContent(fullPath, content string) error {
-	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
-	if fullPath == "" || fullPath == "." {
-		return fmt.Errorf("path is required")
-	}
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		return fmt.Errorf("create parent dir: %w", err)
-	}
-	return os.WriteFile(fullPath, []byte(content), 0o644)
-}
-
-func (f *FileService) SaveFile(title, defaultName, content, ext string) (string, error) {
-	app := application.Get()
-	dialog := app.Dialog.SaveFile()
-	if title != "" {
-		dialog.SetMessage(title)
-	}
-	if defaultName != "" {
-		dialog.SetFilename(defaultName)
-	}
-	path, err := dialog.PromptForSingleSelection()
-	if err != nil {
-		return "", nil
-	}
-	fullPath := filepath.Clean(filepath.FromSlash(path))
-
-	wantExt := ext
-	if wantExt != "" && !strings.HasPrefix(wantExt, ".") {
-		wantExt = "." + wantExt
-	}
-	if wantExt != "" && filepath.Ext(fullPath) != wantExt {
-		fullPath = fullPath + wantExt
-	}
-	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
-		return "", fmt.Errorf("write file: %w", err)
-	}
-	return fullPath, nil
-}
-
-func (f *FileService) GetGameScriptRoot(game string, installPath string) (string, error) {
-	switch game {
-	case "CK3":
-		return filepath.Join(installPath, scriptRootFolderCK3), nil
-	case "EU5":
-		return filepath.Join(installPath, scriptRootFolderEU5), nil
-	default:
-		return "", fmt.Errorf("unknown game: %s", game)
-	}
+func decodeBase64(s string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(s)
 }
 
 type FileCollectorFilter struct {
@@ -310,33 +252,12 @@ func (f *FileService) findMatchingByPath(filesA, filesB map[string]string) map[s
 	return matches
 }
 
-type TreeNode struct {
-	RelPath  string     `json:"relPath"`
-	Name     string     `json:"name"`
-	Children []TreeNode `json:"children"`
-}
-
 // DirEntry is one immediate child of a directory (for lazy file trees).
 type DirEntry struct {
 	Name     string `json:"name"`
 	RelPath  string `json:"relPath"`
 	FullPath string `json:"fullPath"`
 	IsDir    bool   `json:"isDir"`
-}
-
-// CreateFile creates an empty UTF-8 file (parents created as needed).
-func (f *FileService) CreateFile(fullPath string) error {
-	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
-	if fullPath == "" || fullPath == "." {
-		return fmt.Errorf("path is required")
-	}
-	if _, err := os.Stat(fullPath); err == nil {
-		return fmt.Errorf("already exists: %s", fullPath)
-	}
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		return fmt.Errorf("create parent dir: %w", err)
-	}
-	return os.WriteFile(fullPath, []byte{}, 0o644)
 }
 
 // CreateDir creates a directory (parents created as needed).
@@ -370,159 +291,65 @@ func (f *FileService) DeletePath(fullPath string) error {
 	return os.RemoveAll(fullPath)
 }
 
-// RevealInOs opens the OS file manager on a folder, or selects a file in its parent.
-func (f *FileService) RevealInOs(fullPath string) error {
+// PathStat describes a filesystem node for the workbench FS bridge.
+type PathStat struct {
+	Exists  bool  `json:"exists"`
+	IsDir   bool  `json:"isDir"`
+	Size    int64 `json:"size"`
+	MtimeMs int64 `json:"mtimeMs"`
+	CtimeMs int64 `json:"ctimeMs"`
+}
+
+// StatPath returns metadata for a path (Exists=false when missing, no error).
+func (f *FileService) StatPath(fullPath string) (PathStat, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
-	if fullPath == "" {
-		return fmt.Errorf("path is required")
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return PathStat{Exists: false}, nil
+		}
+		return PathStat{}, err
 	}
-	fi, err := os.Stat(fullPath)
-	isDir := err == nil && fi.IsDir()
-	switch runtime.GOOS {
-	case "windows":
-		if isDir {
-			return exec.Command("explorer", fullPath).Start()
-		}
-		return exec.Command("explorer", "/select,", fullPath).Start()
-	case "darwin":
-		if isDir {
-			return exec.Command("open", fullPath).Start()
-		}
-		return exec.Command("open", "-R", fullPath).Start()
-	default:
-		target := fullPath
-		if !isDir {
-			target = filepath.Dir(fullPath)
-		}
-		return exec.Command("xdg-open", target).Start()
-	}
+	mtime := info.ModTime().UnixMilli()
+	return PathStat{
+		Exists:  true,
+		IsDir:   info.IsDir(),
+		Size:    info.Size(),
+		MtimeMs: mtime,
+		CtimeMs: mtime,
+	}, nil
 }
 
-// FileSearchHit is a path match from SearchByName.
-type FileSearchHit struct {
-	FullPath string `json:"fullPath"`
-	Name     string `json:"name"`
-	IsDir    bool   `json:"isDir"`
+// ReadFileBase64 reads raw file bytes as standard base64 (binary-safe for the IDE bridge).
+func (f *FileService) ReadFileBase64(fullPath string) (string, error) {
+	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+	return encodeBase64(data), nil
 }
 
-// ContentSearchHit is a line match from SearchInFiles.
-type ContentSearchHit struct {
-	FullPath string `json:"fullPath"`
-	Line     int    `json:"line"`
-	Text     string `json:"text"`
-}
-
-var searchExts = map[string]bool{
-	".txt": true, ".yml": true, ".yaml": true, ".json": true,
-	".gui": true, ".info": true, ".mod": true,
-}
-
-// SearchByName finds files/folders under roots whose names contain query (case-insensitive).
-func (f *FileService) SearchByName(roots []string, query string, limit int) ([]FileSearchHit, error) {
-	query = strings.TrimSpace(strings.ToLower(query))
-	if query == "" || len(roots) == 0 {
-		return nil, nil
+// WriteFileBase64 writes raw bytes from standard base64.
+func (f *FileService) WriteFileBase64(fullPath, b64 string) error {
+	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
+	data, err := decodeBase64(b64)
+	if err != nil {
+		return fmt.Errorf("decode: %w", err)
 	}
-	if limit <= 0 {
-		limit = 100
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		return fmt.Errorf("mkdir: %w", err)
 	}
-	out := make([]FileSearchHit, 0, limit)
-	for _, root := range roots {
-		root = filepath.Clean(filepath.FromSlash(root))
-		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || len(out) >= limit {
-				return fs.SkipAll
-			}
-			name := d.Name()
-			if strings.HasPrefix(name, ".") {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !strings.Contains(strings.ToLower(name), query) {
-				return nil
-			}
-			if !d.IsDir() && !searchExts[strings.ToLower(filepath.Ext(name))] {
-				return nil
-			}
-			out = append(out, FileSearchHit{FullPath: path, Name: name, IsDir: d.IsDir()})
-			return nil
-		})
-		if len(out) >= limit {
-			break
-		}
-	}
-	return out, nil
-}
-
-// SearchInFiles finds lines under roots containing query (case-insensitive), capped per call.
-func (f *FileService) SearchInFiles(roots []string, query string, limit int) ([]ContentSearchHit, error) {
-	query = strings.TrimSpace(query)
-	if query == "" || len(roots) == 0 {
-		return nil, nil
-	}
-	if limit <= 0 {
-		limit = 200
-	}
-	qLower := strings.ToLower(query)
-	out := make([]ContentSearchHit, 0, limit)
-	for _, root := range roots {
-		root = filepath.Clean(filepath.FromSlash(root))
-		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || len(out) >= limit {
-				return fs.SkipAll
-			}
-			if d.IsDir() {
-				if strings.HasPrefix(d.Name(), ".") {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !searchExts[strings.ToLower(filepath.Ext(d.Name()))] {
-				return nil
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return nil
-			}
-			lines := strings.Split(string(data), "\n")
-			for i, line := range lines {
-				if len(out) >= limit {
-					return fs.SkipAll
-				}
-				if strings.Contains(strings.ToLower(line), qLower) {
-					text := strings.TrimRight(line, "\r")
-					if len(text) > 240 {
-						text = text[:240] + "…"
-					}
-					out = append(out, ContentSearchHit{
-						FullPath: path,
-						Line:     i + 1,
-						Text:     text,
-					})
-				}
-			}
-			return nil
-		})
-		if len(out) >= limit {
-			break
-		}
-	}
-	return out, nil
+	return os.WriteFile(fullPath, data, 0o644)
 }
 
 // ListDirectory lists immediate children of dirPath (non-recursive).
-// Files are limited to common Paradox script/loc/gui extensions.
+// Shows all non-dot files and directories (binary included; editor handles view).
 func (f *FileService) ListDirectory(dirPath string) ([]DirEntry, error) {
 	dirPath = filepath.Clean(filepath.FromSlash(dirPath))
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, fmt.Errorf("list directory: %w", err)
-	}
-	allowed := map[string]bool{
-		".txt": true, ".yml": true, ".yaml": true, ".json": true,
-		".gui": true, ".info": true, ".mod": true,
 	}
 	out := make([]DirEntry, 0, len(entries))
 	for _, e := range entries {
@@ -531,17 +358,8 @@ func (f *FileService) ListDirectory(dirPath string) ([]DirEntry, error) {
 			continue
 		}
 		full := filepath.Join(dirPath, name)
-		if e.IsDir() {
-			out = append(out, DirEntry{
-				Name: name, RelPath: name, FullPath: full, IsDir: true,
-			})
-			continue
-		}
-		if !allowed[strings.ToLower(filepath.Ext(name))] {
-			continue
-		}
 		out = append(out, DirEntry{
-			Name: name, RelPath: name, FullPath: full, IsDir: false,
+			Name: name, RelPath: name, FullPath: full, IsDir: e.IsDir(),
 		})
 	}
 	slices.SortFunc(out, func(a, b DirEntry) int {
@@ -556,28 +374,3 @@ func (f *FileService) ListDirectory(dirPath string) ([]DirEntry, error) {
 	return out, nil
 }
 
-// BuildTree builds a file tree from a list of paths
-func (f *FileService) BuildTree(paths []string) []TreeNode {
-	var tree []TreeNode
-	for _, path := range paths {
-		tree = AddToTree(tree, path, strings.Split(filepath.ToSlash(path), "/"))
-	}
-	return tree
-}
-
-// AddToTree adds a node to the tree recursively
-func AddToTree(root []TreeNode, relPath string, nodeNames []string) []TreeNode {
-	if len(nodeNames) > 0 {
-		var i int
-		for i = 0; i < len(root); i++ {
-			if root[i].Name == nodeNames[0] { // already in tree
-				break
-			}
-		}
-		if i == len(root) {
-			root = append(root, TreeNode{RelPath: relPath, Name: nodeNames[0]})
-		}
-		root[i].Children = AddToTree(root[i].Children, relPath, nodeNames[1:])
-	}
-	return root
-}

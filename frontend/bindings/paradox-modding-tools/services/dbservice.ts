@@ -11,7 +11,7 @@
 import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 /**
- * ResetData wipes user data (workspaces, mods, installs, runs, indexes) but keeps games and app_settings.
+ * ResetData wipes user data (workspaces, mods, installs, runs) but keeps games and app_settings.
  */
 export function ResetData(): $CancellablePromise<void> {
     return $Call.ByID(2362858724);

@@ -212,6 +212,37 @@ func (r *WorkspaceRepository) GetGame(id string) (*Game, error) {
 	return &g, nil
 }
 
+// GetWorkspaceInfo returns game_id and install_id for a workspace.
+func (r *WorkspaceRepository) GetWorkspaceInfo(workspaceID string) (gameID, installID string, err error) {
+	var ws struct {
+		GameID    string `db:"game_id"`
+		InstallID string `db:"install_id"`
+	}
+	err = r.db.Get(&ws,
+		`SELECT game_id, COALESCE(install_id, '') as install_id FROM workspaces WHERE id = ?`,
+		workspaceID,
+	)
+	return ws.GameID, ws.InstallID, err
+}
+
+// GetInstallPath returns the path and game_id for an install.
+func (r *WorkspaceRepository) GetInstallPath(installID string) (path, gameID string, err error) {
+	var inst struct {
+		Path   string `db:"path"`
+		GameID string `db:"game_id"`
+	}
+	err = r.db.Get(&inst, `SELECT path, game_id FROM game_installs WHERE id = ?`, installID)
+	return inst.Path, inst.GameID, err
+}
+
+// ListModPaths returns all mod paths for a workspace.
+func (r *WorkspaceRepository) ListModPaths(workspaceID string) ([]string, error) {
+	var paths []string
+	err := r.db.Select(&paths,
+		`SELECT path FROM workspace_mods WHERE workspace_id = ?`, workspaceID)
+	return paths, err
+}
+
 func nullIfEmpty(s string) interface{} {
 	if s == "" {
 		return nil

@@ -4,7 +4,6 @@
 export type {
     Game,
     GameInstall,
-    IndexObject,
     PatchRun,
     PatchRunFile,
     ScriptLogImport,

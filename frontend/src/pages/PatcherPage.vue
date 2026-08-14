@@ -1,10 +1,9 @@
 <script setup lang="ts">
 /**
- * Mod Patcher: select mod, versions, run patch, preview, accept/skip, MergeEditorModal for conflicts.
+ * Mod Patcher: select mod, versions, run patch, preview, accept/skip; workbench diffs for conflicts.
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import MergeEditorModal from "../components/MergeEditorModal.vue";
 import { GetWorkspace, ListWorkspaceMods, ListGameInstalls } from "@services/workspaceservice";
 import { Workspace, WorkspaceMod, GameInstall, PatchRun, PatchRunFile } from "@services/internal/repos/models";
 import {
@@ -15,10 +14,11 @@ import {
   ApplyPatchRun,
 } from "@services/patcherservice";
 import { PatchRunPreview } from "@services/models";
-import { ReadFileContent, WriteWithBOM } from "@services/fileservice";
+import { openFile } from "../ide/commands";
+import { useIdeShellStore } from "../stores/ideShell";
 
 type PatchRunFileStats = { added?: number; changed?: number; conflicts?: number };
-import { buildConflictMarkedFile } from "../composables/textMerge";
+const ideShell = useIdeShellStore();
 
 const route = useRoute();
 const router = useRouter();
@@ -35,15 +35,6 @@ const error = ref("");
 const patchRun = ref<PatchRun | null>(null);
 const preview = ref<PatchRunPreview | null>(null);
 const patchFiles = ref<PatchRunFile[]>([]);
-
-const mergeModalOpen = ref(false);
-const currentMergeFile = ref<{
-  file: PatchRunFile;
-  contentA: string;
-  contentB: string;
-  markedContent: string;
-  conflictCount: number;
-} | null>(null);
 
 const selectedMod = computed(() => mods.value.find((m) => m.id === selectedModId.value));
 const baselineInstall = computed(() => installs.value.find((i) => i.id === baselineInstallId.value));
@@ -120,42 +111,23 @@ async function skipFile(file: PatchRunFile): Promise<void> {
   file.decision = "skip";
 }
 
-/** Open merge editor for a file with conflicts. */
+/** Open preview / conflict file in the workbench for review. */
 async function openMergeEditor(file: PatchRunFile): Promise<void> {
   if (!file.previewPath) return;
   loading.value = true;
   try {
-    const contentA = await ReadFileContent(file.previewPath);
-    const contentB = await ReadFileContent(file.previewPath);
-    const marked = buildConflictMarkedFile(contentA, contentB, {
-      fileName: file.relPath,
-      labelA: "Baseline",
-      labelB: "Target",
+    ideShell.beginMergeReview(() => {
+      void router.push({
+        name: "patcher",
+        params: { id: workspaceId.value },
+      });
     });
-    currentMergeFile.value = {
-      file,
-      contentA,
-      contentB,
-      markedContent: marked.content,
-      conflictCount: marked.conflictCount,
-    };
-    mergeModalOpen.value = true;
+    await openFile(file.previewPath);
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
     loading.value = false;
   }
-}
-
-/** Save merge result. */
-async function saveMerge(payload: { content: string }): Promise<void> {
-  if (!currentMergeFile.value) return;
-  const file = currentMergeFile.value.file;
-  await WriteWithBOM(file.previewPath, payload.content);
-  await SetFileDecision(file.id, "accept");
-  file.decision = "accept";
-  mergeModalOpen.value = false;
-  currentMergeFile.value = null;
 }
 
 /** Apply accepted files to the mod. */
@@ -274,11 +246,5 @@ onMounted(loadData);
       </UCard>
     </div>
 
-    <MergeEditorModal v-if="currentMergeFile && mergeModalOpen" :file-a-path="currentMergeFile.file.previewPath"
-      :file-b-path="currentMergeFile.file.previewPath" :rel-path="currentMergeFile.file.relPath"
-      :content-a="currentMergeFile.contentA" :content-b="currentMergeFile.contentB"
-      :marked-content="currentMergeFile.markedContent" :initial-conflict-count="currentMergeFile.conflictCount"
-      :identical="false" label-a="Baseline" label-b="Target" :file-index="1" :file-total="1" @save="saveMerge"
-      @skip="mergeModalOpen = false" @cancel="mergeModalOpen = false" />
   </div>
 </template>
