@@ -32,30 +32,19 @@ func main() {
 	mergeSvc := &services.MergeService{FileService: fileSvc}
 	settingsSvc := &services.SettingsService{DB: dbSvc.DB, Version: version}
 	workspaceSvc := &services.WorkspaceService{DB: dbSvc.DB}
-	wikiSvc := &services.WikiService{DB: dbSvc.DB}
 	patcherSvc := &services.PatcherService{DB: dbSvc.DB, FileService: fileSvc, MergeService: mergeSvc}
 	langModelSvc := &services.LanguageModelService{DB: dbSvc.DB}
-	graphSvc := &services.GraphService{}
-	scriptLogSvc := &services.ScriptLogService{DB: dbSvc.DB}
-	semanticsSvc := &services.SemanticsService{DB: dbSvc.DB}
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
 		Description: "Desktop tools for Paradox Interactive game modding",
 		Services: []application.Service{
-			application.NewService(logSvc),
-			application.NewService(dbSvc),
-			application.NewService(fileSvc),
-			application.NewService(&services.BrowserService{}),
 			application.NewService(settingsSvc),
-			application.NewService(mergeSvc),
+			application.NewService(fileSvc),
 			application.NewService(workspaceSvc),
-			application.NewService(wikiSvc),
-			application.NewService(patcherSvc),
 			application.NewService(langModelSvc),
-			application.NewService(graphSvc),
-			application.NewService(scriptLogSvc),
-			application.NewService(semanticsSvc),
+			application.NewService(patcherSvc),
+			application.NewService(mergeSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),

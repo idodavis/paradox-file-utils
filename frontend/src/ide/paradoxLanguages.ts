@@ -1,5 +1,5 @@
 /**
- * Register Paradox languages (grammars + language ids) with the workbench.
+ * Register Paradox languages, PMT color themes, and Material+Paradox file icons.
  */
 import { registerExtension } from "@codingame/monaco-vscode-api/extensions";
 import { ExtensionHostKind } from "@codingame/monaco-vscode-extensions-service-override";
@@ -7,9 +7,10 @@ import paradoxGrammar from "../syntaxes/paradox.tmLanguage.json";
 import paradoxGuiGrammar from "../syntaxes/paradox-gui.tmLanguage.json";
 import paradoxLocGrammar from "../syntaxes/paradox-loc.tmLanguage.json";
 import paradoxInfoGrammar from "../syntaxes/paradox-info.tmLanguage.json";
+import { registerPmtColorThemes } from "./colorThemes";
 import { registerPmtFileIcons } from "./fileIcons";
 
-/** Contribute Paradox grammars, language ids, and the PMT icon theme. */
+/** Contribute Paradox grammars, language ids, color themes, and icons. */
 export async function registerParadoxLanguages(): Promise<void> {
   const { registerFileUrl, whenReady } = registerExtension(
     {
@@ -39,6 +40,12 @@ export async function registerParadoxLanguages(): Promise<void> {
             aliases: ["Paradox Info"],
             filenames: ["*.info"],
           },
+          {
+            id: "paradox-mod",
+            aliases: ["Paradox Mod Descriptor"],
+            extensions: [".mod"],
+            filenames: ["descriptor.mod"],
+          },
         ],
         grammars: [
           {
@@ -60,6 +67,11 @@ export async function registerParadoxLanguages(): Promise<void> {
             language: "paradox-info",
             scopeName: paradoxInfoGrammar.scopeName,
             path: "./syntaxes/paradox-info.tmLanguage.json",
+          },
+          {
+            language: "paradox-mod",
+            scopeName: paradoxGrammar.scopeName,
+            path: "./syntaxes/paradox.tmLanguage.json",
           },
         ],
       },
@@ -85,5 +97,6 @@ export async function registerParadoxLanguages(): Promise<void> {
   );
 
   await whenReady();
+  await registerPmtColorThemes();
   await registerPmtFileIcons();
 }

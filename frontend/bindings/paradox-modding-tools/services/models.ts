@@ -3,20 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as langmodel$0 from "./internal/langmodel/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as repos$0 from "./internal/repos/models.js";
-
-/**
- * CascadeNode represents a node in cascade simulation results.
- */
-export interface CascadeNode {
-    "key": string;
-    "depth": number;
-    "edgeType"?: string;
-    "children"?: string[] | null;
-}
 
 /**
  * DirEntry is one immediate child of a directory (for lazy file trees).
@@ -72,25 +59,19 @@ export interface FileMergeResult {
 }
 
 /**
- * GraphDef is a definition returned to the frontend.
+ * LanguageHealth is the compact Library/IDE index status strip.
  */
-export interface GraphDef {
-    "type": string;
-    "key": string;
-    "filePath": string;
-    "line": number;
-    "col": number;
-    "endLine": number;
-    "summary": string;
-}
-
-/**
- * GraphEdge is a reference edge between keys.
- */
-export interface GraphEdge {
-    "fromKey": string;
-    "toKey": string;
-    "edgeType": string;
+export interface LanguageHealth {
+    "installOk": boolean;
+    "installPath": string;
+    "gameVersion": string;
+    "cacheVersion": string;
+    "cacheStale": boolean;
+    "docsPresent": boolean;
+    "docsPath": string;
+    "indexReady": boolean;
+    "defCount": number;
+    "dumpHint": string;
 }
 
 /**
@@ -120,18 +101,15 @@ export interface MergerOptions {
 }
 
 /**
- * ModelStatus reports whether a cached language model exists.
+ * ModelStatus reports whether a workspace session is live and how large it is.
  */
-export type ModelStatus = langmodel$0.Status;
-
-/**
- * NeighborResult is a key plus its inbound/outbound edges.
- */
-export interface NeighborResult {
-    "key": string;
-    "defs": GraphDef[] | null;
-    "outgoing": GraphEdge[] | null;
-    "incoming": GraphEdge[] | null;
+export interface ModelStatus {
+    "live": boolean;
+    "present": boolean;
+    "workspaceId": string;
+    "gameId": string;
+    "defCount": number;
+    "cacheAge": string;
 }
 
 /**
@@ -144,14 +122,6 @@ export interface PatchRunPreview {
     "safeCount": number;
     "reviewCount": number;
     "skippedCount": number;
-}
-
-/**
- * PatchVersion is a lightweight version entry from the version index.
- */
-export interface PatchVersion {
-    "version": string;
-    "url": string;
 }
 
 /**
@@ -199,15 +169,4 @@ export interface ResolvedConflict {
      * "directive", "keyList", "default"
      */
     "reason": string;
-}
-
-/**
- * SemanticsStatus reports whether a cached semantic model exists for an install.
- */
-export interface SemanticsStatus {
-    "present": boolean;
-    "installId": string;
-    "gameId"?: string;
-    "scannedAt"?: string;
-    "path"?: string;
 }

@@ -28,7 +28,7 @@ tasks:
           OBFUSCATED: "{{.OBFUSCATED}}"
           GARBLE_ARGS: "{{.GARBLE_ARGS}}"
     vars:
-      # Default to CGO_ENABLED=0 if not explicitly set
+      # Default to CGO_ENABLED=0 (pure-Go parser; SQLite is modernc.org/sqlite).
       CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'
 
   build:native:

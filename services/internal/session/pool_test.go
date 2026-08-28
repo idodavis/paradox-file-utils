@@ -1,0 +1,58 @@
+// pool_test.go verifies that concurrent EnsureSession calls for one id build the
+// session exactly once (singleflight) and all callers share it.
+
+package session
+
+import (
+	"sync"
+	"sync/atomic"
+	"testing"
+)
+
+func TestEnsureSessionBuildsOnce(t *testing.T) {
+	var builds int32
+	pool := NewPool(func(id string) (*Session, error) {
+		atomic.AddInt32(&builds, 1)
+		return New(id, "ck3", nil, nil), nil
+	}, nil)
+
+	const n = 20
+	var wg sync.WaitGroup
+	sessions := make([]*Session, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s, err := pool.EnsureSession("ws")
+			if err != nil {
+				t.Errorf("EnsureSession: %v", err)
+				return
+			}
+			sessions[i] = s
+		}(i)
+	}
+	wg.Wait()
+
+	if got := atomic.LoadInt32(&builds); got != 1 {
+		t.Fatalf("builds = %d, want 1", got)
+	}
+	for i := 1; i < n; i++ {
+		if sessions[i] != sessions[0] {
+			t.Fatalf("caller %d got a different session instance", i)
+		}
+	}
+}
+
+func TestEnsureSessionEmitsReady(t *testing.T) {
+	var events []string
+	pool := NewPool(
+		func(id string) (*Session, error) { return New(id, "ck3", nil, nil), nil },
+		func(event string, _ any) { events = append(events, event) },
+	)
+	if _, err := pool.EnsureSession("ws"); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0] != EventReady {
+		t.Errorf("events = %v, want [%s]", events, EventReady)
+	}
+}

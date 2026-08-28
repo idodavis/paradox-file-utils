@@ -9,6 +9,10 @@ import {
   ListWorkspaceMods,
   MarkBrokenPaths,
 } from "@services/workspaceservice";
+import {
+  EnsureSession,
+  GetModelStatus,
+} from "@services/languagemodelservice";
 import { Workspace, WorkspaceMod } from "@services/internal/repos/models";
 
 /** Supported game identifiers. */
@@ -109,6 +113,19 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     localStorage.setItem("workspace.gameId", currentGameId.value);
   });
 
+  /** True when this workspace has a live language session (not merely defs on disk). */
+  async function ensureReady(): Promise<boolean> {
+    const id = activeWorkspaceId.value;
+    if (!id) return false;
+    try {
+      await EnsureSession(id);
+      const st = await GetModelStatus(id);
+      return Boolean(st?.live);
+    } catch {
+      return false;
+    }
+  }
+
   return {
     currentGameId,
     activeWorkspaceId,
@@ -123,5 +140,6 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     loadActiveWorkspace,
     setActiveWorkspace,
     setGame,
+    ensureReady,
   };
 });

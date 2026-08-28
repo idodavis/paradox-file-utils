@@ -6,8 +6,6 @@ export type {
     GameInstall,
     PatchRun,
     PatchRunFile,
-    ScriptLogImport,
-    WikiPatch,
     Workspace,
     WorkspaceMod
 } from "./models.js";

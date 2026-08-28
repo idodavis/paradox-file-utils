@@ -1,0 +1,49 @@
+/**
+ * Explorer-only row spacing. Colors come from the workbench theme JSON.
+ *
+ * Material already supplies folder icons; keep CSS to row metrics and
+ * decoration badges — do not paint custom folder art here.
+ */
+
+.monaco-workbench .explorer-folders-view .monaco-list-row {
+  min-height: 22px;
+  font-size: 13px;
+}
+
+.monaco-workbench .explorer-folders-view .monaco-tl-row {
+  min-height: 22px;
+  align-items: center;
+}
+
+.monaco-workbench .explorer-folders-view .monaco-icon-label {
+  align-items: center;
+}
+
+.monaco-workbench .explorer-folders-view .monaco-icon-label::before {
+  background-size: 16px;
+  background-position: center;
+  background-repeat: no-repeat;
+  width: 16px;
+  height: 22px;
+  padding-right: 6px;
+  flex-shrink: 0;
+  display: inline-block;
+  box-sizing: content-box;
+  vertical-align: top;
+}
+
+/* Root-kind badges (FileDecoration): compact tag look. */
+.monaco-workbench .explorer-folders-view .monaco-decoration-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.9;
+  margin-left: 4px;
+}
+
+/* Hide VS Code account/sign-in control on the activity bar. */
+.monaco-workbench .activitybar .global-activity,
+.monaco-workbench .activitybar .monaco-action-bar .action-item.global-activity,
+.monaco-workbench .activitybar .monaco-action-bar .action-item[id*="accounts"] {
+  display: none !important;
+}

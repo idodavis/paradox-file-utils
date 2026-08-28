@@ -12,6 +12,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as game$0 from "./internal/game/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as repos$0 from "./internal/repos/models.js";
 
 /**
@@ -57,11 +60,25 @@ export function DetectGameVersion(path: string): $CancellablePromise<string> {
 }
 
 /**
+ * DetectModRoot reports whether path is a valid mod root for gameID.
+ */
+export function DetectModRoot(gameID: string, path: string): $CancellablePromise<boolean> {
+    return $Call.ByID(850337951, gameID, path);
+}
+
+/**
  * EnsureStagingDir creates the staging directory if it doesn't exist.
  * When staging_dir is empty, assigns the default path and persists it.
  */
 export function EnsureStagingDir(workspaceID: string): $CancellablePromise<string> {
     return $Call.ByID(1205241180, workspaceID);
+}
+
+/**
+ * FindGameInstalls returns Steam-detected installs for a game.
+ */
+export function FindGameInstalls(gameID: string): $CancellablePromise<game$0.DetectedInstall[] | null> {
+    return $Call.ByID(1679875735, gameID);
 }
 
 /**
@@ -125,6 +142,13 @@ export function RemoveWorkspaceMod(modID: string): $CancellablePromise<void> {
  */
 export function SetActiveWorkspace(workspaceID: string): $CancellablePromise<void> {
     return $Call.ByID(1281878305, workspaceID);
+}
+
+/**
+ * UpdateGameInstall updates path and docs_path, then refreshes version.
+ */
+export function UpdateGameInstall(id: string, path: string, docsPath: string): $CancellablePromise<repos$0.GameInstall | null> {
+    return $Call.ByID(1401884060, id, path, docsPath);
 }
 
 /**

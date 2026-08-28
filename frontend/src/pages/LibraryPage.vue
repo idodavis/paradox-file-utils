@@ -4,11 +4,13 @@
  */
 import { computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { useWorkspaceContext, GAME_OPTIONS } from "../composables/workspaceContext";
+import { useWorkspaceStore, GAME_OPTIONS } from "../stores/workspace";
 import { Workspace } from "@services/internal/repos/models";
+import GameIcon from "../components/GameIcon.vue";
+import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 
 const router = useRouter();
-const ctx = useWorkspaceContext();
+const ctx = useWorkspaceStore();
 
 const showWizardPrompt = computed(() => !ctx.loading && !ctx.hasWorkspaces);
 
@@ -92,13 +94,22 @@ onMounted(() => {
                 <UBadge color="primary" variant="subtle">Active</UBadge>
                 <span class="font-semibold">{{ ctx.activeWorkspace.name }}</span>
               </div>
-              <UBadge color="neutral" variant="outline">
+              <UBadge
+                color="neutral"
+                variant="outline"
+                class="inline-flex items-center gap-1"
+              >
+                <GameIcon :game-id="ctx.activeWorkspace.gameId" />
                 {{ ctx.activeWorkspace.gameId.toUpperCase() }}
               </UBadge>
             </div>
           </template>
           <div class="text-sm text-muted">
             <p>{{ ctx.workspaceMods.length }} mod(s) attached</p>
+            <LanguageHealthStrip
+              class="mt-2"
+              :workspace-id="ctx.activeWorkspace.id"
+            />
             <div v-if="parseTags(ctx.activeWorkspace).length" class="mt-1 flex flex-wrap gap-1">
               <UBadge
                 v-for="tag in parseTags(ctx.activeWorkspace)"
@@ -115,7 +126,10 @@ onMounted(() => {
       </div>
 
       <div v-for="section in sections" :key="section.gameId" class="mb-6">
-        <h2 class="mb-2 text-sm font-semibold tracking-wide text-muted uppercase">
+        <h2
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold tracking-wide text-muted uppercase"
+        >
+          <GameIcon :game-id="section.gameId" size="md" />
           {{ section.label }}
         </h2>
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -132,7 +146,13 @@ onMounted(() => {
               <template #header>
                 <div class="flex items-center justify-between gap-2">
                   <span class="truncate font-medium">{{ ws.name }}</span>
-                  <UBadge color="neutral" variant="outline" size="xs">
+                  <UBadge
+                    color="neutral"
+                    variant="outline"
+                    size="xs"
+                    class="inline-flex items-center gap-1"
+                  >
+                    <GameIcon :game-id="ws.gameId" />
                     {{ ws.gameId.toUpperCase() }}
                   </UBadge>
                 </div>

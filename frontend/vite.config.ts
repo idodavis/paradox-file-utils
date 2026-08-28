@@ -19,15 +19,19 @@ export default defineConfig({
       enforce: "pre",
       async resolveId(source, importer, options) {
         const resolved = await this.resolve(source, importer, options);
-        if (
-          resolved &&
-          resolved.id.match(
-            /node_modules\/(@codingame\/monaco-vscode|vscode|monaco-editor).*\.css$/,
-          )
-        ) {
+        if (resolved && resolved.id.match(/node_modules\/(@codingame\/monaco-vscode|vscode|monaco-editor).*\.css$/)) {
           return { ...resolved, id: resolved.id + "?inline" };
         }
         return undefined;
+      },
+    },
+    {
+      name: "reload-on-workbench",
+      handleHotUpdate({ file, server }) {
+        if (/[\\/]src[\\/](ide[\\/]|App\.vue)/.test(file)) {
+          server.ws.send({ type: "full-reload" });
+          return [];
+        }
       },
     },
   ],
@@ -42,17 +46,12 @@ export default defineConfig({
     include: [
       "vscode-textmate",
       "vscode-oniguruma",
-      "@vscode/vscode-languagedetection",
-      "marked",
       "vscode/localExtensionHost",
     ],
   },
   resolve: {
     alias: {
-      "@services": path.resolve(
-        import.meta.dirname,
-        "bindings/paradox-modding-tools/services",
-      ),
+      "@services": path.resolve(import.meta.dirname, "bindings/paradox-modding-tools/services"),
       "@assets": path.resolve(import.meta.dirname, "src/assets"),
     },
     dedupe: ["vscode", "monaco-editor"],

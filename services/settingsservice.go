@@ -110,3 +110,20 @@ func (s *SettingsService) SaveMergePreset(name string, options MergerOptions) er
 func (s *SettingsService) DeleteMergePreset(name string) error {
 	return s.getRepo().DeleteMergePreset("merge_preset_" + name)
 }
+
+// ResetData wipes user data (workspaces, mods, installs, runs) but keeps games and app_settings.
+func (s *SettingsService) ResetData() error {
+	if s.DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	tables := []string{
+		"patch_run_files", "patch_runs", "workspace_mods", "workspaces",
+		"game_installs",
+	}
+	for _, t := range tables {
+		if _, err := s.DB.Exec(`DELETE FROM ` + t); err != nil {
+			return fmt.Errorf("delete %s: %w", t, err)
+		}
+	}
+	return nil
+}

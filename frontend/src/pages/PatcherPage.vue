@@ -4,6 +4,7 @@
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import { GetWorkspace, ListWorkspaceMods, ListGameInstalls } from "@services/workspaceservice";
 import { Workspace, WorkspaceMod, GameInstall, PatchRun, PatchRunFile } from "@services/internal/repos/models";
 import {
@@ -151,15 +152,11 @@ onMounted(loadData);
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <div class="flex shrink-0 items-center justify-between gap-2 border-b border-default bg-muted/50 px-3 py-2">
-      <div class="flex items-center gap-2">
-        <UButton icon="i-lucide-arrow-left" variant="ghost" size="sm"
-          @click="router.push({ name: 'workspace-ide', params: { id: workspaceId } })" />
-        <span class="font-semibold">Mod Patcher</span>
-      </div>
-      <UButton label="Patch Center" icon="i-lucide-newspaper" variant="outline" size="sm"
-        @click="router.push({ name: 'patch-center', params: { id: workspaceId } })" />
-    </div>
+    <WorkspaceToolBar
+      :workspace-id="workspaceId"
+      title="Mod Patcher"
+      active="patcher"
+    />
 
     <UAlert v-if="error" color="error" variant="subtle" :description="error" class="m-2" />
 

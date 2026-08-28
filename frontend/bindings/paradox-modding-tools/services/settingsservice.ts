@@ -44,6 +44,13 @@ export function GetVersion(): $CancellablePromise<string> {
 }
 
 /**
+ * ResetData wipes user data (workspaces, mods, installs, runs) but keeps games and app_settings.
+ */
+export function ResetData(): $CancellablePromise<void> {
+    return $Call.ByID(2171932109);
+}
+
+/**
  * SaveMergePreset saves a merge preset by name.
  */
 export function SaveMergePreset(name: string, options: $models.MergerOptions): $CancellablePromise<void> {

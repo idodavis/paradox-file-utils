@@ -1,231 +1,322 @@
-// Package loc parses Paradox localization YAML (l_*: KEY:N "value").
+// parse.go implements the localization dialect parser (Parse/ParseFile): a
+// line-by-line, never-panicking scanner emitting entries and typed errors with
+// UTF-8 byte offsets. See doc.go for the package overview.
+
 package loc
 
 import (
-	"bufio"
-	"bytes"
-	"context"
-	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
-	"strings"
-	"sync"
+	"strconv"
+	"unicode/utf8"
 )
 
-var (
-	langHeaderRE = regexp.MustCompile(`^l_([a-zA-Z_]+)\s*:`)
-	entryRE      = regexp.MustCompile(`^\s*([^\s:#][^:]*?)\s*:\s*(\d+)?\s*"(.*)"\s*$`)
-)
+// Range is a half-open span of UTF-8 byte offsets.
+type Range struct {
+	Start int
+	End   int
+}
 
-// Entry is one localization key/value.
+// Entry is one `key:version "value"` localization entry. Version is -1 when absent.
+// Value is the verbatim text between the opening quote and the LAST quote on the line.
 type Entry struct {
-	Key      string
-	Version  string
-	Value    string
-	Language string
-	FilePath string
-	Line     int
+	Key        string
+	KeyRange   Range
+	Version    int
+	Value      string
+	ValueRange Range
+	Line       int // 0-based
 }
 
-// ParseFile reads a Paradox loc .yml/.yaml file.
-func ParseFile(path string) ([]Entry, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+// ErrorCode classifies a localization parse error.
+type ErrorCode string
+
+const (
+	ErrNoHeader            ErrorCode = "no-header"
+	ErrBadEntry            ErrorCode = "bad-entry"
+	ErrTabIndent           ErrorCode = "tab-indent"
+	ErrUnterminatedValue   ErrorCode = "unterminated-value"
+	ErrContentBeforeHeader ErrorCode = "content-before-header"
+)
+
+// Error is a recovered localization parse error.
+type Error struct {
+	Code    ErrorCode
+	Message string
+	Range   Range
+}
+
+// Result is the parsed localization file.
+type Result struct {
+	Language    string // "english" from `l_english:`; "" if none found
+	HeaderRange *Range
+	Entries     []Entry
+	Errors      []Error
+	HadBOM      bool
+}
+
+// headerRe matches a header line: optional indent, `l_<name>:`, then only trailing
+// whitespace/comment.
+var headerRe = regexp.MustCompile(`^[ \t]*l_([A-Za-z_]+):[ \t]*(#.*)?$`)
+
+// isKeyChar reports the byte classes allowed in a loc key: letters, digits, `_ . - '`.
+func isKeyChar(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return true
+	case c == '_' || c == '.' || c == '-' || c == '\'':
+		return true
+	default:
+		return false
 	}
-	return Parse(data, path)
 }
 
-// Parse parses loc file bytes.
-func Parse(data []byte, path string) ([]Entry, error) {
-	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	lang := ""
-	lineNo := 0
-	var out []Entry
-	for sc.Scan() {
-		lineNo++
-		line := strings.TrimRight(sc.Text(), "\r")
-		trim := strings.TrimSpace(line)
-		if trim == "" || strings.HasPrefix(trim, "#") {
-			continue
+// Parse parses decoded localization text (BOM already stripped). Never panics.
+func Parse(text string) Result {
+	s := &scanner{}
+	length := len(text)
+	lineStart := 0
+	for lineStart <= length {
+		lineEnd := lineStart
+		for lineEnd < length && text[lineEnd] != '\n' && text[lineEnd] != '\r' {
+			lineEnd++
 		}
-		if m := langHeaderRE.FindStringSubmatch(trim); m != nil {
-			lang = "l_" + m[1]
-			continue
+		nextStart := lineEnd
+		if nextStart < length {
+			if text[nextStart] == '\r' && nextStart+1 < length && text[nextStart+1] == '\n' {
+				nextStart += 2
+			} else {
+				nextStart++
+			}
+		} else {
+			nextStart = length + 1
 		}
-		if lang == "" {
-			continue
+		s.processLine(text[lineStart:lineEnd], lineStart)
+		lineStart = nextStart
+		s.lineNo++
+		if lineStart > length {
+			break
 		}
-		m := entryRE.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		out = append(out, Entry{
-			Key:      m[1],
-			Version:  m[2],
-			Value:    m[3],
-			Language: lang,
-			FilePath: path,
-			Line:     lineNo,
+	}
+
+	if !s.headerFound {
+		s.errs = append(s.errs, Error{
+			Code:    ErrNoHeader,
+			Message: "No localization header line (e.g. `l_english:`) found.",
+			Range:   Range{Start: 0, End: 0},
 		})
 	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("scan loc %s: %w", path, err)
+
+	return Result{
+		Language:    s.language,
+		HeaderRange: s.headerRange,
+		Entries:     s.entries,
+		Errors:      s.errs,
 	}
-	return out, nil
 }
 
-// CollectKeys walks roots for *.yml/*.yaml and returns language → key set.
-func CollectKeys(roots []string) (map[string]map[string]Entry, error) {
-	return CollectKeysCtx(context.Background(), roots, nil)
-}
-
-// CollectProgress reports loc walk progress.
-type CollectProgress func(done, total int, path string)
-
-// CollectKeysCtx collects loc keys with cancellation and optional progress.
-func CollectKeysCtx(
-	ctx context.Context, roots []string, onProgress CollectProgress,
-) (map[string]map[string]Entry, error) {
-	var paths []string
-	for _, root := range roots {
-		if root == "" {
-			continue
-		}
-		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil
-			}
-			ext := strings.ToLower(filepath.Ext(path))
-			if ext != ".yml" && ext != ".yaml" {
-				return nil
-			}
-			paths = append(paths, path)
-			return nil
-		})
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-	}
-	total := len(paths)
-	if total == 0 {
-		return map[string]map[string]Entry{}, nil
-	}
-
-	workers := runtime.NumCPU()
-	if workers < 2 {
-		workers = 2
-	}
-	if workers > 8 {
-		workers = 8
-	}
-	jobs := make(chan string, workers*2)
-	type parsed struct {
-		entries []Entry
-		path    string
-	}
-	results := make(chan parsed, workers*2)
-
-	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for path := range jobs {
-				if ctx.Err() != nil {
-					return
-				}
-				entries, err := ParseFile(path)
-				if err != nil {
-					select {
-					case <-ctx.Done():
-						return
-					case results <- parsed{path: path}:
-					}
-					continue
-				}
-				select {
-				case <-ctx.Done():
-					return
-				case results <- parsed{entries: entries, path: path}:
-				}
-			}
-		}()
-	}
-	go func() {
-		defer close(jobs)
-		for _, p := range paths {
-			select {
-			case <-ctx.Done():
-				return
-			case jobs <- p:
-			}
-		}
-	}()
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	byLang := map[string]map[string]Entry{}
-	done := 0
-	for r := range results {
-		done++
-		for _, e := range r.entries {
-			if byLang[e.Language] == nil {
-				byLang[e.Language] = map[string]Entry{}
-			}
-			byLang[e.Language][e.Key] = e
-		}
-		if onProgress != nil && (done == total || done%25 == 0) {
-			onProgress(done, total, r.path)
-		}
-		if err := ctx.Err(); err != nil {
-			return byLang, err
-		}
-	}
-	return byLang, ctx.Err()
-}
-
-// FormatEntry formats a loc line for writing.
-func FormatEntry(key, value string, version int) string {
-	return fmt.Sprintf(" %s:%d \"%s\"", key, version, escapeLoc(value))
-}
-
-func escapeLoc(s string) string {
-	return strings.ReplaceAll(s, `"`, `'`)
-}
-
-// EnsureLanguageFile ensures a loc file exists with the language header.
-func EnsureLanguageFile(path, language string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	body := "\uFEFF" + language + ":\n"
-	return os.WriteFile(path, []byte(body), 0o644)
-}
-
-// AppendEntries appends entries under an existing language file.
-func AppendEntries(path string, entries []Entry) error {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+// ParseFile reads, decodes, and parses a loc file, recording whether it had a BOM.
+func ParseFile(path string) (Result, error) {
+	raw, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return Result{}, err
 	}
-	defer f.Close()
-	for _, e := range entries {
-		ver := 0
-		if e.Version != "" {
-			fmt.Sscanf(e.Version, "%d", &ver)
-		}
-		if _, err := fmt.Fprintln(f, FormatEntry(e.Key, e.Value, ver)); err != nil {
-			return err
+	text, hadBOM := decode(raw)
+	r := Parse(text)
+	r.HadBOM = hadBOM
+	return r, nil
+}
+
+// scanner holds accumulators across the line-by-line parse.
+type scanner struct {
+	entries     []Entry
+	errs        []Error
+	language    string
+	headerRange *Range
+	headerFound bool
+	lineNo      int
+}
+
+// processLine handles one line; base is the byte offset in text of line[0].
+func (s *scanner) processLine(line string, base int) {
+	i := 0
+	sawTab := false
+	for i < len(line) {
+		if line[i] == ' ' {
+			i++
+		} else if line[i] == '\t' {
+			sawTab = true
+			i++
+		} else {
+			break
 		}
 	}
-	return nil
+	contentStart := i
+	if contentStart >= len(line) || line[contentStart] == '#' {
+		return // blank or comment-only
+	}
+
+	if !s.headerFound {
+		if m := headerRe.FindStringSubmatch(line); m != nil {
+			s.headerFound = true
+			s.language = m[1]
+			idx := indexOf(line, "l_")
+			colon := indexOfFrom(line, ":", idx)
+			end := base + len(line)
+			if colon >= 0 {
+				end = base + colon + 1
+			}
+			s.headerRange = &Range{Start: base + idx, End: end}
+			return
+		}
+		s.errs = append(s.errs, Error{
+			Code:    ErrContentBeforeHeader,
+			Message: "Content appears before the localization header (e.g. `l_english:`).",
+			Range:   Range{Start: base + contentStart, End: base + len(line)},
+		})
+		return
+	}
+
+	// A later header-looking line is ignored as content.
+	if headerRe.MatchString(line) {
+		return
+	}
+
+	if sawTab {
+		s.errs = append(s.errs, Error{
+			Code:    ErrTabIndent,
+			Message: "Tabs are not allowed for indentation in localization files.",
+			Range:   Range{Start: base, End: base + contentStart},
+		})
+		// Best-effort: keep parsing the entry.
+	}
+
+	s.parseEntry(line[contentStart:], base+contentStart, line, base)
+}
+
+// parseEntry parses `key(:version)? "value"`; entryBase is the offset of entry[0].
+func (s *scanner) parseEntry(entry string, entryBase int, fullLine string, lineBase int) {
+	j := 0
+	for j < len(entry) && isKeyChar(entry[j]) {
+		j++
+	}
+	if j == 0 {
+		s.badEntry(fullLine, lineBase)
+		return
+	}
+	key := entry[:j]
+	keyRange := Range{Start: entryBase, End: entryBase + j}
+
+	if j >= len(entry) || entry[j] != ':' {
+		s.badEntry(fullLine, lineBase)
+		return
+	}
+	j++ // consume ':'
+
+	version := -1
+	verStart := j
+	for j < len(entry) && entry[j] >= '0' && entry[j] <= '9' {
+		j++
+	}
+	if j > verStart {
+		version, _ = strconv.Atoi(entry[verStart:j])
+	}
+
+	for j < len(entry) && (entry[j] == ' ' || entry[j] == '\t') {
+		j++
+	}
+
+	if j >= len(entry) || entry[j] != '"' {
+		s.badEntry(fullLine, lineBase)
+		return
+	}
+	quoteOpen := j
+	valueInnerStart := entryBase + quoteOpen + 1
+
+	quoteClose := lastIndexOf(entry, '"')
+	if quoteClose == quoteOpen {
+		s.errs = append(s.errs, Error{
+			Code:    ErrUnterminatedValue,
+			Message: "Unterminated localization value (missing closing quote).",
+			Range:   Range{Start: entryBase + quoteOpen, End: lineBase + len(fullLine)},
+		})
+		s.entries = append(s.entries, Entry{
+			Key:        key,
+			KeyRange:   keyRange,
+			Version:    version,
+			Value:      entry[quoteOpen+1:],
+			ValueRange: Range{Start: valueInnerStart, End: entryBase + len(entry)},
+			Line:       s.lineNo,
+		})
+		return
+	}
+
+	s.entries = append(s.entries, Entry{
+		Key:        key,
+		KeyRange:   keyRange,
+		Version:    version,
+		Value:      entry[quoteOpen+1 : quoteClose],
+		ValueRange: Range{Start: valueInnerStart, End: entryBase + quoteClose},
+		Line:       s.lineNo,
+	})
+}
+
+func (s *scanner) badEntry(fullLine string, lineBase int) {
+	s.errs = append(s.errs, Error{
+		Code:    ErrBadEntry,
+		Message: `Malformed localization entry; expected ` + "`key: \"value\"`" + `.`,
+		Range:   Range{Start: lineBase, End: lineBase + len(fullLine)},
+	})
+}
+
+// small byte-offset string helpers (kept local so loc imports no engine packages).
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
+func indexOfFrom(s, sub string, from int) int {
+	if from < 0 {
+		from = 0
+	}
+	for i := from; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
+func lastIndexOf(s string, c byte) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == c {
+			return i
+		}
+	}
+	return -1
+}
+
+// decode strips a UTF-8 BOM and falls back to latin1 for invalid UTF-8. Kept
+// local to avoid importing the parser package (loc has no engine dependencies).
+func decode(raw []byte) (text string, hadBOM bool) {
+	if len(raw) >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF {
+		body := raw[3:]
+		if utf8.Valid(body) {
+			return string(body), true
+		}
+	}
+	if utf8.Valid(raw) {
+		return string(raw), false
+	}
+	// latin1 fallback
+	buf := make([]rune, 0, len(raw))
+	for _, b := range raw {
+		buf = append(buf, rune(b))
+	}
+	return string(buf), false
 }

@@ -3,7 +3,6 @@ package services
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -53,13 +52,14 @@ func (w *WorkspaceService) AddGameInstall(gameID, name, path string) (*repos.Gam
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
-	version := w.DetectGameVersion(path)
+	version := game.ReadGameVersion(path)
 	inst := &repos.GameInstall{
 		ID:        uuid.New().String(),
 		GameID:    gameID,
 		Name:      name,
 		Path:      path,
 		Version:   version,
+		DocsPath:  "",
 		IsBroken:  false,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
@@ -231,27 +231,41 @@ func (w *WorkspaceService) SetActiveWorkspace(workspaceID string) error {
 
 // DetectGameVersion attempts to read version from launcher-settings.json.
 func (w *WorkspaceService) DetectGameVersion(path string) string {
-	candidates := []string{
-		filepath.Join(path, "launcher-settings.json"),
-		filepath.Join(path, "launcher", "launcher-settings.json"),
-	}
-	for _, p := range candidates {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		var settings map[string]interface{}
-		if err := json.Unmarshal(data, &settings); err != nil {
-			continue
-		}
-		if v, ok := settings["rawVersion"].(string); ok && v != "" {
-			return v
-		}
-		if v, ok := settings["version"].(string); ok && v != "" {
-			return v
+	return game.ReadGameVersion(path)
+}
+
+// FindGameInstalls returns Steam-detected installs for a game.
+func (w *WorkspaceService) FindGameInstalls(gameID string) []game.DetectedInstall {
+	return game.FindInstalls(gameID)
+}
+
+// UpdateGameInstall updates path and docs_path, then refreshes version.
+func (w *WorkspaceService) UpdateGameInstall(id, path, docsPath string) (*repos.GameInstall, error) {
+	if path != "" {
+		if _, err := os.Stat(path); err != nil {
+			return nil, fmt.Errorf("invalid path: %w", err)
 		}
 	}
-	return ""
+	inst, err := w.getRepo().GetInstall(id)
+	if err != nil {
+		return nil, fmt.Errorf("install: %w", err)
+	}
+	if path == "" {
+		path = inst.Path
+	}
+	if err := w.getRepo().UpdateInstallPath(id, path, docsPath); err != nil {
+		return nil, fmt.Errorf("update install: %w", err)
+	}
+	ver := game.ReadGameVersion(path)
+	if ver != "" {
+		_ = w.getRepo().UpdateInstallVersion(id, ver)
+	}
+	return w.getRepo().GetInstall(id)
+}
+
+// DetectModRoot reports whether path is a valid mod root for gameID.
+func (w *WorkspaceService) DetectModRoot(gameID, path string) bool {
+	return game.IsModRoot(gameID, path)
 }
 
 // DefaultStagingDir returns the default staging directory path for a workspace.

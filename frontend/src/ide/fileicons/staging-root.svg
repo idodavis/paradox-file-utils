@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
-  <!-- Staging workspace root -->
-  <path fill="#8b7cf0" d="M2 3.2h5.2l1.3 1.4H14V13.5H2z"/>
-  <path fill="#6f62d4" d="M2 5h12v8.5H2z"/>
-  <rect x="4.8" y="7.2" width="6.4" height="4.2" rx="0.6" fill="#16122a"/>
-  <path stroke="#c8bfff" stroke-width="1" stroke-linecap="round"
-    d="M6.4 7.2V6.5a1.6 1.6 0 0 1 3.2 0v.7"/>
-</svg>

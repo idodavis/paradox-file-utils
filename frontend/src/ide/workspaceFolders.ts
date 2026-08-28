@@ -15,12 +15,22 @@ export async function buildIdeRoots(
     try {
       const scriptRoot = await GetScriptRoot(workspace.installId);
       if (scriptRoot) {
-        roots.push({ label: "Game", path: scriptRoot, readOnly: true });
+        roots.push({
+          label: "Game",
+          path: scriptRoot,
+          readOnly: true,
+          kind: "game",
+        });
       } else if (workspace.gameId) {
         const installs = (await ListGameInstalls(workspace.gameId)) ?? [];
         const inst = installs.find((i) => i.id === workspace.installId);
         if (inst?.path) {
-          roots.push({ label: "Game", path: inst.path, readOnly: true });
+          roots.push({
+            label: "Game",
+            path: inst.path,
+            readOnly: true,
+            kind: "game",
+          });
         }
       }
     } catch {
@@ -33,6 +43,7 @@ export async function buildIdeRoots(
       label: mod.name || "Mod",
       path: mod.path,
       readOnly: false,
+      kind: "mod",
     });
   }
   if (workspace?.stagingDir) {
@@ -40,6 +51,7 @@ export async function buildIdeRoots(
       label: "Staging",
       path: workspace.stagingDir,
       readOnly: false,
+      kind: "staging",
     });
   }
   return roots;

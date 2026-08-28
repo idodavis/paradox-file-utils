@@ -4,7 +4,17 @@
 import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { GetSettings, SaveSettings } from "@services/settingsservice";
-import { normalizeSettings } from "../composables/settings";
+
+/** Drop undefined values from a settings map. */
+function normalizeSettings(
+  input: Record<string, string | undefined> | null | undefined,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(input ?? {}).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+}
 
 const FONT_SCALE_MIN = 85;
 const FONT_SCALE_MAX = 130;

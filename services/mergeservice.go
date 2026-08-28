@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"paradox-modding-tools/services/internal"
+	"paradox-modding-tools/services/internal/game"
 	parser "paradox-modding-tools/services/internal/parser"
 )
 
@@ -158,90 +160,79 @@ func parsePrecedenceFromComment(comment string) string {
 	return ""
 }
 
-// normalizeMergeKey strips surrounding quotes so "foo" and foo match.
+// normalizeMergeKey strips quotes and EU5 INJECT:/REPLACE: prefixes so keys match.
+// Merge is game-agnostic, so it passes gameID "" (KeyIdentity then strips any
+// known EU5 mode prefix).
 func normalizeMergeKey(key string) string {
-	key = strings.TrimSpace(key)
-	if len(key) >= 2 {
-		if (key[0] == '"' && key[len(key)-1] == '"') ||
-			(key[0] == '\'' && key[len(key)-1] == '\'') {
-			return key[1 : len(key)-1]
-		}
-	}
-	return key
+	return game.KeyIdentity("", key)
 }
 
 // parseFileObjects uses the shared Paradox parser for top-level object keys.
-// Semantic typing (install cache / langmodel) can later refine matching when keys
+// Semantic typing (install cache / session) can later refine matching when keys
 // collide across types; for now matching is by normalized top-level key only.
 func parseFileObjects(path string) ([]scriptObject, string, error) {
-	f, err := parser.ParseFile(path)
+	t, err := parser.ParseFile(path)
 	if err != nil {
 		return nil, "", err
 	}
-
+	src := t.Src
+	bom := ""
+	start := 0
+	if len(src) >= 3 && src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF {
+		bom = utf8BOM
+		start = 3
+	}
 	var objects []scriptObject
-	var pendingPreamble strings.Builder
-	var pendingComments []string
-
-	lineEnding := "\n"
-	currentLine := 1
-	pendingStartLine := 1
-
-	for _, entry := range f.Entries {
-		rawText := entry.GetRawText()
-		if lineEnding == "\n" && strings.Contains(rawText, "\r\n") {
-			lineEnding = "\r\n"
-		}
-
-		pendingPreamble.WriteString(rawText)
-
-		lineDelta := strings.Count(rawText, "\n")
-		inclusiveEndLine := currentLine + lineDelta
-
-		if c := entry.Comment; c != "" {
-			pendingComments = append(pendingComments, c)
-		}
-
-		if expr := entry.Expression; expr != nil && expr.Key != "" {
-			prefer := ""
-			for _, pc := range pendingComments {
-				if p := parsePrecedenceFromComment(pc); p != "" {
-					prefer = p
-					break
-				}
+	prev := start
+	for _, a := range parser.TopAssignments(t) {
+		raw := string(src[prev:a.EndByte])
+		val := string(src[a.StartByte:a.EndByte])
+		comments := commentLines(raw)
+		prefer := ""
+		for _, c := range comments {
+			if p := parsePrecedenceFromComment(c); p != "" {
+				prefer = p
+				break
 			}
-
-			objects = append(objects, scriptObject{
-				Key:        normalizeMergeKey(expr.Key),
-				RawText:    pendingPreamble.String(),
-				ValueText:  expr.GetRawText(),
-				Comments:   pendingComments,
-				PreferSide: prefer,
-				StartLine:  pendingStartLine,
-				EndLine:    inclusiveEndLine,
-			})
-
-			pendingPreamble.Reset()
-			pendingComments = nil
-			pendingStartLine = inclusiveEndLine + 1
 		}
-
-		currentLine += lineDelta
-	}
-
-	if pendingPreamble.Len() > 0 {
 		objects = append(objects, scriptObject{
-			RawText:   pendingPreamble.String(),
-			StartLine: pendingStartLine,
-			EndLine:   currentLine,
+			Key:        normalizeMergeKey(a.Key),
+			RawText:    raw,
+			ValueText:  val,
+			Comments:   comments,
+			PreferSide: prefer,
+			StartLine:  a.StartLine,
+			EndLine:    a.EndLine,
 		})
+		prev = a.EndByte
 	}
-
-	bom := utf8BOM
-	if f.BOM != "" {
-		bom = f.BOM
+	if prev < len(src) {
+		tail := string(src[prev:])
+		if strings.TrimSpace(tail) != "" {
+			objects = append(objects, scriptObject{
+				RawText:   tail,
+				StartLine: 1,
+				EndLine:   1 + strings.Count(tail, "\n"),
+			})
+		} else if len(objects) > 0 {
+			objects[len(objects)-1].RawText += tail
+		}
+	}
+	if bom == "" {
+		bom = utf8BOM
 	}
 	return objects, bom, nil
+}
+
+func commentLines(raw string) []string {
+	var out []string
+	for _, line := range strings.Split(raw, "\n") {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "#") {
+			out = append(out, trim)
+		}
+	}
+	return out
 }
 
 func determinePrecedence(key string, a, b scriptObject, opts MergerOptions) (string, string) {
@@ -286,7 +277,7 @@ func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOp
 			if entB, ok := mapB[a.Key]; ok {
 				b := entB
 				chunk.StartLineB, chunk.EndLineB, chunk.ObjB = b.StartLine, b.EndLine, &b
-				if !internal.ScriptValuesEqual(a.ValueText, b.ValueText) {
+				if !scriptValuesEqual(a.ValueText, b.ValueText) {
 					chunk.Type, chunk.TextB = "conflict", b.RawText
 				}
 			}
@@ -381,4 +372,27 @@ func (m *MergeService) mergeAndWrite(pathA, pathB, outputPath, filePath string, 
 		Changed: len(mr.EntriesChanged), Added: len(mr.EntriesAdded),
 		EntriesChanged: mr.EntriesChanged, EntriesAdded: mr.EntriesAdded, ResolvedConflicts: mr.ResolvedConflicts,
 	}
+}
+
+func canonicalScriptValue(s string) string {
+	var parts []string
+	for _, line := range strings.Split(s, "\n") {
+		if i := strings.Index(line, "#"); i >= 0 {
+			line = line[:i]
+		}
+		parts = append(parts, strings.Fields(line)...)
+	}
+	return strings.Join(parts, "")
+}
+
+func scriptValueHash(text string) string {
+	h := sha256.Sum256([]byte(canonicalScriptValue(text)))
+	return hex.EncodeToString(h[:])
+}
+
+func scriptValuesEqual(a, b string) bool {
+	if a == b {
+		return true
+	}
+	return scriptValueHash(a) == scriptValueHash(b)
 }

@@ -3,14 +3,16 @@
  * Workspace IDE toolbar; workbench fills App.vue host below this strip.
  */
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import { useWorkspaceStore } from "../stores/workspace";
 import { useSettingsStore } from "../stores/settings";
 import { setWorkbenchRoots } from "../ide/workbenchHost";
 import { buildIdeRoots } from "../ide/workspaceFolders";
+import { EnsureSession } from "@services/languagemodelservice";
+import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
+import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 
 const route = useRoute();
-const router = useRouter();
 const ws = useWorkspaceStore();
 const settings = useSettingsStore();
 
@@ -26,6 +28,7 @@ async function boot(): Promise<void> {
     if (workspaceId.value) {
       ws.setActiveWorkspace(workspaceId.value);
       await ws.loadActiveWorkspace();
+      void EnsureSession(workspaceId.value);
     }
     const roots = await buildIdeRoots(ws.activeWorkspace, ws.workspaceMods);
     if (!roots.length) {
@@ -37,11 +40,9 @@ async function boot(): Promise<void> {
       settings.values["_global.theme"] ||
       document.documentElement.dataset.theme ||
       "PMT";
-    // Sets roots immediately (picked up if init is still running), then remounts.
     await setWorkbenchRoots(roots, theme);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // HMR / double-init noise — workbench is usable; don't alarm the user.
     if (!msg.includes("already initialized")) {
       error.value = msg;
     }
@@ -60,46 +61,18 @@ watch(workspaceId, () => {
 </script>
 
 <template>
-  <div
-    class="flex shrink-0 flex-wrap items-center gap-2 border-b border-default px-2 py-1.5"
+  <WorkspaceToolBar
+    :workspace-id="workspaceId"
+    title="Workspace IDE"
+    active="workspace-ide"
   >
-    <UButton
-      label="Library"
-      icon="i-lucide-library"
-      color="neutral"
-      variant="ghost"
-      size="sm"
-      @click="router.push({ name: 'library' })"
-    />
-    <UButton
-      label="Patch Center"
-      icon="i-lucide-book-open"
-      color="neutral"
-      variant="ghost"
-      size="sm"
-      @click="
-        router.push({ name: 'patch-center', params: { id: workspaceId } })
-      "
-    />
-    <UButton
-      label="Mod Patcher"
-      icon="i-lucide-git-compare"
-      color="neutral"
-      variant="ghost"
-      size="sm"
-      @click="router.push({ name: 'patcher', params: { id: workspaceId } })"
-    />
-    <UButton
-      label="Event Graph"
-      icon="i-lucide-share-2"
-      color="neutral"
-      variant="ghost"
-      size="sm"
-      @click="
-        router.push({ name: 'event-graph', params: { id: workspaceId } })
-      "
-    />
-    <span v-if="loading" class="text-xs text-muted">Loading workbench…</span>
-    <span v-if="error" class="text-xs text-error">{{ error }}</span>
-  </div>
+    <template #trailing>
+      <span v-if="loading" class="text-xs text-muted">Loading workbench…</span>
+      <span v-if="error" class="text-xs text-error">{{ error }}</span>
+      <LanguageHealthStrip
+        v-if="workspaceId"
+        :workspace-id="workspaceId"
+      />
+    </template>
+  </WorkspaceToolBar>
 </template>

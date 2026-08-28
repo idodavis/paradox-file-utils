@@ -14,13 +14,13 @@ Builds are published under [GitHub Releases](https://github.com/idodavis/paradox
 - **Workspace IDE** — File browser across game, mod, and staging roots with integrated editor/diff viewer. Compare files, switch themes, and navigate to patching tools.
 - **Patch Center** — Browse wiki patch notes for each game version and import game error.log files for analysis.
 - **Mod Patcher** — Update mods between game versions. Preview changes, accept/skip files, resolve conflicts with the merge editor.
-- **Event Graph** — Index script objects and explore relationships. Search definitions, simulate cascade effects.
+- **Event Graph** — Index script objects and explore relationships. Search definitions and event flows.
 - **Ad-hoc Merge** — Merge two files or directories without a workspace using the script merger.
 - **Settings** — App configuration and data management backed by a local database.
 
 ### Paradox script parser (Go)
 
-A **Go** parser (Participle-based) parses typical Paradox `.txt` / `.gui` script for compare/merge and related features. Implementation lives under `services/internal/parser/` with semantics under `services/internal/semantics/` and localization under `services/internal/loc/`.
+A hand-written **Go CST** parses typical Paradox `.txt` / `.gui` script for compare/merge, the workspace IDE, and related features. Implementation lives under `services/internal/parser/` with the language session under `services/internal/lang/` and localization under `services/internal/loc/`.
 
 ## Prerequisites (from source)
 

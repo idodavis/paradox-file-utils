@@ -5,7 +5,7 @@
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import FileSelector from "../components/FileSelector.vue";
-import { GAME_OPTIONS, useWorkspaceContext, type GameId } from "../composables/workspaceContext";
+import { GAME_OPTIONS, useWorkspaceStore, type GameId } from "../stores/workspace";
 import {
   ListGameInstalls,
   AddGameInstall,
@@ -14,12 +14,14 @@ import {
   DetectGameVersion,
   EnsureStagingDir,
   UpdateWorkspace,
+  FindGameInstalls,
 } from "@services/workspaceservice";
 import { GameInstall } from "@services/internal/repos/models";
+import { DetectedInstall } from "@services/internal/game/models";
 import { SelectDirectory } from "@services/fileservice";
 
 const router = useRouter();
-const ctx = useWorkspaceContext();
+const ctx = useWorkspaceStore();
 
 const step = ref(1);
 const selectedGame = ref<GameId>(ctx.currentGameId);
@@ -27,6 +29,7 @@ const installs = ref<GameInstall[]>([]);
 const selectedInstallId = ref<string | null>(null);
 const newInstallPath = ref("");
 const newInstallName = ref("");
+const detectedInstalls = ref<DetectedInstall[]>([]);
 const modPaths = ref<string[]>([]);
 const workspaceName = ref("");
 const tagsText = ref("");
@@ -60,6 +63,7 @@ async function loadInstalls(): Promise<void> {
     if (installs.value.length) {
       selectedInstallId.value = installs.value[0].id;
     }
+    detectedInstalls.value = (await FindGameInstalls(selectedGame.value)) ?? [];
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -67,7 +71,13 @@ async function loadInstalls(): Promise<void> {
   }
 }
 
-/** Add a new install and select it. */
+/** Prefill add-install fields from a Steam-detected path. */
+function useDetected(path: string, version: string): void {
+  newInstallPath.value = path;
+  if (!newInstallName.value) {
+    newInstallName.value = version ? `Steam ${version}` : "Steam";
+  }
+}
 async function addNewInstall(): Promise<void> {
   if (!newInstallPath.value || !newInstallName.value) return;
   loading.value = true;
@@ -211,6 +221,25 @@ async function createWorkspace(): Promise<void> {
               </label>
             </div>
             <p v-else class="text-sm text-muted">No installs configured yet.</p>
+            <div v-if="detectedInstalls.length" class="space-y-2">
+              <p class="text-sm font-medium">Found on this machine</p>
+              <div
+                v-for="d in detectedInstalls"
+                :key="d.path"
+                class="flex items-center justify-between gap-2 rounded border border-default p-2"
+              >
+                <span class="text-sm">
+                  Found {{ selectedGame }} at {{ d.path }}
+                  <span v-if="d.version" class="text-muted">({{ d.version }})</span>
+                </span>
+                <UButton
+                  label="Use"
+                  size="xs"
+                  variant="outline"
+                  @click="useDetected(d.path, d.version)"
+                />
+              </div>
+            </div>
             <div class="flex items-center gap-2 py-2">
               <hr class="flex-1 border-default" />
               <span class="text-xs text-muted">Or add new</span>

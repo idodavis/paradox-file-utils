@@ -93,6 +93,7 @@ func (d *DbService) initSchema() error {
 			name TEXT NOT NULL,
 			path TEXT NOT NULL,
 			version TEXT,
+			docs_path TEXT NOT NULL DEFAULT '',
 			is_broken INTEGER DEFAULT 0,
 			created_at TEXT NOT NULL
 		)`,
@@ -122,27 +123,6 @@ func (d *DbService) initSchema() error {
 			created_at TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_workspace_mods_ws ON workspace_mods(workspace_id)`,
-
-		// Wiki patch cache (MediaWiki API)
-		`CREATE TABLE IF NOT EXISTS wiki_patches (
-			game_id TEXT NOT NULL REFERENCES games(id),
-			version TEXT NOT NULL,
-			fetched_at TEXT NOT NULL,
-			source_url TEXT NOT NULL,
-			html_content TEXT NOT NULL,
-			modding_html TEXT NOT NULL DEFAULT '',
-			PRIMARY KEY (game_id, version)
-		)`,
-
-		// Script log imports (error.log analysis)
-		`CREATE TABLE IF NOT EXISTS script_log_imports (
-			id TEXT PRIMARY KEY,
-			workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-			path TEXT NOT NULL,
-			imported_at TEXT NOT NULL,
-			summary TEXT NOT NULL
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_script_log_ws ON script_log_imports(workspace_id)`,
 
 		// Patch runs (mod version update campaigns)
 		`CREATE TABLE IF NOT EXISTS patch_runs (
@@ -185,31 +165,27 @@ func (d *DbService) initSchema() error {
 			return fmt.Errorf("schema: %w", err)
 		}
 	}
-	if err := d.ensureWikiPatchColumns(); err != nil {
+	if err := d.ensureInstallDocsPath(); err != nil {
 		return err
 	}
 	return d.seedGames()
 }
 
-// ensureWikiPatchColumns adds modding_html on older DBs and clears stale caches once.
-func (d *DbService) ensureWikiPatchColumns() error {
+// ensureInstallDocsPath adds docs_path on older DBs.
+func (d *DbService) ensureInstallDocsPath() error {
 	var n int
 	if err := d.DB.Get(&n,
-		`SELECT COUNT(*) FROM pragma_table_info('wiki_patches') WHERE name = 'modding_html'`,
+		`SELECT COUNT(*) FROM pragma_table_info('game_installs') WHERE name = 'docs_path'`,
 	); err != nil {
-		return fmt.Errorf("check wiki_patches columns: %w", err)
+		return fmt.Errorf("check game_installs columns: %w", err)
 	}
 	if n > 0 {
 		return nil
 	}
 	if _, err := d.DB.Exec(
-		`ALTER TABLE wiki_patches ADD COLUMN modding_html TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE game_installs ADD COLUMN docs_path TEXT NOT NULL DEFAULT ''`,
 	); err != nil {
-		return fmt.Errorf("add wiki_patches.modding_html: %w", err)
-	}
-	// Old rows stored modding-only HTML in html_content; force refetch.
-	if _, err := d.DB.Exec(`DELETE FROM wiki_patches`); err != nil {
-		return fmt.Errorf("clear stale wiki_patches: %w", err)
+		return fmt.Errorf("add game_installs.docs_path: %w", err)
 	}
 	return nil
 }
@@ -231,23 +207,6 @@ func (d *DbService) seedGames() error {
 		)
 		if err != nil {
 			return fmt.Errorf("seed game %s: %w", g.id, err)
-		}
-	}
-	return nil
-}
-
-// ResetData wipes user data (workspaces, mods, installs, runs) but keeps games and app_settings.
-func (d *DbService) ResetData() error {
-	if d.DB == nil {
-		return fmt.Errorf("database not initialized")
-	}
-	tables := []string{
-		"patch_run_files", "patch_runs", "workspace_mods", "workspaces",
-		"game_installs", "script_log_imports", "wiki_patches",
-	}
-	for _, t := range tables {
-		if _, err := d.DB.Exec(`DELETE FROM ` + t); err != nil {
-			return fmt.Errorf("delete %s: %w", t, err)
 		}
 	}
 	return nil

@@ -5,11 +5,13 @@ import { createRouter, createWebHashHistory } from "vue-router";
 import LibraryPage from "../pages/LibraryPage.vue";
 import WizardPage from "../pages/WizardPage.vue";
 import WorkspaceIdePage from "../pages/WorkspaceIdePage.vue";
-import PatchCenterPage from "../pages/PatchCenterPage.vue";
-import PatcherPage from "../pages/PatcherPage.vue";
 import EventGraphPage from "../pages/EventGraphPage.vue";
+import ConflictPage from "../pages/ConflictPage.vue";
+import LocCoveragePage from "../pages/LocCoveragePage.vue";
+import PatcherPage from "../pages/PatcherPage.vue";
 import ToolsMergePage from "../pages/ToolsMergePage.vue";
 import SettingsPage from "../pages/SettingsPage.vue";
+import { useWorkspaceStore } from "../stores/workspace";
 
 const routes = [
   {
@@ -41,15 +43,37 @@ const routes = [
     meta: {
       title: "Workspace",
       description: "View and edit files in your workspace.",
+      workspaceTool: true,
     },
   },
   {
-    path: "/workspace/:id/patch",
-    name: "patch-center",
-    component: PatchCenterPage,
+    path: "/workspace/:id/graph",
+    name: "event-graph",
+    component: EventGraphPage,
     meta: {
-      title: "Patch Center",
-      description: "Browse wiki patch notes and import script logs.",
+      title: "Event Graph",
+      description: "Browse event and on_action links in the workspace.",
+      workspaceTool: true,
+    },
+  },
+  {
+    path: "/workspace/:id/conflicts",
+    name: "conflicts",
+    component: ConflictPage,
+    meta: {
+      title: "Conflicts",
+      description: "FIOS/LIOS overlapping definitions.",
+      workspaceTool: true,
+    },
+  },
+  {
+    path: "/workspace/:id/loc",
+    name: "loc-coverage",
+    component: LocCoveragePage,
+    meta: {
+      title: "Loc Coverage",
+      description: "Missing, orphaned, and untranslated localization keys.",
+      workspaceTool: true,
     },
   },
   {
@@ -59,15 +83,7 @@ const routes = [
     meta: {
       title: "Mod Patcher",
       description: "Update mods between game versions.",
-    },
-  },
-  {
-    path: "/workspace/:id/graph",
-    name: "event-graph",
-    component: EventGraphPage,
-    meta: {
-      title: "Event Graph",
-      description: "Explore script object relationships and cascade effects.",
+      workspaceTool: true,
     },
   },
   {
@@ -93,6 +109,15 @@ const routes = [
 const router = createRouter({
   history: createWebHashHistory(),
   routes,
+});
+
+router.beforeEach((to) => {
+  if (!to.meta.workspaceTool) return true;
+  const id = to.params.id;
+  if (typeof id !== "string" || !id) return true;
+  const ws = useWorkspaceStore();
+  ws.setActiveWorkspace(id);
+  return true;
 });
 
 export default router;

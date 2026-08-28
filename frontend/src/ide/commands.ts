@@ -40,16 +40,6 @@ export async function openDiff(
   );
 }
 
-/** Reveal a path in the explorer view. */
-export async function revealInExplorer(path: string): Promise<void> {
-  await whenWorkbenchReady();
-  if (!isWorkbenchReady()) return;
-  await vscode.commands.executeCommand(
-    "revealInExplorer",
-    monaco.Uri.file(path),
-  );
-}
-
 /** Open multiple diffs via multi-diff editor when available. */
 export async function openMultiDiff(
   pairs: { left: string; right: string; label?: string }[],

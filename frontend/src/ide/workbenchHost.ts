@@ -1,7 +1,14 @@
 /**
- * Singleton monaco-vscode workbench host (init once per app lifetime).
+ * Singleton monaco-vscode ViewsService host (init once per app lifetime).
  *
- * App.vue owns the DOM container; WorkspaceIdePage pushes app workspace roots.
+ * IdeWorkbenchLayout.vue owns attachPart DOM refs; WorkspaceIdePage pushes app roots.
+ *
+ * Intentionally excluded VS Code contributions (do not import until a feature
+ * needs them): debug, testing, notebooks, terminal, SCM/git, comments, timeline,
+ * chat, AI, extension gallery/marketplace, remote, tasks, output panel,
+ * welcome/walkthrough, emmet, speech, survey, update.
+ * Keep: editor, explorer, problems, search, hover/complete/def/refs, folding,
+ * semantic tokens, themes, file icons, multi-diff (merge review).
  */
 import {
   initialize as initializeMonacoService,
@@ -9,14 +16,15 @@ import {
   type IWorkbenchConstructionOptions,
   LogLevel,
 } from "@codingame/monaco-vscode-api";
-import {
-  initialize as bindWorkbenchContainer,
-} from "@codingame/monaco-vscode-api/workbench";
-import {
-  servicesInitialized,
-  waitServicesReady,
-} from "@codingame/monaco-vscode-api/lifecycle";
-import getWorkbenchServiceOverride from "@codingame/monaco-vscode-workbench-service-override";
+import type { IDisposable } from "@codingame/monaco-vscode-api/vscode/vs/base/common/lifecycle";
+import { servicesInitialized, waitServicesReady } from "@codingame/monaco-vscode-api/lifecycle";
+import getViewsServiceOverride, {
+  attachPart,
+  isEditorPartVisible,
+  isPartVisibile,
+  onPartVisibilityChange,
+  Parts,
+} from "@codingame/monaco-vscode-views-service-override";
 import getQuickAccessServiceOverride from "@codingame/monaco-vscode-quickaccess-service-override";
 import getConfigurationServiceOverride, {
   initUserConfiguration,
@@ -37,11 +45,8 @@ import getLifecycleServiceOverride from "@codingame/monaco-vscode-lifecycle-serv
 import getEnvironmentServiceOverride from "@codingame/monaco-vscode-environment-service-override";
 import getLogServiceOverride from "@codingame/monaco-vscode-log-service-override";
 import getWorkingCopyServiceOverride from "@codingame/monaco-vscode-working-copy-service-override";
-import getOutlineServiceOverride from "@codingame/monaco-vscode-outline-service-override";
 import getMultiDiffEditorServiceOverride from "@codingame/monaco-vscode-multi-diff-editor-service-override";
 import getExplorerServiceOverride from "@codingame/monaco-vscode-explorer-service-override";
-import getStatusBarServiceOverride from "@codingame/monaco-vscode-view-status-bar-service-override";
-import getPreferencesServiceOverride from "@codingame/monaco-vscode-preferences-service-override";
 import {
   createIndexedDBProviders,
   registerFileSystemOverlay,
@@ -49,20 +54,38 @@ import {
   RegisteredMemoryFile,
   initFile,
 } from "@codingame/monaco-vscode-files-service-override";
+import { registerExtension } from "@codingame/monaco-vscode-api/extensions";
+import { ExtensionHostKind } from "@codingame/monaco-vscode-extensions-service-override";
 import "@codingame/monaco-vscode-theme-defaults-default-extension";
-import "@codingame/monaco-vscode-theme-seti-default-extension";
+// Material + Paradox icon theme (builtin before initialize).
+import "./fileIcons";
 import "vscode/localExtensionHost";
 import * as monaco from "monaco-editor";
 import * as vscode from "vscode";
 import { WailsFileSystemProvider, type IdeRoot } from "./fsBridge";
 import { workspaceFileJson } from "./workspaceFolders";
-import {
-  applyWorkbenchTheme,
-  workbenchSettingsForTheme,
-  lockWorkbenchTheme,
-} from "./themeBridge";
+import { applyWorkbenchTheme, workbenchSettingsForTheme, lockWorkbenchTheme } from "./themeBridge";
 import { registerParadoxLanguages } from "./paradoxLanguages";
 import { registerLanguageClient } from "./languageClient";
+import { registerRootDecorations, setDecoratedRoots } from "./rootDecorations";
+import { useWorkspaceStore } from "../stores/workspace";
+import "./explorerLayout.css";
+
+let workbenchReady = false;
+
+/** Whether the workbench has finished initialize(). */
+export function isWorkbenchReady(): boolean {
+  return workbenchReady;
+}
+
+/** attachPart DOM refs owned by IdeWorkbenchLayout.vue. */
+export type IdePartRefs = {
+  root: HTMLElement;
+  activityBar: HTMLElement;
+  sidebar: HTMLElement;
+  editor: HTMLElement;
+  panel: HTMLElement;
+};
 
 /** Options applied on first workbench initialize. */
 export type WorkbenchInitOpts = {
@@ -72,36 +95,49 @@ export type WorkbenchInitOpts = {
 const WS_ID = "pmt-app-workspace";
 const WS_FILE = monaco.Uri.file("/pmt.code-workspace");
 
-let ready = false;
+/** Command palette entries owned by Nuxt / the app workspace, not the workbench. */
+const HIDDEN_PALETTE_COMMANDS = [
+  "workbench.action.files.openFolder",
+  "workbench.action.addRootFolder",
+  "workbench.action.removeRootFolder",
+  "workbench.action.closeFolder",
+  "workbench.action.selectTheme",
+  "workbench.actions.manageAccounts",
+  "workbench.actions.accounts",
+] as const;
+
+const ATTACHED_PARTS = [
+  Parts.ACTIVITYBAR_PART,
+  Parts.SIDEBAR_PART,
+  Parts.EDITOR_PART,
+  Parts.PANEL_PART,
+] as const;
+
 let initPromise: Promise<void> | null = null;
 let containerEl: HTMLElement | null = null;
+let partRefs: IdePartRefs | null = null;
 const readyWaiters: Array<() => void> = [];
+const ready = (): boolean => workbenchReady;
 const fsProvider = new WailsFileSystemProvider();
 let currentRoots: IdeRoot[] = [];
 let langClient: { dispose(): void } | null = null;
 let themeLock: { dispose(): void } | null = null;
-
-/** Whether the workbench has finished initialize(). */
-export function isWorkbenchReady(): boolean {
-  return ready;
-}
+let folderLock: { dispose(): void } | null = null;
+let rootDeco: { dispose(): void } | null = null;
+let mutatingFolders = false;
+let partDisposables: IDisposable[] = [];
 
 /** Resolves once the workbench has finished initialize(). */
 export function whenWorkbenchReady(): Promise<void> {
-  if (ready) return Promise.resolve();
+  if (ready()) return Promise.resolve();
   return new Promise((resolve) => {
     readyWaiters.push(resolve);
   });
 }
 
-/** Current IDE roots mounted in the FS bridge. */
-export function getIdeRoots(): IdeRoot[] {
-  return currentRoots;
-}
-
 function markReady(): void {
-  if (ready) return;
-  ready = true;
+  if (workbenchReady) return;
+  workbenchReady = true;
   while (readyWaiters.length) readyWaiters.shift()?.();
 }
 
@@ -114,27 +150,16 @@ function setupWorkers(): void {
   w.MonacoEnvironment = {
     getWorker(_: string, label: string) {
       if (label === "TextMateWorker") {
-        return new Worker(
-          new URL(
-            "@codingame/monaco-vscode-textmate-service-override/worker",
-            import.meta.url,
-          ),
-          { type: "module" },
-        );
+        return new Worker(new URL("@codingame/monaco-vscode-textmate-service-override/worker", import.meta.url), {
+          type: "module",
+        });
       }
       if (label === "LocalFileSearchWorker") {
-        return new Worker(
-          new URL(
-            "@codingame/monaco-vscode-search-service-override/worker",
-            import.meta.url,
-          ),
-          { type: "module" },
-        );
+        return new Worker(new URL("@codingame/monaco-vscode-search-service-override/worker", import.meta.url), {
+          type: "module",
+        });
       }
-      return new Worker(
-        new URL("monaco-editor/esm/vs/editor/editor.worker.js", import.meta.url),
-        { type: "module" },
-      );
+      return new Worker(new URL("monaco-editor/esm/vs/editor/editor.worker.js", import.meta.url), { type: "module" });
     },
   };
 }
@@ -151,9 +176,6 @@ function leanServices(): IEditorOverrideServices {
     ...getTextmateServiceOverride(),
     ...getThemeServiceOverride(),
     ...getLanguagesServiceOverride(),
-    ...getPreferencesServiceOverride(),
-    ...getOutlineServiceOverride(),
-    ...getStatusBarServiceOverride(),
     ...getSearchServiceOverride(),
     ...getMarkersServiceOverride(),
     ...getStorageServiceOverride(),
@@ -162,9 +184,9 @@ function leanServices(): IEditorOverrideServices {
     ...getWorkingCopyServiceOverride(),
     ...getMultiDiffEditorServiceOverride(),
     ...getExplorerServiceOverride(),
-    ...getWorkbenchServiceOverride(),
+    ...getViewsServiceOverride(),
     ...getQuickAccessServiceOverride({
-      isKeybindingConfigurationVisible: () => true,
+      isKeybindingConfigurationVisible: isEditorPartVisible,
       shouldUseGlobalPicker: () => true,
     }),
   };
@@ -189,20 +211,82 @@ function constructOptions(): IWorkbenchConstructionOptions {
     productConfiguration: {
       nameShort: "PMT",
       nameLong: "Paradox Modding Tools",
+      enableTelemetry: false,
+    },
+    // Use view IDs (not viewlet IDs): `workbench.view.explorer` is a container and
+    // is ignored by defaultLayout, which left Search as the restored sidebar.
+    defaultLayout: {
+      views: [{ id: "workbench.explorer.fileView" }, { id: "workbench.panel.markers.view" }],
+      force: true,
     },
     configurationDefaults: {
       "window.titleBarStyle": "native",
       "workbench.activityBar.location": "default",
       "workbench.startupEditor": "none",
-      "workbench.colorTheme": "Default Dark Modern",
+      "workbench.colorTheme": "PMT",
       "workbench.iconTheme": "pmt-icons",
-      "workbench.tree.indent": 14,
+      "workbench.tree.indent": 16,
       "workbench.tree.renderIndentGuides": "always",
+      "workbench.enableExperiments": false,
+      "workbench.tips.enabled": false,
+      "telemetry.telemetryLevel": "off",
+      "git.enabled": false,
+      "git.autoRepositoryDetection": false,
+      "scm.diffDecorations": "none",
+      "debug.toolBarLocation": "hidden",
+      "debug.showInStatusBar": "never",
+      "extensions.autoCheckUpdates": false,
+      "extensions.autoUpdate": false,
+      "extensions.ignoreRecommendations": true,
+      "workbench.activity.showAccounts": false,
     },
   };
 }
 
 const envOpts = { userHome: monaco.Uri.file("/") };
+
+/** Bind ViewsService parts to layout refs and wire visibility listeners. */
+export function attachIdeParts(refs: IdePartRefs): void {
+  for (const disposable of partDisposables) {
+    disposable.dispose();
+  }
+  partDisposables = [];
+
+  const containers: Record<(typeof ATTACHED_PARTS)[number], HTMLElement> = {
+    [Parts.ACTIVITYBAR_PART]: refs.activityBar,
+    [Parts.SIDEBAR_PART]: refs.sidebar,
+    [Parts.EDITOR_PART]: refs.editor,
+    [Parts.PANEL_PART]: refs.panel,
+  };
+
+  for (const part of ATTACHED_PARTS) {
+    const container = containers[part];
+    partDisposables.push(attachPart(part, container));
+    if (!isPartVisibile(part)) {
+      container.style.display = "none";
+    }
+    partDisposables.push(
+      onPartVisibilityChange(part, (visible) => {
+        container.style.display = visible ? "block" : "none";
+      }),
+    );
+  }
+}
+
+/** Normalize a filesystem path for folder-identity comparison. */
+function normPath(path: string): string {
+  return path.replace(/\\/g, "/").toLowerCase();
+}
+
+/** Whether workbench folders already match the app-owned roots. */
+function foldersMatch(roots: IdeRoot[]): boolean {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length !== roots.length) return false;
+  return roots.every((root, i) => {
+    const folder = folders[i];
+    return !!folder && folder.name === root.label && normPath(folder.uri.fsPath) === normPath(root.path);
+  });
+}
 
 /** Reload multi-root folders from the in-memory .code-workspace file. */
 async function reloadWorkspaceFromFile(): Promise<void> {
@@ -212,20 +296,66 @@ async function reloadWorkspaceFromFile(): Promise<void> {
   });
 }
 
+/** Write app workspace roots into the workbench (suppresses folder-lock). */
+async function writeWorkspaceFolders(roots: IdeRoot[]): Promise<void> {
+  mutatingFolders = true;
+  try {
+    await initFile(WS_FILE, workspaceFileJson(roots), { overwrite: true });
+    await reloadWorkspaceFromFile();
+    if ((vscode.workspace.workspaceFolders?.length ?? 0) === 0 && roots.length) {
+      vscode.workspace.updateWorkspaceFolders(
+        0,
+        0,
+        ...roots.map((r) => ({
+          uri: vscode.Uri.file(r.path),
+          name: r.label,
+        })),
+      );
+    }
+  } finally {
+    mutatingFolders = false;
+  }
+}
+
+/** Restore Game / mods / Staging if the user mutates workbench folders. */
+function lockWorkbenchFolders(): vscode.Disposable {
+  return vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    if (mutatingFolders || !ready()) return;
+    if (foldersMatch(currentRoots)) return;
+    void writeWorkspaceFolders(currentRoots);
+  });
+}
+
+/** Hide Open Folder / Add Root / Select Theme from the command palette. */
+function registerWorkbenchLockMenus(): void {
+  registerExtension(
+    {
+      name: "pmt-workbench-lock",
+      publisher: "pmt",
+      version: "1.0.0",
+      engines: { vscode: "*" },
+      contributes: {
+        menus: {
+          commandPalette: HIDDEN_PALETTE_COMMANDS.map((command) => ({
+            command,
+            when: "false",
+          })),
+        },
+      },
+    },
+    ExtensionHostKind.LocalProcess,
+  );
+}
+
 async function runInitialize(theme: string): Promise<void> {
-  if (!containerEl) {
-    throw new Error("Workbench container not set");
+  if (!containerEl || !partRefs) {
+    throw new Error("Workbench layout refs not set");
   }
   setupWorkers();
   await createIndexedDBProviders();
 
   const mem = new RegisteredFileSystemProvider(false);
-  mem.registerFile(
-    new RegisteredMemoryFile(
-      WS_FILE,
-      workspaceFileJson(currentRoots),
-    ),
-  );
+  mem.registerFile(new RegisteredMemoryFile(WS_FILE, workspaceFileJson(currentRoots)));
   registerFileSystemOverlay(1, mem);
   registerFileSystemOverlay(2, fsProvider);
 
@@ -244,87 +374,69 @@ async function runInitialize(theme: string): Promise<void> {
 
   const options = constructOptions();
   if (servicesInitialized) {
-    // Prior init (HMR / race): re-bind container + workspace id, don't call initialize twice.
-    bindWorkbenchContainer(containerEl, options, envOpts);
+    attachIdeParts(partRefs);
     await waitServicesReady();
   } else {
-    await initializeMonacoService(
-      leanServices(),
-      containerEl,
-      options,
-      envOpts,
-    );
+    await initializeMonacoService(leanServices(), containerEl, options, envOpts);
+    attachIdeParts(partRefs);
   }
 
+  registerWorkbenchLockMenus();
   await registerParadoxLanguages();
   langClient?.dispose();
-  langClient = registerLanguageClient();
-  themeLock?.dispose();
-  themeLock = lockWorkbenchTheme(
-    () => document.documentElement.dataset.theme || theme,
+  langClient = registerLanguageClient(
+    () => useWorkspaceStore().activeWorkspaceId ?? "",
   );
+  themeLock?.dispose();
+  themeLock = lockWorkbenchTheme(() => document.documentElement.dataset.theme || theme);
+  rootDeco?.dispose();
+  rootDeco = registerRootDecorations();
+  setDecoratedRoots(currentRoots);
   markReady();
   await applyWorkbenchTheme(theme);
   if (currentRoots.length) {
-    await initFile(WS_FILE, workspaceFileJson(currentRoots), {
-      overwrite: true,
-    });
-    await reloadWorkspaceFromFile();
+    await writeWorkspaceFolders(currentRoots);
   }
+  folderLock?.dispose();
+  folderLock = lockWorkbenchFolders();
+  // Force Explorer even if workspace storage last left Search active.
+  await vscode.commands.executeCommand("workbench.view.explorer");
 }
 
 /**
- * Initialize the workbench into container (once).
- * Must be called with the host element from App.vue.
+ * Initialize the ViewsService workbench (once).
+ * Must be called with attachPart refs from IdeWorkbenchLayout.vue.
  */
-export async function ensureWorkbench(
-  container?: HTMLElement | null,
-  opts?: WorkbenchInitOpts,
-): Promise<void> {
-  if (container) {
-    containerEl = container;
+export async function ensureWorkbench(refs?: IdePartRefs | null, opts?: WorkbenchInitOpts): Promise<void> {
+  if (refs) {
+    containerEl = refs.root;
+    partRefs = refs;
   }
   const theme = opts?.theme ?? "PMT";
 
-  if (!containerEl) {
-    throw new Error("Workbench container not set");
+  if (!containerEl || !partRefs) {
+    throw new Error("Workbench layout refs not set");
   }
 
   initPromise ??= runInitialize(theme);
   await initPromise;
 
-  if (ready && opts?.theme) {
+  if (ready() && opts?.theme) {
     await applyWorkbenchTheme(theme);
   }
 }
 
 /** Remount workspace folders to match the active PMT workspace. */
-export async function setWorkbenchRoots(
-  roots: IdeRoot[],
-  themeName: string,
-): Promise<void> {
+export async function setWorkbenchRoots(roots: IdeRoot[], themeName: string): Promise<void> {
   currentRoots = roots;
   fsProvider.setRoots(roots);
+  setDecoratedRoots(roots);
 
-  if (!ready) {
+  if (!ready()) {
     // Roots are picked up during initialize when the host finishes.
     await whenWorkbenchReady();
   }
 
-  await initFile(WS_FILE, workspaceFileJson(roots), { overwrite: true });
-  await reloadWorkspaceFromFile();
-
-  // If the workspace file reload left folders empty, splice them in directly.
-  if ((vscode.workspace.workspaceFolders?.length ?? 0) === 0 && roots.length) {
-    vscode.workspace.updateWorkspaceFolders(
-      0,
-      0,
-      ...roots.map((r) => ({
-        uri: vscode.Uri.file(r.path),
-        name: r.label,
-      })),
-    );
-  }
-
+  await writeWorkspaceFolders(roots);
   await applyWorkbenchTheme(themeName);
 }

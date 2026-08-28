@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
-  <!-- Game workspace root: folder + globe -->
-  <path fill="#c9a24a" d="M2 3.2h5.2l1.3 1.4H14V13.5H2z"/>
-  <path fill="#a8842e" d="M2 5h12v8.5H2z"/>
-  <circle cx="8" cy="9.2" r="2.8" fill="#1a160c" stroke="#f0d78a" stroke-width="0.9"/>
-  <path stroke="#f0d78a" stroke-width="0.8" fill="none"
-    d="M5.2 9.2h5.6M8 6.4c-1.1 1.2-1.1 4.4 0 5.6M8 6.4c1.1 1.2 1.1 4.4 0 5.6"/>
-</svg>

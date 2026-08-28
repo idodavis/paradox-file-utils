@@ -21,6 +21,7 @@ export interface GameInstall {
     "name": string;
     "path": string;
     "version": string;
+    "docsPath": string;
     "isBroken": boolean;
     "createdAt": string;
 }
@@ -53,29 +54,6 @@ export interface PatchRunFile {
     "decision": string;
     "previewPath": string;
     "stats": string;
-}
-
-/**
- * ScriptLogImport represents an imported script log analysis.
- */
-export interface ScriptLogImport {
-    "id": string;
-    "workspaceId": string;
-    "path": string;
-    "importedAt": string;
-    "summary": string;
-}
-
-/**
- * WikiPatch is a cached wiki patch entry (full page + modding excerpt).
- */
-export interface WikiPatch {
-    "gameId": string;
-    "version": string;
-    "fetchedAt": string;
-    "sourceUrl": string;
-    "htmlContent": string;
-    "moddingHtml": string;
 }
 
 /**

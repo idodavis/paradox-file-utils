@@ -27,8 +27,16 @@ import {
 
 type Uri = monaco.Uri;
 
+/** Role of a multi-root IDE folder (explorer color tags). */
+export type IdeRootKind = "game" | "mod" | "staging";
+
 /** Workspace root with optional read-only policy (game install). */
-export type IdeRoot = { label: string; path: string; readOnly: boolean };
+export type IdeRoot = {
+  label: string;
+  path: string;
+  readOnly: boolean;
+  kind: IdeRootKind;
+};
 
 type Disposable = { dispose(): void };
 

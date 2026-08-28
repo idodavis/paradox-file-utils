@@ -19,6 +19,7 @@ type GameInstall struct {
 	Name      string `json:"name" db:"name"`
 	Path      string `json:"path" db:"path"`
 	Version   string `json:"version" db:"version"`
+	DocsPath  string `json:"docsPath" db:"docs_path"`
 	IsBroken  bool   `json:"isBroken" db:"is_broken"`
 	CreatedAt string `json:"createdAt" db:"created_at"`
 }
@@ -66,15 +67,15 @@ func (r *WorkspaceRepository) ListGames() ([]Game, error) {
 // ListInstalls returns all installs for a game.
 func (r *WorkspaceRepository) ListInstalls(gameID string) ([]GameInstall, error) {
 	var out []GameInstall
-	err := r.db.Select(&out, `SELECT id, game_id, name, path, version, is_broken, created_at FROM game_installs WHERE game_id = ? ORDER BY name`, gameID)
+	err := r.db.Select(&out, `SELECT id, game_id, name, path, version, COALESCE(docs_path, '') as docs_path, is_broken, created_at FROM game_installs WHERE game_id = ? ORDER BY name`, gameID)
 	return out, err
 }
 
 // InsertInstall adds a new game install.
 func (r *WorkspaceRepository) InsertInstall(inst *GameInstall) error {
 	_, err := r.db.Exec(
-		`INSERT INTO game_installs (id, game_id, name, path, version, is_broken, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		inst.ID, inst.GameID, inst.Name, inst.Path, inst.Version, inst.IsBroken, inst.CreatedAt,
+		`INSERT INTO game_installs (id, game_id, name, path, version, docs_path, is_broken, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		inst.ID, inst.GameID, inst.Name, inst.Path, inst.Version, inst.DocsPath, inst.IsBroken, inst.CreatedAt,
 	)
 	return err
 }
@@ -82,7 +83,7 @@ func (r *WorkspaceRepository) InsertInstall(inst *GameInstall) error {
 // GetInstall returns a game install by ID.
 func (r *WorkspaceRepository) GetInstall(id string) (*GameInstall, error) {
 	var inst GameInstall
-	err := r.db.Get(&inst, `SELECT id, game_id, name, path, version, is_broken, created_at FROM game_installs WHERE id = ?`, id)
+	err := r.db.Get(&inst, `SELECT id, game_id, name, path, version, COALESCE(docs_path, '') as docs_path, is_broken, created_at FROM game_installs WHERE id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -92,13 +93,28 @@ func (r *WorkspaceRepository) GetInstall(id string) (*GameInstall, error) {
 // AllInstalls returns all game installs (for broken path marking).
 func (r *WorkspaceRepository) AllInstalls() ([]GameInstall, error) {
 	var out []GameInstall
-	err := r.db.Select(&out, `SELECT id, path FROM game_installs`)
+	err := r.db.Select(&out, `SELECT id, path, COALESCE(docs_path, '') as docs_path FROM game_installs`)
 	return out, err
 }
 
 // SetInstallBroken updates the is_broken flag for an install.
 func (r *WorkspaceRepository) SetInstallBroken(id string, broken bool) error {
 	_, err := r.db.Exec(`UPDATE game_installs SET is_broken = ? WHERE id = ?`, broken, id)
+	return err
+}
+
+// UpdateInstallVersion writes a refreshed launcher version onto the install row.
+func (r *WorkspaceRepository) UpdateInstallVersion(id, version string) error {
+	_, err := r.db.Exec(`UPDATE game_installs SET version = ? WHERE id = ?`, version, id)
+	return err
+}
+
+// UpdateInstallPath updates path and optional docs_path for an install.
+func (r *WorkspaceRepository) UpdateInstallPath(id, path, docsPath string) error {
+	_, err := r.db.Exec(
+		`UPDATE game_installs SET path = ?, docs_path = ? WHERE id = ?`,
+		path, docsPath, id,
+	)
 	return err
 }
 
@@ -225,14 +241,15 @@ func (r *WorkspaceRepository) GetWorkspaceInfo(workspaceID string) (gameID, inst
 	return ws.GameID, ws.InstallID, err
 }
 
-// GetInstallPath returns the path and game_id for an install.
-func (r *WorkspaceRepository) GetInstallPath(installID string) (path, gameID string, err error) {
+// GetInstallPath returns the path, game_id, and docs_path for an install.
+func (r *WorkspaceRepository) GetInstallPath(installID string) (path, gameID, docsPath string, err error) {
 	var inst struct {
-		Path   string `db:"path"`
-		GameID string `db:"game_id"`
+		Path     string `db:"path"`
+		GameID   string `db:"game_id"`
+		DocsPath string `db:"docs_path"`
 	}
-	err = r.db.Get(&inst, `SELECT path, game_id FROM game_installs WHERE id = ?`, installID)
-	return inst.Path, inst.GameID, err
+	err = r.db.Get(&inst, `SELECT path, game_id, COALESCE(docs_path, '') as docs_path FROM game_installs WHERE id = ?`, installID)
+	return inst.Path, inst.GameID, inst.DocsPath, err
 }
 
 // ListModPaths returns all mod paths for a workspace.
