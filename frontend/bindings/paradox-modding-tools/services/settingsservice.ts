@@ -10,26 +10,8 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as $models from "./models.js";
-
 export function CheckForUpdates(): $CancellablePromise<void> {
     return $Call.ByID(2389207713);
-}
-
-/**
- * DeleteMergePreset removes a preset by name.
- */
-export function DeleteMergePreset(name: string): $CancellablePromise<void> {
-    return $Call.ByID(241571328, name);
-}
-
-/**
- * GetMergePresets returns saved merge presets from app_settings.
- */
-export function GetMergePresets(): $CancellablePromise<$models.MergePreset[] | null> {
-    return $Call.ByID(3580251362);
 }
 
 /**
@@ -44,17 +26,10 @@ export function GetVersion(): $CancellablePromise<string> {
 }
 
 /**
- * ResetData wipes user data (workspaces, mods, installs, runs) but keeps games and app_settings.
+ * ResetData wipes workspaces, mods, installs, patch runs, and the semantic cache.
  */
 export function ResetData(): $CancellablePromise<void> {
     return $Call.ByID(2171932109);
-}
-
-/**
- * SaveMergePreset saves a merge preset by name.
- */
-export function SaveMergePreset(name: string, options: $models.MergerOptions): $CancellablePromise<void> {
-    return $Call.ByID(3311953510, name, options);
 }
 
 /**

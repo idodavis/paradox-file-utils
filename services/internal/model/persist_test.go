@@ -4,6 +4,7 @@
 package model
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,5 +57,67 @@ func TestLoadRejectsMissingFormatVersion(t *testing.T) {
 	}
 	if _, err := LoadIndexFile(indexPath); err == nil {
 		t.Fatal("expected missing index formatVersion to fail")
+	}
+}
+
+func TestLoadCacheNilMapsAreWritable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "thin.json")
+	body := fmt.Sprintf(
+		`{"formatVersion":%d,"gameId":"ck3","gameVersion":"1"}`,
+		CacheFormatVersion,
+	)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := LoadCacheFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.FieldDocs["k"] = "v"
+	c.LocEnglish["a"] = "b"
+	c.FieldDocsByKind["event"] = map[string]string{"type": "t"}
+	c.LocEnglishSites["a"] = LocSite{File: "x.yml", Line: 1}
+	if c.FieldDocs["k"] != "v" || c.LocEnglish["a"] != "b" {
+		t.Fatalf("nil maps not initialized: %+v", c)
+	}
+	if c.FieldDocsByKind["event"]["type"] != "t" || c.LocEnglishSites["a"].Line != 1 {
+		t.Fatalf("new maps not initialized: %+v", c)
+	}
+}
+
+func TestCachePathUsesWorkspaceID(t *testing.T) {
+	p, err := cachePath("ws-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(p) != "cache-ws-abc.json" {
+		t.Fatalf("cache path = %s, want cache-ws-abc.json", p)
+	}
+}
+
+func TestWorkspaceCacheFilesStayIndependent(t *testing.T) {
+	dir := t.TempDir()
+	a := &Cache{FormatVersion: CacheFormatVersion, WorkspaceID: "ws-a"}
+	b := &Cache{FormatVersion: CacheFormatVersion, WorkspaceID: "ws-b"}
+	if err := SaveCacheFile(filepath.Join(dir, "cache-ws-a.json"), a); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveCacheFile(filepath.Join(dir, "cache-ws-b.json"), b); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ck3-1.16.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := pruneLegacyCaches(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cache-ws-a.json")); err != nil {
+		t.Fatalf("ws-a cache missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cache-ws-b.json")); err != nil {
+		t.Fatalf("ws-b cache missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ck3-1.16.json")); !os.IsNotExist(err) {
+		t.Fatalf("legacy game-version cache still present")
 	}
 }

@@ -1,11 +1,12 @@
 // scopes.go ranks completion items; it never hides a candidate and never
-// produces diagnostics. Rank prefers structure keys of the enclosing definition
-// kind, then effects/triggers, then everything else.
+// produces diagnostics. Rank prefers structure keys of the enclosing kind,
+// then effects/triggers, then the rest.
 
 package lsp
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
@@ -13,13 +14,12 @@ import (
 	"paradox-modding-tools/services/internal/session"
 )
 
-// Rank reorders items in place. Unknown scope is a first-class outcome: items
-// stay, they just sort later.
-func Rank(s *session.Session, path, src string, offset int, items []CompletionItem) {
-	kind := enclosingKind(s, path, src, offset)
+// Rank reorders items in place. Every candidate stays visible.
+func Rank(s *session.Session, kind string, items []CompletionItem) {
+	c := s.Cache()
 	structSet := map[string]bool{}
 	effectSet := map[string]bool{}
-	if c := s.Cache(); c != nil {
+	if c != nil {
 		for _, k := range c.Structures[kind] {
 			structSet[k] = true
 		}
@@ -30,8 +30,8 @@ func Rank(s *session.Session, path, src string, offset int, items []CompletionIt
 			effectSet[k] = true
 		}
 	}
-	sort.SliceStable(items, func(i, j int) bool {
-		return rankOf(items[i].Label, structSet, effectSet) < rankOf(items[j].Label, structSet, effectSet)
+	slices.SortStableFunc(items, func(a, b CompletionItem) int {
+		return cmp.Compare(rankOf(a.Label, structSet, effectSet), rankOf(b.Label, structSet, effectSet))
 	})
 }
 
@@ -64,7 +64,7 @@ func enclosingKind(s *session.Session, path, src string, offset int) string {
 		return rule
 	}
 	if a, ok := chain[0].(*parser.Assignment); ok && !a.Key.Quoted {
-		if d := s.Resolve(a.Key.Text); d != nil {
+		if d := s.Resolve(a.Key.Text); d != nil && d.Type != "" && d.Type != "loc_key" {
 			return d.Type
 		}
 	}

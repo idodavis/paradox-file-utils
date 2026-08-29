@@ -4,8 +4,9 @@
 package graph
 
 import (
+	"cmp"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -233,9 +234,9 @@ func toGroups(groups map[string]map[string]DependencyItem) []DependencyGroup {
 		for _, it := range byItem {
 			items = append(items, it)
 		}
-		sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+		slices.SortFunc(items, func(a, b DependencyItem) int { return cmp.Compare(a.Name, b.Name) })
 		out = append(out, DependencyGroup{Kind: kind, Items: items})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Kind < out[j].Kind })
+	slices.SortFunc(out, func(a, b DependencyGroup) int { return cmp.Compare(a.Kind, b.Kind) })
 	return out
 }

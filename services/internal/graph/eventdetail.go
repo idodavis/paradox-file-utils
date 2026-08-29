@@ -1,13 +1,14 @@
 // eventdetail.go is the read-only inspector for one event: sections, options,
-// loc text, capped script lines, targets, refs, and simulation order. It does
-// not expose editor insertion fields.
+// loc text, capped script lines, targets, and refs. It does not expose editor
+// insertion fields.
 
 package graph
 
 import (
-	"strconv"
 	"strings"
 
+	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/model"
 	"paradox-modding-tools/services/internal/parser"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -62,6 +63,8 @@ func Detail(s *session.Session, id string) *EventDetail {
 	detail := &EventDetail{
 		ID:     id,
 		File:   d.Path,
+		Rel:    relOf(s, d.Path),
+		Origin: d.Origin,
 		Line:   lineOf(stmt.Key.Range.Start),
 		Fields: scalarFields(block, lineOf),
 	}
@@ -98,7 +101,6 @@ func Detail(s *session.Session, id string) *EventDetail {
 		}
 	}
 	detail.Refs = collectRefs(s, id, block, lineOf)
-	detail.SimSteps = simSteps(detail)
 	return detail
 }
 
@@ -108,16 +110,8 @@ func locField(s *session.Session, a *parser.Assignment) *EventLocField {
 		return &EventLocField{Dynamic: true}
 	}
 	f := &EventLocField{Key: sc.Text, Text: locValue(s, sc.Text)}
-	if d := lookupDef(s, sc.Text); d != nil && d.Type == "loc_key" && d.Origin != "" {
-		f.File = d.Path
-		f.Line = d.Line
-	} else if idx := s.Index(); idx != nil {
-		for _, d := range idx.Defs {
-			if d.Type == "loc_key" && d.Key == sc.Text {
-				f.File, f.Line = d.Path, d.Line
-				break
-			}
-		}
+	if hit := Lookup(s, sc.Text); hit != nil && hit.File != "" {
+		f.File, f.Line = hit.File, hit.Line
 	}
 	return f
 }
@@ -131,6 +125,11 @@ func scalarFields(block *parser.Block, lineOf func(int) int) []EventFieldInfo {
 		}
 		sc, ok := a.Value.(*parser.Scalar)
 		if !ok {
+			continue
+		}
+		key := strings.ToLower(a.Key.Text)
+		if key == "type" || key == "title" || key == "desc" || key == "flavor" ||
+			key == "hidden" || key == "theme" {
 			continue
 		}
 		byKey[a.Key.Text] = EventFieldInfo{
@@ -344,7 +343,7 @@ func collectTargets(s *session.Session, block *parser.Block, lineOf func(int) in
 			if vs, ok := st.(*parser.ValueStmt); ok {
 				if inherited != "" {
 					if sc, ok := vs.Value.(*parser.Scalar); ok && !sc.Quoted {
-						add(inherited, sc.Text, sc.Range.Start, fireKind(inherited))
+						add(inherited, sc.Text, sc.Range.Start, game.FireKind(inherited))
 					}
 				}
 				if inner := blockOf(vs.Value); inner != nil {
@@ -360,7 +359,7 @@ func collectTargets(s *session.Session, block *parser.Block, lineOf func(int) in
 			if !a.Key.Quoted {
 				key = strings.ToLower(a.Key.Text)
 			}
-			own := fireKind(a.Key.Text)
+			own := game.FireKind(a.Key.Text)
 			if own != "" {
 				if sc, ok := a.Value.(*parser.Scalar); ok && !sc.Quoted {
 					add(key, sc.Text, sc.Range.Start, own)
@@ -370,7 +369,7 @@ func collectTargets(s *session.Session, block *parser.Block, lineOf func(int) in
 			if inherited != "" {
 				if sc, ok := a.Value.(*parser.Scalar); ok && !sc.Quoted &&
 					(isDigits(key) || key == "id") {
-					add(inherited, sc.Text, sc.Range.Start, fireKind(inherited))
+					add(inherited, sc.Text, sc.Range.Start, game.FireKind(inherited))
 				}
 			}
 			if sub := blockOf(a.Value); sub != nil {
@@ -442,15 +441,17 @@ func collectRefs(s *session.Session, selfID string, block *parser.Block, lineOf 
 			return
 		}
 		ref := EventRefInfo{Name: name, Kind: kind, Line: lineOf(off)}
-		if d := lookupDef(s, name); d != nil {
-			ref.DefFile, ref.DefLine = d.Path, d.Line
+		if kind != "saved_scope" {
+			if d := lookupDef(s, name); d != nil {
+				ref.DefFile, ref.DefLine = d.Path, d.Line
+			}
 		}
 		refs[mk] = ref
 	}
 	scan := func(text string, off int, isKey bool) {
-		if m := scopePrefix.FindStringSubmatch(text); m != nil {
-			bare := strings.Split(m[2], ".")[0]
-			if m[1] == "scope" {
+		if p, ok := model.ParsePrefixed(text); ok {
+			bare := p.Name
+			if model.IsSavedScopePrefix(p) {
 				add("saved_scope", bare, off)
 			} else {
 				add("variable", bare, off)
@@ -505,87 +506,4 @@ func collectRefs(s *session.Session, selfID string, block *parser.Block, lineOf 
 		out = append(out, r)
 	}
 	return out
-}
-
-func simSteps(detail *EventDetail) []SimStep {
-	steps := []SimStep{}
-	named := func(name string) *EventSectionInfo {
-		for i := range detail.Sections {
-			if strings.EqualFold(detail.Sections[i].Name, name) {
-				return &detail.Sections[i]
-			}
-		}
-		return nil
-	}
-	push := func(name, kind, title, absent string) {
-		sec := named(name)
-		if sec == nil {
-			if absent != "" {
-				steps = append(steps, SimStep{
-					Kind: kind, Title: title, Line: detail.Line, Note: absent,
-				})
-			}
-			return
-		}
-		note := ""
-		if sec.TotalLines == 0 {
-			note = "(empty block)"
-		}
-		steps = append(steps, SimStep{
-			Kind: kind, Title: title, Line: sec.Line, Note: note,
-			Lines: sec.Lines, Hidden: max(0, sec.TotalLines-len(sec.Lines)),
-			Targets: sec.Targets, HiddenTargets: max(0, sec.TargetsTotal-len(sec.Targets)),
-		})
-	}
-	push("trigger", "trigger", "TRIGGER", "(no trigger: fires whenever it is called)")
-	push("cancellation_trigger", "cancellation_trigger", "CANCELLATION TRIGGER", "")
-	push("on_trigger_fail", "on_trigger_fail", "ON TRIGGER FAIL", "")
-	push("immediate", "immediate", "IMMEDIATE", "")
-	for i, opt := range detail.Options {
-		label := string(rune('A' + i))
-		if i >= 26 {
-			label = "#" + strconv.Itoa(i+1)
-		}
-		sub := "(unnamed option)"
-		if opt.Name != nil {
-			switch {
-			case opt.Name.Dynamic:
-				sub = "(dynamic name, resolved in game)"
-			case opt.Name.Text != "":
-				sub = opt.Name.Text
-			case opt.Name.Key != "":
-				sub = opt.Name.Key + " (no localization)"
-			}
-		}
-		note := ""
-		if opt.TotalLines == 0 {
-			note = "(no effects: the option only closes the event)"
-		}
-		steps = append(steps, SimStep{
-			Kind: "option", Title: "OPTION " + label, Subtitle: sub,
-			Line: opt.Line, Note: note, Lines: opt.Lines,
-			Hidden:  max(0, opt.TotalLines-len(opt.Lines)),
-			Targets: opt.Targets, HiddenTargets: max(0, opt.TargetsTotal-len(opt.Targets)),
-		})
-	}
-	push("after", "after", "AFTER", "")
-	known := map[string]bool{
-		"trigger": true, "cancellation_trigger": true, "on_trigger_fail": true,
-		"immediate": true, "after": true,
-	}
-	for _, sec := range detail.Sections {
-		if known[strings.ToLower(sec.Name)] {
-			continue
-		}
-		note := ""
-		if sec.TotalLines == 0 {
-			note = "(empty block)"
-		}
-		steps = append(steps, SimStep{
-			Kind: "other", Title: strings.ToUpper(sec.Name), Line: sec.Line, Note: note,
-			Lines: sec.Lines, Hidden: max(0, sec.TotalLines-len(sec.Lines)),
-			Targets: sec.Targets, HiddenTargets: max(0, sec.TargetsTotal-len(sec.Targets)),
-		})
-	}
-	return steps
 }

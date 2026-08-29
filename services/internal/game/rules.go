@@ -6,7 +6,10 @@
 
 package game
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // ExtractMode names how definition keys are read out of a file.
 type ExtractMode string
@@ -30,7 +33,7 @@ type ExtractRule struct {
 func MatchExtract(gameID, relPath string) ExtractRule {
 	segs := pathSegments(relPath)
 	segs = stripStageRoot(gameID, segs)
-	if containsSeg(segs, "localization") {
+	if slices.Contains(segs, "localization") {
 		return ExtractRule{Kind: "loc_key", Mode: ModeLocKey}
 	}
 	if isModFile(relPath) {
@@ -38,7 +41,7 @@ func MatchExtract(gameID, relPath string) ExtractRule {
 	}
 	parent := parentFolder(segs)
 	switch {
-	case parent == "events" || containsSeg(segs, "events"):
+	case parent == "events" || slices.Contains(segs, "events"):
 		return ExtractRule{Kind: "event", Mode: ModeEventID}
 	case parent == "gui" || strings.HasSuffix(strings.ToLower(relPath), ".gui"):
 		return ExtractRule{Kind: "gui_type", Mode: ModeGUIType}
@@ -83,17 +86,36 @@ var fiosKinds = map[string]bool{
 // IsFIOS reports whether kind resolves overrides first-in wins (vs last-in).
 func IsFIOS(kind string) bool { return fiosKinds[kind] }
 
-// defaultRootScope is the implicit event root scope per game (used by scope
-// inference). Kept minimal; expanded as scope grammar lands.
-var defaultRootScope = map[string]string{
-	"ck3":  "character",
-	"vic3": "country",
-	"eu5":  "country",
+// ScopePrefix is the saved-scope qualifier (`scope:target`).
+const ScopePrefix = "scope"
+
+var saveScopeKeys = map[string]bool{
+	"save_scope_as":           true,
+	"save_temporary_scope_as": true,
+	"save_temporary_value_as": true,
 }
 
-// DefaultRootScope returns the implicit root scope type for events in gameID.
-func DefaultRootScope(gameID string) string {
-	return defaultRootScope[gameID]
+var saveScopeValueKeys = map[string]bool{
+	"save_scope_value_as":           true,
+	"save_temporary_scope_value_as": true,
+}
+
+// IsSaveScopeKey reports a scalar `save_*_scope_as = name` (or value_as) site.
+func IsSaveScopeKey(key string) bool { return saveScopeKeys[key] }
+
+// IsSaveScopeValueKey reports a block `save_*_scope_value_as = { name = X }`.
+func IsSaveScopeValueKey(key string) bool { return saveScopeValueKeys[key] }
+
+// FireKind reports whether key is an event or on_action fire site.
+func FireKind(key string) string {
+	switch strings.ToLower(key) {
+	case "trigger_event", "events", "random_events", "first_valid", "fallback":
+		return "event"
+	case "on_action", "on_actions":
+		return "on_action"
+	default:
+		return ""
+	}
 }
 
 // KeyIdentity canonicalizes a raw key for matching/merge: trims whitespace and
@@ -155,15 +177,6 @@ func parentFolder(segs []string) string {
 		return segs[len(segs)-2]
 	}
 	return ""
-}
-
-func containsSeg(segs []string, name string) bool {
-	for _, s := range segs {
-		if s == name {
-			return true
-		}
-	}
-	return false
 }
 
 // stripStageRoot drops a leading EU5 stage-root segment (in_game, etc.) so extract

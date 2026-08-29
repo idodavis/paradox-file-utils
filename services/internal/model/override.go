@@ -1,7 +1,8 @@
 // override.go is the ONLY place that decides which definition of a key wins when
 // several declare it. Most kinds use LIOS (last mod in load order wins); a few
 // (gui_type) use FIOS (first mod wins). Vanilla always loses to any mod. Overrides
-// reports every contested key for the conflict monitor.
+// reports contested keys for the conflict monitor: mod-vs-mod rows and quieter
+// vanilla-overlay rows (one mod plus vanilla).
 
 package model
 
@@ -11,17 +12,20 @@ import "paradox-modding-tools/services/internal/game"
 type OverrideSite struct {
 	Origin string `json:"origin"` // "" = vanilla
 	File   string `json:"file"`
+	Rel    string `json:"rel,omitempty"`
 	Line   int    `json:"line"`
 }
 
-// OverrideRow is one contested key: its kind/name, the resolution rule, the winning
-// origin, and every site that defines it.
+// OverrideRow is one contested (kind, key): resolution rule, winning origin, and
+// every site that defines it. Overlay is true when exactly one mod shadows vanilla.
 type OverrideRow struct {
-	Kind   string         `json:"kind"`
-	Name   string         `json:"name"`
-	Rule   string         `json:"rule"` // "FIOS" | "LIOS"
-	Winner string         `json:"winner"`
-	Sites  []OverrideSite `json:"sites"`
+	Kind     string         `json:"kind"`
+	Name     string         `json:"name"`
+	Rule     string         `json:"rule"` // "FIOS" | "LIOS"
+	Winner   string         `json:"winner"`
+	Sites    []OverrideSite `json:"sites"`
+	Overlay  bool           `json:"overlay,omitempty"`
+	ModCount int            `json:"modCount,omitempty"`
 }
 
 // Winner picks the effective definition of a single key from all its declarations.
@@ -59,27 +63,45 @@ func Winner(defs []Def, order map[string]int) *Def {
 	return &w
 }
 
-// Overrides returns one row per key defined by more than one origin (mods, or a mod
-// plus vanilla), each resolved through Winner.
+// Overrides returns one row per (kind, key) defined by two or more mods, plus
+// quieter overlay rows for a single mod shadowing vanilla. Loc keys are skipped.
 func Overrides(idx *Index, cache *Cache) []OverrideRow {
 	order := orderMap(idx.Order)
-	byKey := map[string][]Def{}
+	by := map[string][]Def{}
 	for _, d := range idx.Defs {
-		byKey[d.Key] = append(byKey[d.Key], d)
+		if d.Type == "loc_key" {
+			continue
+		}
+		k := d.Type + "\x00" + d.Key
+		by[k] = append(by[k], d)
 	}
 	vanilla := map[string][]Def{}
 	if cache != nil {
 		for _, d := range cache.Defs {
-			if _, contested := byKey[d.Key]; contested {
-				vanilla[d.Key] = append(vanilla[d.Key], d)
+			if d.Type == "loc_key" {
+				continue
+			}
+			k := d.Type + "\x00" + d.Key
+			if _, ok := by[k]; ok {
+				vanilla[k] = append(vanilla[k], d)
 			}
 		}
 	}
 
 	var rows []OverrideRow
-	for key, defs := range byKey {
-		all := append(append([]Def{}, defs...), vanilla[key]...)
-		if len(all) < 2 {
+	for k, defs := range by {
+		all := append(append([]Def{}, defs...), vanilla[k]...)
+		modOrigins := map[string]bool{}
+		hasVanilla := false
+		for _, d := range all {
+			if d.Origin == "" {
+				hasVanilla = true
+			} else {
+				modOrigins[d.Origin] = true
+			}
+		}
+		overlay := len(modOrigins) == 1 && hasVanilla
+		if len(modOrigins) < 2 && !overlay {
 			continue
 		}
 		w := Winner(all, order)
@@ -94,7 +116,15 @@ func Overrides(idx *Index, cache *Cache) []OverrideRow {
 		for _, d := range all {
 			sites = append(sites, OverrideSite{Origin: d.Origin, File: d.Path, Line: d.Line})
 		}
-		rows = append(rows, OverrideRow{Kind: w.Type, Name: key, Rule: rule, Winner: w.Origin, Sites: sites})
+		rows = append(rows, OverrideRow{
+			Kind:     w.Type,
+			Name:     w.Key,
+			Rule:     rule,
+			Winner:   w.Origin,
+			Sites:    sites,
+			Overlay:  overlay,
+			ModCount: len(modOrigins),
+		})
 	}
 	return rows
 }

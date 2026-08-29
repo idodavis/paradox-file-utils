@@ -24,5 +24,5 @@ export type {
     LocCoverage,
     LocIssue,
     LocLookup,
-    SimStep
+    SuggestionItem
 } from "./models.js";

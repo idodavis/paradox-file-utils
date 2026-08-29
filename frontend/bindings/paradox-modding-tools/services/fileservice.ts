@@ -80,10 +80,16 @@ export function RenamePath(oldPath: string, newPath: string): $CancellablePromis
     return $Call.ByID(1727956732, oldPath, newPath);
 }
 
+/**
+ * SelectDirectory prompts for a folder. Cancel yields an empty path (no error).
+ */
 export function SelectDirectory(title: string): $CancellablePromise<string> {
     return $Call.ByID(421942968, title);
 }
 
+/**
+ * SelectSingleFile prompts for a file. Cancel yields an empty path (no error).
+ */
 export function SelectSingleFile(title: string, filter: string): $CancellablePromise<string> {
     return $Call.ByID(430312767, title, filter);
 }

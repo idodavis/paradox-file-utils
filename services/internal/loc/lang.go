@@ -22,3 +22,11 @@ func LanguageFromFilename(path string) string {
 	}
 	return ""
 }
+
+// LanguageOf returns the loc language from the filename, else the parsed header.
+func LanguageOf(path, parsedLang string) string {
+	if l := LanguageFromFilename(path); l != "" {
+		return l
+	}
+	return strings.ToLower(parsedLang)
+}

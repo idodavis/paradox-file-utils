@@ -21,7 +21,6 @@ export type {
     FileCollectorFilter,
     FileMergeResult,
     LanguageHealth,
-    MergePreset,
     MergerOptions,
     ModelStatus,
     PatchRunPreview,

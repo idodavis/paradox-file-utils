@@ -4,6 +4,7 @@
 export type {
     Cache,
     Def,
+    LocSite,
     OverrideRow,
     OverrideSite
 } from "./models.js";

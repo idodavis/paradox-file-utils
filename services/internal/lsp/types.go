@@ -35,10 +35,14 @@ type Diagnostic struct {
 	Code     string `json:"code,omitempty"`
 }
 
-// HoverResult is hover card text.
+// HoverResult is hover card text. Origin/rel/line/rootPath describe the def site.
 type HoverResult struct {
 	Contents string `json:"contents"`
 	Range    *Range `json:"range,omitempty"`
+	Origin   string `json:"origin,omitempty"`
+	Rel      string `json:"rel,omitempty"`
+	Line     int    `json:"line,omitempty"`
+	RootPath string `json:"rootPath,omitempty"`
 }
 
 // CompletionItem is one completion suggestion. Kind uses LSP CompletionItemKind.
@@ -73,26 +77,10 @@ type FoldingRange struct {
 	EndLine   int `json:"endLine"`
 }
 
-// SemanticSpan is one highlighted token in UTF-8 columns.
-type SemanticSpan struct {
-	Line     int    `json:"line"`
-	StartCol int    `json:"startCol"`
-	Length   int    `json:"length"`
-	Type     string `json:"type"`
-}
-
 // SignatureHelp is a call-signature tooltip.
 type SignatureHelp struct {
 	Label         string `json:"label"`
 	Documentation string `json:"documentation,omitempty"`
-}
-
-// InlayHint is a loc-value preview or scope label.
-type InlayHint struct {
-	Line      int    `json:"line"`
-	Character int    `json:"character"`
-	Label     string `json:"label"`
-	Kind      int    `json:"kind,omitempty"`
 }
 
 // CodeAction is a quick-fix.
@@ -135,7 +123,8 @@ func offsetOf(src string, line, col int) int {
 	return parser.NewLineIndex(src).OffsetAt(line, col)
 }
 
-// wordAt returns the identifier covering offset, or ("", 0, 0).
+// wordAt returns the identifier covering offset. An empty span keeps the
+// offset (not 0, 0) so callers do not treat "no word" as a prefix from byte 0.
 func wordAt(src string, offset int) (word string, start, end int) {
 	if offset < 0 {
 		offset = 0
@@ -151,7 +140,7 @@ func wordAt(src string, offset int) (word string, start, end int) {
 		end++
 	}
 	if start == end {
-		return "", 0, 0
+		return "", start, end
 	}
 	return src[start:end], start, end
 }
@@ -207,18 +196,7 @@ func sourceFor(path string) string {
 
 // locValue looks up an english loc string in the workspace, then vanilla.
 func locValue(s *session.Session, key string) (string, bool) {
-	idx := s.Index()
-	if idx != nil {
-		if v, ok := idx.Loc[key]; ok {
-			return v, true
-		}
-	}
-	if c := s.Cache(); c != nil && c.LocEnglish != nil {
-		if v, ok := c.LocEnglish[key]; ok {
-			return v, true
-		}
-	}
-	return "", false
+	return s.EnglishLoc(key)
 }
 
 func locDefined(s *session.Session, key string) bool {
@@ -273,3 +251,24 @@ func lowerPrefix(s, prefix string) bool {
 }
 
 func parseLoc(src string) loc.Result { return loc.Parse(src) }
+
+func assignmentBlock(a *parser.Assignment) *parser.Block {
+	switch v := a.Value.(type) {
+	case *parser.Block:
+		return v
+	case *parser.TaggedBlock:
+		return &v.Block
+	default:
+		return nil
+	}
+}
+
+// inComment reports whether offset falls inside a `#` comment span.
+func inComment(res parser.Result, off int) bool {
+	for _, c := range res.Comments {
+		if off >= c.Range.Start && off < c.Range.End {
+			return true
+		}
+	}
+	return false
+}

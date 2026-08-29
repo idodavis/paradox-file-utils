@@ -4,9 +4,10 @@
 package graph
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"paradox-modding-tools/services/internal/loc"
@@ -78,7 +79,7 @@ func Coverage(s *session.Session) []LocCoverage {
 	for lang := range byLang {
 		langs = append(langs, lang)
 	}
-	sort.Strings(langs)
+	slices.Sort(langs)
 
 	out := make([]LocCoverage, 0, len(langs))
 	for _, lang := range langs {
@@ -91,7 +92,7 @@ func Coverage(s *session.Session) []LocCoverage {
 			if len(row.Missing) >= issueCap {
 				break
 			}
-			row.Missing = append(row.Missing, LocIssue{Key: key, File: site.file, Line: site.line})
+			row.Missing = append(row.Missing, locIssue(s, site, ""))
 		}
 		for key, site := range entries {
 			if _, ok := referenced[key]; ok || inherited(key) {
@@ -100,7 +101,7 @@ func Coverage(s *session.Session) []LocCoverage {
 			if len(row.Orphaned) >= issueCap {
 				break
 			}
-			row.Orphaned = append(row.Orphaned, LocIssue{Key: key, File: site.file, Line: site.line})
+			row.Orphaned = append(row.Orphaned, locIssue(s, site, ""))
 		}
 		if lang != "english" {
 			for key, site := range entries {
@@ -116,9 +117,7 @@ func Coverage(s *session.Session) []LocCoverage {
 				if len(row.Untranslated) >= issueCap {
 					break
 				}
-				row.Untranslated = append(row.Untranslated, LocIssue{
-					Key: key, File: site.file, Line: site.line, Value: src.value,
-				})
+				row.Untranslated = append(row.Untranslated, locIssue(s, site, src.value))
 			}
 		}
 		sortIssues(row.Missing)
@@ -130,7 +129,15 @@ func Coverage(s *session.Session) []LocCoverage {
 }
 
 func sortIssues(is []LocIssue) {
-	sort.Slice(is, func(i, j int) bool { return is[i].Key < is[j].Key })
+	slices.SortFunc(is, func(a, b LocIssue) int { return cmp.Compare(a.Key, b.Key) })
+}
+
+func locIssue(s *session.Session, site locSite, value string) LocIssue {
+	origin, _, _ := s.Locate(site.file)
+	return LocIssue{
+		Key: site.key, File: site.file, Rel: relOf(s, site.file),
+		Line: site.line, Value: value, Origin: origin,
+	}
 }
 
 func collectModLoc(root string, byLang map[string]map[string]locSite) {
@@ -143,15 +150,14 @@ func collectModLoc(root string, byLang map[string]map[string]locSite) {
 		if !strings.HasSuffix(lower, ".yml") && !strings.HasSuffix(lower, ".yaml") {
 			return nil
 		}
-		lang := loc.LanguageFromFilename(p)
-		if lang == "" {
-			return nil
-		}
-		raw, err := os.ReadFile(p)
+		r, err := loc.ParseFile(p)
 		if err != nil {
 			return nil
 		}
-		r := loc.Parse(string(raw))
+		lang := loc.LanguageOf(p, r.Language)
+		if lang == "" {
+			return nil
+		}
 		entries := byLang[lang]
 		if entries == nil {
 			entries = map[string]locSite{}
@@ -188,9 +194,14 @@ func Lookup(s *session.Session, key string) *LocLookup {
 	}
 	if w := model.Winner(defs, order); w != nil {
 		hit.File, hit.Line, hit.Origin = w.Path, w.Line, w.Origin
+	} else if c := s.Cache(); c != nil && c.LocEnglishSites != nil {
+		if site, ok := c.LocEnglishSites[key]; ok {
+			hit.File, hit.Line, hit.Origin = site.File, site.Line, "vanilla"
+		}
 	}
 	if hit.Text == "" && hit.File == "" {
 		return nil
 	}
+	hit.Rel = relOf(s, hit.File)
 	return hit
 }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/repos"
 
 	"github.com/google/uuid"
@@ -202,12 +203,11 @@ func (p *PatcherService) resolveTargetPath(repo *repos.PatchRepository, run *rep
 		return "", fmt.Errorf("get target install: %w", err)
 	}
 
-	scriptRoot, err := repo.GetGameScriptRoot(gameID)
-	if err != nil {
-		return "", fmt.Errorf("get game: %w", err)
+	info := game.Get(gameID)
+	if info == nil {
+		return "", fmt.Errorf("unknown game %s", gameID)
 	}
-
-	return filepath.Join(instPath, scriptRoot), nil
+	return filepath.Join(instPath, info.ScriptRoot), nil
 }
 
 // ListPatchRuns returns all patch runs for a workspace.

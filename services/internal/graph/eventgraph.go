@@ -5,10 +5,12 @@
 package graph
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strconv"
 	"strings"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/model"
 	"paradox-modding-tools/services/internal/parser"
 	"paradox-modding-tools/services/internal/session"
@@ -49,7 +51,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 	}
 
 	defsByFile := map[string][]fileDef{}
-	vocabulary := map[string]bool{}
+	vocabulary := map[string]string{} // id -> origin (mod wins over vanilla)
 	effectSet := map[string]bool{}
 	addDef := func(d model.Def) {
 		if isEffectKind(d.Type) {
@@ -59,13 +61,23 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 		if gk == "" && !isEffectKind(d.Type) {
 			return
 		}
-		if d.Origin == "" || !inFocus(s, d.Path, params.ModRoot) {
+		if d.Origin == "" {
+			if params.ModRoot != "" {
+				return
+			}
+		} else if !inFocus(s, d.Path, params.ModRoot) {
 			return
 		}
 		key := strings.ToLower(d.Path)
 		defsByFile[key] = append(defsByFile[key], fileDef{d.Key, d.Type, d.Line})
-		if gk != "" {
-			vocabulary[d.Key] = true
+		if gk == "" {
+			return
+		}
+		if prev, ok := vocabulary[d.Key]; !ok || prev == "" {
+			vocabulary[d.Key] = d.Origin
+		}
+		if d.Origin != "" {
+			vocabulary[d.Key] = d.Origin
 		}
 	}
 	for _, d := range idx.Defs {
@@ -73,13 +85,11 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 	}
 	if c := s.Cache(); c != nil {
 		for _, d := range c.Defs {
-			if isEffectKind(d.Type) {
-				effectSet[d.Key] = true
-			}
+			addDef(d)
 		}
 	}
 	for _, list := range defsByFile {
-		sort.Slice(list, func(i, j int) bool { return list[i].line < list[j].line })
+		slices.SortFunc(list, func(a, b fileDef) int { return cmp.Compare(a.line, b.line) })
 	}
 	// Re-sort after possible duplicate appends of effect defs.
 	for k, list := range defsByFile {
@@ -93,7 +103,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 			seen[id] = true
 			out = append(out, d)
 		}
-		sort.Slice(out, func(i, j int) bool { return out[i].line < out[j].line })
+		slices.SortFunc(out, func(a, b fileDef) int { return cmp.Compare(a.line, b.line) })
 		defsByFile[k] = out
 	}
 
@@ -127,14 +137,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 
 	parsed := map[string]parser.Result{}
 	for path := range defsByFile {
-		// defsByFile keys are lowercased; recover a real path from the first def.
-		real := ""
-		for _, d := range idx.Defs {
-			if strings.EqualFold(d.Path, path) {
-				real = d.Path
-				break
-			}
-		}
+		real := defPath(s, path)
 		if real == "" {
 			continue
 		}
@@ -159,7 +162,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 			if effectSet[key] && from.name != key {
 				addCall(from.name, key, site{real, line, char})
 			}
-			if fk := fireKind(key); fk != "" {
+			if fk := game.FireKind(key); fk != "" {
 				eachTarget(a.Value, fk, func(to string, start int) {
 					pos := li.PositionAt(start)
 					e := rawEdge{
@@ -179,7 +182,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 	}
 
 	for from, firstHop := range effectCalls {
-		if !vocabulary[from] {
+		if _, ok := vocabulary[from]; !ok {
 			continue
 		}
 		visited := map[string]bool{}
@@ -272,7 +275,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 		for id := range ids {
 			sorted = append(sorted, id)
 		}
-		sort.Strings(sorted)
+		slices.Sort(sorted)
 		for _, id := range sorted {
 			if len(selected) >= maxNodes {
 				truncated = true
@@ -320,7 +323,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 			n.Line = d.Line
 		}
 		n.Title = titleOf(s, id)
-		if d != nil && d.Origin != "" && inFocus(s, d.Path, params.ModRoot) {
+		if d != nil && inFocus(s, d.Path, params.ModRoot) {
 			fm := factsCache[d.Path]
 			if fm == nil {
 				fm = fileFacts(s, d.Path)
@@ -346,11 +349,11 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 		}
 		nodes = append(nodes, n)
 	}
-	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
+	slices.SortFunc(nodes, func(a, b EventGraphNode) int { return cmp.Compare(a.ID, b.ID) })
 
 	g := EventGraph{
 		Nodes: nodes, Edges: outEdges, Truncated: truncated,
-		Suggestions: suggestionsOf(vocabulary),
+		Suggestions: suggestionsOf(vocabulary, params.Namespace),
 	}
 	if len(nodes) == 0 {
 		g.EmptyReason = emptyReason(s, params)
@@ -363,6 +366,25 @@ func lookupDef(s *session.Session, key string) *model.Def {
 		return d
 	}
 	return model.LookupVanillaDef(s.Cache(), key)
+}
+
+func defPath(s *session.Session, path string) string {
+	idx := s.Index()
+	if idx != nil {
+		for _, d := range idx.Defs {
+			if strings.EqualFold(d.Path, path) {
+				return d.Path
+			}
+		}
+	}
+	if c := s.Cache(); c != nil {
+		for _, d := range c.Defs {
+			if strings.EqualFold(d.Path, path) {
+				return d.Path
+			}
+		}
+	}
+	return ""
 }
 
 func eachTarget(v parser.Value, kind string, fn func(name string, start int)) {
@@ -389,11 +411,11 @@ func eachTarget(v parser.Value, kind string, fn func(name string, start int)) {
 				key := strings.ToLower(n.Key.Text)
 				if sc, ok := n.Value.(*parser.Scalar); ok && !sc.Quoted &&
 					targetNameRe.MatchString(sc.Text) &&
-					(key == "id" || isDigits(key) || fireKind(n.Key.Text) != "") {
+					(key == "id" || isDigits(key) || game.FireKind(n.Key.Text) != "") {
 					fn(sc.Text, sc.Range.Start)
 					continue
 				}
-				if fireKind(n.Key.Text) != "" || key == "id" || isDigits(key) {
+				if game.FireKind(n.Key.Text) != "" || key == "id" || isDigits(key) {
 					eachTarget(n.Value, kind, fn)
 				}
 			}
@@ -675,23 +697,44 @@ func resolveSteps(s *session.Session, steps []defStep) []EventGraphStep {
 	return out
 }
 
-func suggestionsOf(vocab map[string]bool) EventGraphSuggestions {
-	ids := make([]string, 0, len(vocab))
-	for id := range vocab {
-		ids = append(ids, id)
+func suggestionsOf(vocab map[string]string, namespace string) EventGraphSuggestions {
+	ids := make([]SuggestionItem, 0, len(vocab))
+	for id, origin := range vocab {
+		if namespace != "" && !strings.HasPrefix(id, namespace+".") {
+			continue
+		}
+		ids = append(ids, SuggestionItem{ID: id, Origin: origin})
 	}
-	sort.Strings(ids)
-	ns := map[string]bool{}
-	for _, id := range ids {
-		if i := strings.IndexByte(id, '.'); i > 0 {
-			ns[id[:i]] = true
+	slices.SortFunc(ids, func(a, b SuggestionItem) int {
+		if n := cmp.Compare(a.ID, b.ID); n != 0 {
+			return n
+		}
+		return cmp.Compare(a.Origin, b.Origin)
+	})
+	nsSeen := map[string]map[string]bool{}
+	for id, origin := range vocab {
+		dot := strings.IndexByte(id, '.')
+		if dot <= 0 {
+			continue
+		}
+		n := id[:dot]
+		if nsSeen[n] == nil {
+			nsSeen[n] = map[string]bool{}
+		}
+		nsSeen[n][origin] = true
+	}
+	namespaces := make([]SuggestionItem, 0)
+	for n, origins := range nsSeen {
+		for origin := range origins {
+			namespaces = append(namespaces, SuggestionItem{ID: n, Origin: origin})
 		}
 	}
-	namespaces := make([]string, 0, len(ns))
-	for n := range ns {
-		namespaces = append(namespaces, n)
-	}
-	sort.Strings(namespaces)
+	slices.SortFunc(namespaces, func(a, b SuggestionItem) int {
+		if n := cmp.Compare(a.ID, b.ID); n != 0 {
+			return n
+		}
+		return cmp.Compare(a.Origin, b.Origin)
+	})
 	if len(ids) > maxSuggestions {
 		ids = ids[:maxSuggestions]
 	}
@@ -722,9 +765,6 @@ func emptyReason(s *session.Session, params EventGraphParams) string {
 				return what + " exists in another workspace mod, outside the current focus."
 			}
 		}
-	}
-	if v := model.LookupVanillaDef(s.Cache(), params.Root); v != nil && graphKind(v.Type) != "" {
-		return what + " is vanilla content. The graph shows workspace mods only."
 	}
 	return ""
 }

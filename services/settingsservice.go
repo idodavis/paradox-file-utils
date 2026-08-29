@@ -2,10 +2,11 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
+	"paradox-modding-tools/services/internal/model"
 	"paradox-modding-tools/services/internal/repos"
 
 	"github.com/jmoiron/sqlx"
@@ -29,6 +30,9 @@ func (s *SettingsService) GetVersion() string {
 
 func (s *SettingsService) CheckForUpdates() {
 	app := application.Get()
+	if app == nil {
+		return
+	}
 	if err := app.Updater.CheckAndInstall(context.Background()); err != nil {
 		app.Logger.Error("update", "error", err)
 	}
@@ -69,49 +73,7 @@ func (s *SettingsService) SaveSettings(settings map[string]string) error {
 	return nil
 }
 
-// MergePreset holds a named merge options profile (JSON-safe for bindings)
-type MergePreset struct {
-	Name    string        `json:"name"`
-	Options MergerOptions `json:"options"`
-}
-
-// GetMergePresets returns saved merge presets from app_settings.
-func (s *SettingsService) GetMergePresets() ([]MergePreset, error) {
-	settings, err := s.getRepo().GetMergePresets()
-	if err != nil {
-		return nil, err
-	}
-	var presets []MergePreset
-	for _, setting := range settings {
-		name := strings.TrimPrefix(setting.Key, "merge_preset_")
-		var opt MergerOptions
-		if err := json.Unmarshal([]byte(setting.Value), &opt); err != nil {
-			continue
-		}
-		presets = append(presets, MergePreset{Name: name, Options: opt})
-	}
-	return presets, nil
-}
-
-// SaveMergePreset saves a merge preset by name.
-func (s *SettingsService) SaveMergePreset(name string, options MergerOptions) error {
-	if name == "" {
-		return fmt.Errorf("preset name required")
-	}
-	key := "merge_preset_" + name
-	val, err := json.Marshal(options)
-	if err != nil {
-		return err
-	}
-	return s.getRepo().UpsertSetting("_global", key, string(val))
-}
-
-// DeleteMergePreset removes a preset by name.
-func (s *SettingsService) DeleteMergePreset(name string) error {
-	return s.getRepo().DeleteMergePreset("merge_preset_" + name)
-}
-
-// ResetData wipes user data (workspaces, mods, installs, runs) but keeps games and app_settings.
+// ResetData wipes workspaces, mods, installs, patch runs, and the semantic cache.
 func (s *SettingsService) ResetData() error {
 	if s.DB == nil {
 		return fmt.Errorf("database not initialized")
@@ -124,6 +86,13 @@ func (s *SettingsService) ResetData() error {
 		if _, err := s.DB.Exec(`DELETE FROM ` + t); err != nil {
 			return fmt.Errorf("delete %s: %w", t, err)
 		}
+	}
+	dir, err := model.CacheDir()
+	if err != nil {
+		return fmt.Errorf("cache dir: %w", err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("wipe cache: %w", err)
 	}
 	return nil
 }

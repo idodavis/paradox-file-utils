@@ -17,26 +17,12 @@ import {
   Rename,
   FormatDocument,
   FoldingRanges,
-  SemanticTokens,
-  InlayHints,
   SignatureHelp,
   CodeActions,
 } from "@services/languagemodelservice";
-import type { WorkspaceEdit as LspWorkspaceEdit } from "@services/internal/lsp/models";
+import type { WorkspaceEdit as LspWorkspaceEdit, Location as LspLocation, HoverResult } from "@services/internal/lsp/models";
 
 const LANGS = ["paradox", "paradox-gui", "paradox-loc", "paradox-info", "paradox-mod"];
-
-const TOKEN_TYPES: string[] = [
-  "comment",
-  "string",
-  "number",
-  "property",
-  "keyword",
-  "variable",
-  "operator",
-  "type",
-  "parameter",
-];
 
 function pathOf(doc: vscode.TextDocument): string {
   return doc.uri.fsPath;
@@ -99,6 +85,23 @@ function safeLine(doc: vscode.TextDocument, line: number): string {
   return doc.lineAt(line).text;
 }
 
+/** Plaintext hover card: Go contents plus origin · rel:line. */
+function hoverText(h: HoverResult): string {
+  const site = hoverSiteLine(h);
+  const body = h.contents ?? "";
+  return site ? `${body}\n\n${site}` : body;
+}
+
+/** Location line from Go origin + rel (1-based line). */
+function hoverSiteLine(h: HoverResult): string {
+  const origin = h.origin ?? "";
+  const rel = h.rel ?? "";
+  if (!origin && !rel) return "";
+  const label = origin || "vanilla";
+  if (!rel) return label;
+  return `${label} · ${rel}:${(h.line ?? 0) + 1}`;
+}
+
 function applyWorkspaceEdit(
   doc: vscode.TextDocument | undefined,
   edit: LspWorkspaceEdit,
@@ -133,6 +136,25 @@ async function openDoc(uri: string): Promise<vscode.TextDocument | undefined> {
   }
 }
 
+/** Map Go locations onto VS Code docs; skip sites whose file cannot be opened. */
+async function locationsFromGo(
+  locs: LspLocation[],
+  fallback?: vscode.TextDocument,
+): Promise<vscode.Location[]> {
+  const out: vscode.Location[] = [];
+  for (const l of locs) {
+    const uri = uriToVsCode(l.uri);
+    const same =
+      fallback &&
+      uri.fsPath.replace(/\\/g, "/").toLowerCase() ===
+        fallback.uri.fsPath.replace(/\\/g, "/").toLowerCase();
+    const target = (await openDoc(l.uri)) ?? (same ? fallback : undefined);
+    if (!target) continue;
+    out.push(new vscode.Location(uri, rangeToVsCode(target, l.range)));
+  }
+  return out;
+}
+
 /** Register the same provider factory for every PMT language id. */
 function registerLangProviders(
   subs: vscode.Disposable[],
@@ -150,8 +172,6 @@ export function registerLanguageClient(
   subs.push(diag);
 
   const changeTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const tokenTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const tokenAbort = new Map<string, AbortController>();
   const syncOpen = (doc: vscode.TextDocument) => {
     const id = getWorkspaceId();
     if (!id || !LANGS.includes(doc.languageId)) return;
@@ -207,7 +227,7 @@ export function registerLanguageClient(
         const p = positionUtf8(doc, pos);
         const h = await Hover(id, pathOf(doc), p.line, p.character);
         if (!h?.contents) return null;
-        return new vscode.Hover(h.contents);
+        return new vscode.Hover(hoverText(h));
       },
     }),
   );
@@ -215,12 +235,13 @@ export function registerLanguageClient(
     vscode.languages.registerCompletionItemProvider(
       lang,
       {
-        async provideCompletionItems(doc, pos) {
+        async provideCompletionItems(doc, pos, token) {
           const id = getWorkspaceId();
-          if (!id) return [];
+          if (!id || token?.isCancellationRequested) return undefined;
           const p = positionUtf8(doc, pos);
           const items =
             (await Complete(id, pathOf(doc), p.line, p.character)) ?? [];
+          if (token?.isCancellationRequested) return undefined;
           return items.map((it) => {
             const c = new vscode.CompletionItem(
               it.label,
@@ -232,7 +253,6 @@ export function registerLanguageClient(
         },
       },
       ".",
-      " ",
       "[",
       ":",
     ),
@@ -245,14 +265,7 @@ export function registerLanguageClient(
         const p = positionUtf8(doc, pos);
         const locs =
           (await Definition(id, pathOf(doc), p.line, p.character)) ?? [];
-        const out: vscode.Location[] = [];
-        for (const l of locs) {
-          const target = await openDoc(l.uri);
-          out.push(
-            new vscode.Location(uriToVsCode(l.uri), rangeToVsCode(target ?? doc, l.range)),
-          );
-        }
-        return out;
+        return locationsFromGo(locs, doc);
       },
     }),
   );
@@ -264,14 +277,7 @@ export function registerLanguageClient(
         const p = positionUtf8(doc, pos);
         const locs =
           (await References(id, pathOf(doc), p.line, p.character)) ?? [];
-        const out: vscode.Location[] = [];
-        for (const l of locs) {
-          const target = await openDoc(l.uri);
-          out.push(
-            new vscode.Location(uriToVsCode(l.uri), rangeToVsCode(target ?? doc, l.range)),
-          );
-        }
-        return out;
+        return locationsFromGo(locs, doc);
       },
     }),
   );
@@ -374,86 +380,6 @@ export function registerLanguageClient(
     }),
   );
   registerLangProviders(subs, (lang) =>
-    vscode.languages.registerDocumentSemanticTokensProvider(
-      lang,
-      {
-        provideDocumentSemanticTokens(doc, token) {
-          const key = doc.uri.toString();
-          const prev = tokenTimers.get(key);
-          if (prev) clearTimeout(prev);
-          tokenAbort.get(key)?.abort();
-          const ac = new AbortController();
-          tokenAbort.set(key, ac);
-
-          return new Promise<vscode.SemanticTokens>((resolve) => {
-            const timer = setTimeout(async () => {
-              tokenTimers.delete(key);
-              const empty = () => new vscode.SemanticTokensBuilder().build();
-              if (token.isCancellationRequested || ac.signal.aborted) {
-                resolve(empty());
-                return;
-              }
-              const id = getWorkspaceId();
-              const builder = new vscode.SemanticTokensBuilder();
-              if (!id) {
-                resolve(builder.build());
-                return;
-              }
-              try {
-                const spans = (await SemanticTokens(id, pathOf(doc))) ?? [];
-                if (token.isCancellationRequested || ac.signal.aborted) {
-                  resolve(empty());
-                  return;
-                }
-                for (const sp of spans) {
-                  const t = TOKEN_TYPES.indexOf(sp.type);
-                  if (t < 0) continue;
-                  const lineText = safeLine(doc, sp.line);
-                  const start16 = columnUtf16(lineText, sp.startCol);
-                  const end16 = columnUtf16(lineText, sp.startCol + sp.length);
-                  builder.push(sp.line, start16, end16 - start16, t, 0);
-                }
-                resolve(builder.build());
-              } catch {
-                resolve(empty());
-              }
-            }, 200);
-            tokenTimers.set(key, timer);
-            token.onCancellationRequested(() => {
-              clearTimeout(timer);
-              tokenTimers.delete(key);
-              ac.abort();
-              resolve(new vscode.SemanticTokensBuilder().build());
-            });
-          });
-        },
-      },
-      new vscode.SemanticTokensLegend(TOKEN_TYPES),
-    ),
-  );
-  registerLangProviders(subs, (lang) =>
-    vscode.languages.registerInlayHintsProvider(lang, {
-      async provideInlayHints(doc) {
-        const id = getWorkspaceId();
-        if (!id) return [];
-        const hints = (await InlayHints(id, pathOf(doc))) ?? [];
-        return hints.map((h) => {
-          const hint = new vscode.InlayHint(
-            new vscode.Position(
-              h.line,
-              columnUtf16(safeLine(doc, h.line), h.character),
-            ),
-            h.label,
-            h.kind === 1
-              ? vscode.InlayHintKind.Type
-              : vscode.InlayHintKind.Parameter,
-          );
-          return hint;
-        });
-      },
-    }),
-  );
-  registerLangProviders(subs, (lang) =>
     vscode.languages.registerCodeActionsProvider(lang, {
       async provideCodeActions(doc) {
         const id = getWorkspaceId();
@@ -539,8 +465,6 @@ export function registerLanguageClient(
   return {
     dispose() {
       for (const t of changeTimers.values()) clearTimeout(t);
-      for (const t of tokenTimers.values()) clearTimeout(t);
-      for (const ac of tokenAbort.values()) ac.abort();
       for (const s of subs) s.dispose();
     },
   };

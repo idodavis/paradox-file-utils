@@ -2,8 +2,9 @@
 /**
  * Workspace creation wizard: game → install → mods → name/tags → staging → create.
  */
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import type { StepperItem } from "@nuxt/ui";
 import FileSelector from "../components/FileSelector.vue";
 import { GAME_OPTIONS, useWorkspaceStore, type GameId } from "../stores/workspace";
 import {
@@ -26,7 +27,7 @@ const ctx = useWorkspaceStore();
 const step = ref(1);
 const selectedGame = ref<GameId>(ctx.currentGameId);
 const installs = ref<GameInstall[]>([]);
-const selectedInstallId = ref<string | null>(null);
+const selectedInstallId = ref<string | undefined>(undefined);
 const newInstallPath = ref("");
 const newInstallName = ref("");
 const detectedInstalls = ref<DetectedInstall[]>([]);
@@ -37,6 +38,23 @@ const thumbnailPath = ref("");
 const stagingDir = ref("");
 const loading = ref(false);
 const error = ref("");
+
+/** Wizard steps; `value` matches the 1-based `step` ref. */
+const stepItems: StepperItem[] = [
+  { title: "Game", icon: "i-lucide-gamepad-2", value: 1 },
+  { title: "Install", icon: "i-lucide-folder", value: 2 },
+  { title: "Mods", icon: "i-lucide-package", value: 3 },
+  { title: "Details", icon: "i-lucide-file-text", value: 4 },
+  { title: "Staging", icon: "i-lucide-folder-output", value: 5 },
+];
+
+/** Install options for the radio group. */
+const installItems = computed(() =>
+  installs.value.map((i) => ({
+    label: `${i.name} (${i.version || "unknown"})`,
+    value: i.id,
+  })),
+);
 
 const canContinue = computed(() => {
   switch (step.value) {
@@ -110,15 +128,17 @@ function removeModPath(index: number): void {
 
 /** Navigate steps. */
 function nextStep(): void {
-  if (step.value === 1) {
-    void loadInstalls();
-  }
   step.value++;
 }
 
 function prevStep(): void {
   step.value--;
 }
+
+// Load installs whenever the install step becomes active (button or stepper header).
+watch(step, (s) => {
+  if (s === 2) void loadInstalls();
+});
 
 /** Create workspace with all settings. */
 async function createWorkspace(): Promise<void> {
@@ -171,55 +191,34 @@ async function createWorkspace(): Promise<void> {
       <div class="w-full max-w-2xl">
       <div class="mb-6 text-center">
         <h1 class="text-xl font-bold">Create Workspace</h1>
-        <p class="text-sm text-muted">Step {{ step }} of 5</p>
       </div>
 
       <UAlert v-if="error" color="error" variant="subtle" :description="error" class="mb-4" />
+
+      <UStepper
+        :model-value="step"
+        :items="stepItems"
+        class="mb-6"
+        @update:model-value="(v) => { if (typeof v === 'number') step = v; }"
+      />
 
       <UCard>
         <template v-if="step === 1">
           <div class="space-y-4">
             <h2 class="font-semibold">Select Game</h2>
-            <div class="flex flex-col gap-2">
-              <label
-                v-for="opt in GAME_OPTIONS"
-                :key="opt.value"
-                class="flex cursor-pointer items-center gap-2 rounded border border-default p-2 hover:bg-muted"
-                :class="{ 'border-primary bg-primary/10': selectedGame === opt.value }"
-              >
-                <input
-                  type="radio"
-                  :value="opt.value"
-                  :checked="selectedGame === opt.value"
-                  class="accent-primary"
-                  @change="selectedGame = opt.value"
-                />
-                <span>{{ opt.label }}</span>
-              </label>
-            </div>
+            <URadioGroup v-model="selectedGame" :items="GAME_OPTIONS" variant="card" />
           </div>
         </template>
 
         <template v-else-if="step === 2">
           <div class="space-y-4">
             <h2 class="font-semibold">Game Install</h2>
-            <div v-if="installs.length" class="flex flex-col gap-2">
-              <label
-                v-for="inst in installs"
-                :key="inst.id"
-                class="flex cursor-pointer items-center gap-2 rounded border border-default p-2 hover:bg-muted"
-                :class="{ 'border-primary bg-primary/10': selectedInstallId === inst.id }"
-              >
-                <input
-                  type="radio"
-                  :value="inst.id"
-                  :checked="selectedInstallId === inst.id"
-                  class="accent-primary"
-                  @change="selectedInstallId = inst.id"
-                />
-                <span>{{ inst.name }} ({{ inst.version || 'unknown' }})</span>
-              </label>
-            </div>
+            <URadioGroup
+              v-if="installs.length"
+              v-model="selectedInstallId"
+              :items="installItems"
+              variant="card"
+            />
             <p v-else class="text-sm text-muted">No installs configured yet.</p>
             <div v-if="detectedInstalls.length" class="space-y-2">
               <p class="text-sm font-medium">Found on this machine</p>
@@ -240,11 +239,7 @@ async function createWorkspace(): Promise<void> {
                 />
               </div>
             </div>
-            <div class="flex items-center gap-2 py-2">
-              <hr class="flex-1 border-default" />
-              <span class="text-xs text-muted">Or add new</span>
-              <hr class="flex-1 border-default" />
-            </div>
+            <USeparator label="Or add new" />
             <div class="space-y-2">
               <FileSelector
                 v-model="newInstallPath"

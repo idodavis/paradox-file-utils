@@ -27,6 +27,7 @@ Imports `model` (and through it `parser`/`loc`/`game`). Consumed by `lsp` and
 | ------------ | -------------- |
 | `doc.go`     | package doc comment (godoc) |
 | `session.go` | buffers, DidOpen/Change/Close/Save, reindex, resolve |
+| `path.go`    | CanonPath / SamePath / RelPath for index identity |
 | `pool.go`    | workspaceID -> *Session, coalesced build, event emit |
 | `watcher.go` | fsnotify -> coalesced reindex for external changes |
 | `ignore.go`  | `# pmt:ignore` / `# pmt:ignore-next-line` directives |

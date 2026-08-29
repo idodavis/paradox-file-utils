@@ -28,6 +28,12 @@ const resetOpen = ref(false);
 const message = ref("");
 const messageKind = ref<"positive" | "negative" | "info">("info");
 
+/** Apply UI scale live while dragging; persistence happens on commit. */
+function onScaleInput(value: number | undefined): void {
+  if (value === undefined) return;
+  void settings.set("ui.fontScale", String(value), false);
+}
+
 const messageColor = computed(() => {
   switch (messageKind.value) {
     case "negative":
@@ -147,11 +153,10 @@ onMounted(load);
               <UFormField label="UI scale"
                 :description="`App chrome at ${fontScale}% (editor font is set in the workbench)`">
                 <div class="flex items-center gap-3">
-                  <UButton icon="i-lucide-minus" size="xs" color="neutral" variant="outline"
-                    :disabled="fontScale <= settings.FONT_SCALE_MIN" @click="settings.setFontScale(fontScale - 5)" />
+                  <USlider :model-value="fontScale" :min="settings.FONT_SCALE_MIN"
+                    :max="settings.FONT_SCALE_MAX" :step="5" class="flex-1"
+                    @update:model-value="onScaleInput" @change="settings.save()" />
                   <span class="w-12 text-center text-sm tabular-nums">{{ fontScale }}%</span>
-                  <UButton icon="i-lucide-plus" size="xs" color="neutral" variant="outline"
-                    :disabled="fontScale >= settings.FONT_SCALE_MAX" @click="settings.setFontScale(fontScale + 5)" />
                 </div>
               </UFormField>
             </div>
@@ -197,7 +202,7 @@ onMounted(load);
     </div>
 
     <UModal v-model:open="resetOpen" title="Reset all data?"
-      description="This will delete workspaces, indexes, patch cache, and script logs. Settings will be kept.">
+      description="This will delete workspaces, indexes, the semantic cache, and patch runs. Settings will be kept.">
       <template #footer="{ close }">
         <UButton label="Cancel" color="neutral" variant="outline" @click="close" />
         <UButton label="Reset" color="error" :loading="resetting" @click="resetData" />

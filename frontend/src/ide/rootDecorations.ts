@@ -5,7 +5,7 @@
  */
 import * as vscode from "vscode";
 import { registerExtension, ExtensionHostKind } from "@codingame/monaco-vscode-api/extensions";
-import type { IdeRoot } from "./fsBridge";
+import type { IdeRoot, IdeRootKind } from "./fsBridge";
 
 /** Fixed Game root accent (muted teal). */
 const GAME_COLOR_ID = "pmt.root.game";
@@ -57,8 +57,13 @@ function hashModIndex(path: string, n: number): number {
   return Math.abs(h) % n;
 }
 
+/** Hex for a workspace origin, matching explorer root tags. */
+export function originHex(origin: { kind: IdeRootKind; path: string }): string {
+  return COLOR_DEFAULTS[colorIdFor(origin)] ?? COLOR_DEFAULTS[MOD_COLOR_IDS[0]]!;
+}
+
 /** Theme color id for a root. */
-function colorIdFor(root: IdeRoot): string {
+function colorIdFor(root: { kind: IdeRootKind; path: string }): string {
   switch (root.kind) {
     case "game":
       return GAME_COLOR_ID;

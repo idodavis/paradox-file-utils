@@ -57,13 +57,6 @@ func NewWorkspaceRepository(db *sqlx.DB) *WorkspaceRepository {
 	return &WorkspaceRepository{db: db}
 }
 
-// ListGames returns all supported games.
-func (r *WorkspaceRepository) ListGames() ([]Game, error) {
-	var out []Game
-	err := r.db.Select(&out, `SELECT id, name, wiki_api, script_root, steam_app_id FROM games ORDER BY name`)
-	return out, err
-}
-
 // ListInstalls returns all installs for a game.
 func (r *WorkspaceRepository) ListInstalls(gameID string) ([]GameInstall, error) {
 	var out []GameInstall
@@ -218,16 +211,6 @@ func (r *WorkspaceRepository) SetModBroken(id string, broken bool) error {
 	return err
 }
 
-// GetGame returns a game by ID.
-func (r *WorkspaceRepository) GetGame(id string) (*Game, error) {
-	var g Game
-	err := r.db.Get(&g, `SELECT id, name, wiki_api, script_root, steam_app_id FROM games WHERE id = ?`, id)
-	if err != nil {
-		return nil, err
-	}
-	return &g, nil
-}
-
 // GetWorkspaceInfo returns game_id and install_id for a workspace.
 func (r *WorkspaceRepository) GetWorkspaceInfo(workspaceID string) (gameID, installID string, err error) {
 	var ws struct {
@@ -260,7 +243,7 @@ func (r *WorkspaceRepository) ListModPaths(workspaceID string) ([]string, error)
 	return paths, err
 }
 
-func nullIfEmpty(s string) interface{} {
+func nullIfEmpty(s string) any {
 	if s == "" {
 		return nil
 	}

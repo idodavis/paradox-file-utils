@@ -1,5 +1,5 @@
-// graph_test.go covers defs-first orphans, via-effect hops, sim order, no
-// coordinates, FIOS/LIOS winners, loc coverage, and a vic3/eu5 smoke parse.
+// graph_test.go covers defs-first orphans, via-effect hops, event detail,
+// coordinates-free payload, FIOS/LIOS winners, loc coverage, and a vic3/eu5 smoke parse.
 
 package graph
 
@@ -95,19 +95,23 @@ func TestNoCoordinates(t *testing.T) {
 	}
 }
 
-func TestSimStepOrder(t *testing.T) {
+func TestEventDetailOptionsAndTargets(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "descriptor.mod", "name = \"t\"\n")
 	write(t, root, "events/x.txt", `test.1 = {
 	type = character_event
 	title = test.1.t
 	trigger = { always = yes }
-	immediate = { add_gold = 1 }
+	immediate = { trigger_event = test.2 }
 	option = {
 		name = test.1.a
 		add_gold = 2
 	}
 	after = { add_gold = 3 }
+}
+
+test.2 = {
+	type = character_event
 }
 `)
 	write(t, root, "localization/english/a_l_english.yml", "l_english:\n test.1.t:0 \"Hello\"\n test.1.a:0 \"OK\"\n")
@@ -116,13 +120,22 @@ func TestSimStepOrder(t *testing.T) {
 	if d == nil {
 		t.Fatal("detail is nil")
 	}
-	want := []string{"trigger", "immediate", "option", "after"}
-	var got []string
-	for _, st := range d.SimSteps {
-		got = append(got, st.Kind)
+	if d.Type != "character_event" || d.Title == nil || d.Title.Text != "Hello" {
+		t.Fatalf("header = type %q title %+v", d.Type, d.Title)
 	}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("simSteps kinds = %v, want %v", got, want)
+	if len(d.Options) != 1 || d.Options[0].Name == nil || d.Options[0].Name.Text != "OK" {
+		t.Fatalf("options = %+v", d.Options)
+	}
+	var fired bool
+	for _, sec := range d.Sections {
+		for _, tgt := range sec.Targets {
+			if tgt.Name == "test.2" {
+				fired = true
+			}
+		}
+	}
+	if !fired {
+		t.Fatalf("immediate should target test.2; sections=%+v", d.Sections)
 	}
 }
 
@@ -255,5 +268,107 @@ seq.3 = { type = character_event }
 	}
 	if !opt {
 		t.Errorf("missing option label; edges=%v", g.Edges)
+	}
+}
+
+func TestGraphIncludesVanilla(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "descriptor.mod", "name = \"t\"\n")
+	write(t, root, "events/x.txt", "mod.1 = { type = character_event }\n")
+	vanilla := t.TempDir()
+	vfile := write(t, vanilla, "events/v.txt", "birth.1 = { type = character_event }\n")
+	cache := &model.Cache{Defs: []model.Def{
+		{Type: "event", Key: "birth.1", Path: vfile, Line: 0},
+	}}
+	s := session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
+	g := Graph(s, EventGraphParams{})
+	ids := map[string]string{}
+	for _, n := range g.Nodes {
+		ids[n.ID] = n.Source
+	}
+	if ids["birth.1"] != "vanilla" || ids["mod.1"] != "mod" {
+		t.Fatalf("nodes = %v, want vanilla birth.1 and mod mod.1", ids)
+	}
+	var birth, modOrig bool
+	for _, it := range g.Suggestions.IDs {
+		if it.ID == "birth.1" && it.Origin == "" {
+			birth = true
+		}
+		if it.ID == "mod.1" && it.Origin == "mod" {
+			modOrig = true
+		}
+	}
+	if !birth || !modOrig {
+		t.Fatalf("suggestions = %+v", g.Suggestions.IDs)
+	}
+	gMod := Graph(s, EventGraphParams{ModRoot: root})
+	for _, n := range gMod.Nodes {
+		if n.ID == "birth.1" {
+			t.Fatal("vanilla should not be seeded when a mod is focused")
+		}
+	}
+	ns := Graph(s, EventGraphParams{Namespace: "birth"})
+	for _, it := range ns.Suggestions.IDs {
+		if !strings.HasPrefix(it.ID, "birth.") {
+			t.Fatalf("namespace filter leaked %q", it.ID)
+		}
+	}
+}
+
+func TestCoverageSkipsVanillaKeys(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "descriptor.mod", "name = \"t\"\n")
+	write(t, root, "events/x.txt", "test.1 = {\n	title = vanilla_key\n}\n")
+	write(t, root, "localization/english/a_l_english.yml", "l_english:\n mod_orphan:0 \"X\"\n")
+	vfile := write(t, t.TempDir(), "v.yml", "l_english:\n vanilla_key:0 \"Hi\"\n")
+	cache := &model.Cache{
+		LocEnglish: map[string]string{"vanilla_key": "Hi"},
+		LocEnglishSites: map[string]model.LocSite{
+			"vanilla_key": {File: vfile, Line: 1},
+		},
+	}
+	s := session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
+	cov := Coverage(s)
+	for _, row := range cov {
+		for _, m := range row.Missing {
+			if m.Key == "vanilla_key" {
+				t.Fatalf("vanilla_key listed as missing: %+v", m)
+			}
+		}
+		for _, o := range row.Orphaned {
+			if o.Origin != "mod" && o.Key == "mod_orphan" {
+				t.Errorf("orphan origin = %q, want mod", o.Origin)
+			}
+			if o.Key == "vanilla_key" {
+				t.Fatal("vanilla loc must not appear as coverage rows")
+			}
+		}
+	}
+	lu := Lookup(s, "vanilla_key")
+	if lu == nil || lu.Origin != "vanilla" || lu.File != vfile {
+		t.Fatalf("Lookup vanilla_key = %+v", lu)
+	}
+}
+
+func TestOverridesInjectKeysCollide(t *testing.T) {
+	a := t.TempDir()
+	b := t.TempDir()
+	write(t, a, ".metadata/metadata.json", `{"name":"a"}`)
+	write(t, b, ".metadata/metadata.json", `{"name":"b"}`)
+	write(t, a, "common/traits/a.txt", "INJECT:brave = { category = personality }\n")
+	write(t, b, "common/traits/b.txt", "REPLACE:brave = { category = personality }\n")
+	s := session.New("ws", "eu5", nil, []model.ModInput{
+		{Origin: "modA", Root: a, Order: 0},
+		{Origin: "modB", Root: b, Order: 1},
+	})
+	rows := OverrideRows(s)
+	var hit *model.OverrideRow
+	for i := range rows {
+		if rows[i].Name == "brave" {
+			hit = &rows[i]
+		}
+	}
+	if hit == nil || hit.Overlay || hit.ModCount != 2 {
+		t.Fatalf("INJECT/REPLACE collide = %+v", rows)
 	}
 }

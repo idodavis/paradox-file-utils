@@ -145,6 +145,10 @@ func TestDecodeStripsBOMAndLatin1Fallback(t *testing.T) {
 	if !had || text != "foo = 1" {
 		t.Fatalf("BOM decode: had=%v text=%q", had, text)
 	}
+	crlf, hadCR := Decode([]byte("a = 1\r\nb = 2\r\n"))
+	if hadCR || crlf != "a = 1\nb = 2\n" {
+		t.Fatalf("CRLF decode: had=%v text=%q", hadCR, crlf)
+	}
 	// 0xE9 alone is invalid UTF-8 -> latin1 fallback (é).
 	text2, had2 := Decode([]byte{'x', 0xE9, 'y'})
 	if had2 || text2 != "x\u00e9y" {

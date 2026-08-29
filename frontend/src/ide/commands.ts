@@ -39,31 +39,3 @@ export async function openDiff(
     title ?? `${leftPath} ↔ ${rightPath}`,
   );
 }
-
-/** Open multiple diffs via multi-diff editor when available. */
-export async function openMultiDiff(
-  pairs: { left: string; right: string; label?: string }[],
-): Promise<void> {
-  await whenWorkbenchReady();
-  if (!isWorkbenchReady() || !pairs.length) return;
-  if (pairs.length === 1) {
-    const p = pairs[0]!;
-    await openDiff(p.left, p.right, p.label);
-    return;
-  }
-  try {
-    await vscode.commands.executeCommand(
-      "vscode.changes",
-      "PMT conflicts",
-      pairs.map((p) => [
-        monaco.Uri.file(p.left),
-        monaco.Uri.file(p.right),
-        p.label ?? `${p.left} ↔ ${p.right}`,
-      ]),
-    );
-  } catch {
-    for (const p of pairs) {
-      await openDiff(p.left, p.right, p.label);
-    }
-  }
-}

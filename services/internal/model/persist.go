@@ -27,31 +27,31 @@ func CacheDir() (string, error) {
 	return dir, nil
 }
 
-// cachePath is the on-disk path for one (game, version) Cache.
-func cachePath(gameID, version string) (string, error) {
+func cachePath(workspaceID string) (string, error) {
 	dir, err := CacheDir()
 	if err != nil {
 		return "", err
 	}
-	if version == "" {
-		version = "unknown"
-	}
-	return filepath.Join(dir, gameID+"-"+version+".json"), nil
+	return filepath.Join(dir, "cache-"+sanitize(workspaceID)+".json"), nil
 }
 
-// SaveCache writes c to its (game, version) path in user-data.
+// SaveCache writes c to its workspace path and drops leftover game-version files.
 func SaveCache(c *Cache) error {
-	path, err := cachePath(c.GameID, c.GameVersion)
+	path, err := cachePath(c.WorkspaceID)
 	if err != nil {
 		return err
 	}
-	return SaveCacheFile(path, c)
+	if err := SaveCacheFile(path, c); err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	return pruneLegacyCaches(dir)
 }
 
-// LoadCache reads the Cache for (gameID, version), or an error if it is absent or
+// LoadCache reads the Cache for workspaceID, or an error if it is absent or
 // its formatVersion does not match CacheFormatVersion.
-func LoadCache(gameID, version string) (*Cache, error) {
-	path, err := cachePath(gameID, version)
+func LoadCache(workspaceID string) (*Cache, error) {
+	path, err := cachePath(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,10 +80,36 @@ func LoadCacheFile(path string) (*Cache, error) {
 	if c.FormatVersion != CacheFormatVersion {
 		return nil, fmt.Errorf("cache format %d != %d (rescan required)", c.FormatVersion, CacheFormatVersion)
 	}
+	ensureCacheMaps(&c)
 	return &c, nil
 }
 
-// indexPath is the on-disk path for one workspace Index, alongside the caches.
+func pruneLegacyCaches(dir string) error {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		if strings.HasPrefix(name, "cache-") || strings.HasPrefix(name, "index-") {
+			continue
+		}
+		base := strings.TrimSuffix(name, ".json")
+		i := strings.IndexByte(base, '-')
+		if i <= 0 {
+			continue
+		}
+		switch base[:i] {
+		case "ck3", "vic3", "eu5":
+			_ = os.Remove(filepath.Join(dir, name))
+		}
+	}
+	return nil
+}
+
 func indexPath(workspaceID string) (string, error) {
 	dir, err := CacheDir()
 	if err != nil {
@@ -92,7 +118,6 @@ func indexPath(workspaceID string) (string, error) {
 	return filepath.Join(dir, "index-"+sanitize(workspaceID)+".json"), nil
 }
 
-// sanitize replaces path-hostile characters so a workspace id is a safe filename.
 func sanitize(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -145,5 +170,26 @@ func LoadIndexFile(path string) (*Index, error) {
 	if idx.FormatVersion != IndexFormatVersion {
 		return nil, fmt.Errorf("index format %d != %d (rebuild required)", idx.FormatVersion, IndexFormatVersion)
 	}
+	if idx.Loc == nil {
+		idx.Loc = map[string]string{}
+	}
 	return &idx, nil
+}
+
+func ensureCacheMaps(c *Cache) {
+	if c.LocEnglish == nil {
+		c.LocEnglish = map[string]string{}
+	}
+	if c.FieldDocs == nil {
+		c.FieldDocs = map[string]string{}
+	}
+	if c.FieldDocsByKind == nil {
+		c.FieldDocsByKind = map[string]map[string]string{}
+	}
+	if c.LocEnglishSites == nil {
+		c.LocEnglishSites = map[string]LocSite{}
+	}
+	if c.Structures == nil {
+		c.Structures = map[string][]string{}
+	}
 }

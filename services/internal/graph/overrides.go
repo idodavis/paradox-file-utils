@@ -4,7 +4,8 @@
 package graph
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 
 	"paradox-modding-tools/services/internal/model"
 	"paradox-modding-tools/services/internal/session"
@@ -17,11 +18,16 @@ func OverrideRows(s *session.Session) []model.OverrideRow {
 		return nil
 	}
 	rows := model.Overrides(idx, s.Cache())
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].Kind != rows[j].Kind {
-			return rows[i].Kind < rows[j].Kind
+	for i := range rows {
+		for j := range rows[i].Sites {
+			rows[i].Sites[j].Rel = relOf(s, rows[i].Sites[j].File)
 		}
-		return rows[i].Name < rows[j].Name
+	}
+	slices.SortFunc(rows, func(a, b model.OverrideRow) int {
+		if c := cmp.Compare(a.Kind, b.Kind); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Name, b.Name)
 	})
 	return rows
 }

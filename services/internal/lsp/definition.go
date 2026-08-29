@@ -15,11 +15,21 @@ import (
 // Definition returns go-to-definition locations for the word at pos.
 func Definition(s *session.Session, path string, line, col int) []Location {
 	src := fileText(s, path)
-	word, _, _ := wordAt(src, offsetOf(src, line, col))
+	off := offsetOf(src, line, col)
+	if inComment(parseOf(s, path, src), off) {
+		return nil
+	}
+	if _, _, _, ok := scopeRefAt(src, off); ok {
+		return nil
+	}
+	word, _, _ := wordAt(src, off)
 	if word == "" {
 		return nil
 	}
 	if d := s.Resolve(word); d != nil {
+		if d.Type == "saved_scope" {
+			return nil
+		}
 		return []Location{defLocation(*d)}
 	}
 	if v := model.LookupVanillaDef(s.Cache(), word); v != nil {
@@ -27,9 +37,18 @@ func Definition(s *session.Session, path string, line, col int) []Location {
 	}
 	if locDefined(s, word) {
 		idx := s.Index()
-		for _, d := range idx.Defs {
-			if d.Type == "loc_key" && d.Key == word {
-				return []Location{defLocation(d)}
+		if idx != nil {
+			for _, d := range idx.Defs {
+				if d.Type == "loc_key" && d.Key == word {
+					return []Location{defLocation(d)}
+				}
+			}
+		}
+		if c := s.Cache(); c != nil && c.LocEnglishSites != nil {
+			if site, ok := c.LocEnglishSites[word]; ok {
+				return []Location{defLocation(model.Def{
+					Type: "loc_key", Key: word, Path: site.File, Line: site.Line,
+				})}
 			}
 		}
 	}

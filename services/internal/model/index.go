@@ -7,8 +7,10 @@
 package model
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,7 +36,8 @@ func BuildIndex(workspaceID, gameID string, mods []ModInput, cache *Cache) *Inde
 			if err != nil {
 				continue
 			}
-			defs, refs, edges, locEng := IndexFile(gameID, f.abs, f.rel, string(raw), m.Origin)
+			text, _ := parser.Decode(raw)
+			defs, refs, edges, locEng := IndexFile(gameID, f.abs, f.rel, text, m.Origin)
 			idx.Defs = append(idx.Defs, defs...)
 			idx.Refs = append(idx.Refs, refs...)
 			idx.Edges = append(idx.Edges, edges...)
@@ -49,6 +52,8 @@ func BuildIndex(workspaceID, gameID string, mods []ModInput, cache *Cache) *Inde
 // IndexFile extracts one file's defs, loc references, event edges, and (for english
 // loc files) its key->value map. content is the buffer text so unsaved edits index.
 func IndexFile(gameID, absPath, rel, content, origin string) (defs []Def, refs []Ref, edges []Edge, locEng map[string]string) {
+	absPath = filepath.Clean(absPath)
+	content = parser.Normalize(content)
 	rule := game.MatchExtract(gameID, rel)
 	if rule.Mode == game.ModeLocKey {
 		return indexLoc(absPath, content, origin)
@@ -56,7 +61,7 @@ func IndexFile(gameID, absPath, rel, content, origin string) (defs []Def, refs [
 	res := parser.Parse(content)
 	li := res.Lines()
 	defs = defsFor(res.Root, li, gameID, rule, absPath, origin)
-	refs = extractLocRefs(res.Root, li, absPath)
+	refs = extractScriptRefs(res.Root, li, absPath)
 	edges = extractEdges(res.Root, li, absPath)
 	return defs, refs, edges, nil
 }
@@ -64,7 +69,7 @@ func IndexFile(gameID, absPath, rel, content, origin string) (defs []Def, refs [
 // indexLoc turns a localization file into loc_key defs and, for english, a value map.
 func indexLoc(absPath, content, origin string) (defs []Def, refs []Ref, edges []Edge, locEng map[string]string) {
 	r := loc.Parse(content)
-	english := loc.LanguageFromFilename(absPath) == "english"
+	english := loc.LanguageOf(absPath, r.Language) == "english"
 	for _, e := range r.Entries {
 		defs = append(defs, Def{Type: "loc_key", Key: e.Key, Path: absPath, Line: e.Line, Origin: origin})
 		if english {
@@ -101,38 +106,117 @@ func defsFor(root *parser.Root, li *parser.LineIndex, gameID string, rule game.E
 	return defs
 }
 
-// extractLocRefs finds `<loc-property> = <key>` references (loc.STRICT/BROAD) so
-// diagnostics and go-to-definition can resolve loc keys used in script.
-func extractLocRefs(root *parser.Root, li *parser.LineIndex, path string) []Ref {
+// extractScriptRefs walks the CST once for loc refs and event/on_action fire sites.
+func extractScriptRefs(root *parser.Root, li *parser.LineIndex, path string) []Ref {
 	var refs []Ref
 	parser.WalkStatements(root, func(st parser.Statement) bool {
 		a, ok := st.(*parser.Assignment)
 		if !ok || a.Key.Quoted {
 			return true
 		}
-		prop := loc.Classify(a.Key.Text)
-		if prop == loc.PropNone {
-			return true
+		key := a.Key.Text
+
+		prop := loc.Classify(key)
+		if prop != loc.PropNone {
+			if sc, ok := a.Value.(*parser.Scalar); ok && sc.Text != "" && loc.LooksLikeKey(sc.Text) {
+				kind := "loc-broad"
+				if prop == loc.PropStrict {
+					kind = "loc"
+				}
+				refs = append(refs, Ref{
+					Key: sc.Text, Kind: kind, Path: path,
+					Line:  li.PositionAt(sc.Range.Start).Line,
+					Start: sc.Range.Start, End: sc.Range.End,
+				})
+			}
 		}
-		sc, ok := a.Value.(*parser.Scalar)
-		if !ok || sc.Text == "" {
-			return true
+
+		if fk := game.FireKind(key); fk != "" {
+			refs = appendFireRefs(refs, a.Value, fk, li, path)
 		}
-		kind := "loc-broad"
-		if prop == loc.PropStrict {
-			kind = "loc"
-		}
-		refs = append(refs, Ref{
-			Key:   sc.Text,
-			Kind:  kind,
-			Path:  path,
-			Line:  li.PositionAt(sc.Range.Start).Line,
-			Start: sc.Range.Start,
-			End:   sc.Range.End,
-		})
+
 		return true
 	})
 	return refs
+}
+
+func appendFireRefs(
+	refs []Ref, v parser.Value, kind string, li *parser.LineIndex, path string,
+) []Ref {
+	add := func(name string, start, end int) {
+		if !fireTargetOK(name) {
+			return
+		}
+		refs = append(refs, Ref{
+			Key: name, Kind: kind, Path: path,
+			Line: li.PositionAt(start).Line, Start: start, End: end,
+		})
+	}
+	switch t := v.(type) {
+	case *parser.Scalar:
+		if !t.Quoted {
+			add(t.Text, t.Range.Start, t.Range.End)
+		}
+	case *parser.Block, *parser.TaggedBlock:
+		b := blockOf(v)
+		if b == nil {
+			return refs
+		}
+		for _, st := range b.Statements {
+			switch n := st.(type) {
+			case *parser.ValueStmt:
+				if sc, ok := n.Value.(*parser.Scalar); ok && !sc.Quoted {
+					add(sc.Text, sc.Range.Start, sc.Range.End)
+				} else if inner := blockOf(n.Value); inner != nil {
+					refs = appendFireRefs(refs, n.Value, kind, li, path)
+				}
+			case *parser.Assignment:
+				key := strings.ToLower(n.Key.Text)
+				own := game.FireKind(n.Key.Text)
+				if sc, ok := n.Value.(*parser.Scalar); ok && !sc.Quoted &&
+					(key == "id" || isDigits(key) || own != "") {
+					add(sc.Text, sc.Range.Start, sc.Range.End)
+					continue
+				}
+				if own != "" || key == "id" || isDigits(key) {
+					refs = appendFireRefs(refs, n.Value, kind, li, path)
+				}
+			}
+		}
+	}
+	return refs
+}
+
+func fireTargetOK(s string) bool {
+	if s == "" {
+		return false
+	}
+	c := s[0]
+	if c < 'A' || (c > 'Z' && c < 'a') || c > 'z' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c = s[i]
+		ok := c == '_' || c == '.' || c == '-' ||
+			(c >= '0' && c <= '9') ||
+			(c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := range s {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // extractEdges collects `trigger_event` links, tagging each with the enclosing
@@ -216,6 +300,7 @@ func modFiles(root string) []fileRef {
 		name := d.Name()
 		lower := strings.ToLower(name)
 		rel, _ := filepath.Rel(root, p)
+		p = filepath.Clean(p)
 		switch {
 		case strings.HasSuffix(lower, ".mod"):
 			out = append(out, fileRef{p, rel})
@@ -233,14 +318,12 @@ func modFiles(root string) []fileRef {
 	return out
 }
 
-// sortByOrder sorts mods ascending by load order (stable, insertion sort — mod
-// counts are tiny).
+// sortByOrder sorts mods ascending by load order (stable to preserve input order
+// among equal Order values).
 func sortByOrder(mods []ModInput) {
-	for i := 1; i < len(mods); i++ {
-		for j := i; j > 0 && mods[j-1].Order > mods[j].Order; j-- {
-			mods[j-1], mods[j] = mods[j], mods[j-1]
-		}
-	}
+	slices.SortStableFunc(mods, func(a, b ModInput) int {
+		return cmp.Compare(a.Order, b.Order)
+	})
 }
 
 // LookupVanillaDef returns the first vanilla cache def for key, or nil.

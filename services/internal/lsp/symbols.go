@@ -19,7 +19,7 @@ func DocumentSymbols(s *session.Session, path string) []SymbolInformation {
 	}
 	var out []SymbolInformation
 	for _, d := range idx.Defs {
-		if d.Path != path {
+		if d.Path != path || d.Type == "saved_scope" {
 			continue
 		}
 		out = append(out, SymbolInformation{
@@ -41,6 +41,9 @@ func WorkspaceSymbols(s *session.Session, query string) []SymbolInformation {
 	var out []SymbolInformation
 	for _, d := range idx.Defs {
 		if q != "" && !strings.Contains(strings.ToLower(d.Key), q) {
+			continue
+		}
+		if d.Type == "saved_scope" {
 			continue
 		}
 		out = append(out, SymbolInformation{

@@ -8,6 +8,7 @@ import {
   GetWorkspace,
   ListWorkspaceMods,
   MarkBrokenPaths,
+  SetActiveWorkspace,
 } from "@services/workspaceservice";
 import {
   EnsureSession,
@@ -96,6 +97,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     } else {
       localStorage.removeItem("workspace.activeId");
     }
+    // Mirror the selection into SQLite so is_active matches the UI.
+    if (id) void SetActiveWorkspace(id);
     void loadActiveWorkspace();
   }
 

@@ -50,6 +50,7 @@ type LanguageHealth struct {
 	GameVersion  string `json:"gameVersion"`
 	CacheVersion string `json:"cacheVersion"`
 	CacheStale   bool   `json:"cacheStale"`
+	ScannedAt    string `json:"scannedAt"`
 	DocsPresent  bool   `json:"docsPresent"`
 	DocsPath     string `json:"docsPath"`
 	IndexReady   bool   `json:"indexReady"`
@@ -88,12 +89,7 @@ func (s *LanguageModelService) buildSession(id string) (*session.Session, error)
 	}
 	var cache *model.Cache
 	if ws.InstallID != "" {
-		if inst, err := r.GetInstall(ws.InstallID); err == nil {
-			cache, _ = model.LoadCache(ws.GameID, inst.Version)
-			if cache == nil {
-				cache, _ = model.LoadCache(ws.GameID, game.ReadGameVersion(inst.Path))
-			}
-		}
+		cache, _ = model.LoadCache(id)
 	}
 	mods, err := r.ListMods(id)
 	if err != nil {
@@ -158,14 +154,23 @@ func (s *LanguageModelService) RebuildWorkspaceSemantics(workspaceID string) (_ 
 	s.mu.Unlock()
 	defer cancel()
 
-	c, err := model.Scan(ctx, ws.GameID, inst.Path, scriptDocsDir(ws.GameID), nil)
+	c, err := model.Scan(ctx, workspaceID, ws.GameID, inst.Path, scriptDocsDir(ws.GameID),
+		func(pct int, msg string) {
+			emitLang("lang:scan-progress", map[string]any{
+				"workspaceId": workspaceID,
+				"pct":         pct,
+				"msg":         msg,
+			})
+		})
 	if err != nil {
 		return nil, err
 	}
 	if err := model.SaveCache(c); err != nil {
 		return nil, err
 	}
-	s.pool().Drop(workspaceID)
+	if live := s.pool().Get(workspaceID); live != nil {
+		live.ReplaceCache(c)
+	}
 	return c, nil
 }
 
@@ -215,19 +220,28 @@ func (s *LanguageModelService) GetLanguageHealth(workspaceID string) (_ *Languag
 			if fi, e := os.Stat(inst.Path); e == nil && fi.IsDir() {
 				h.InstallOk = true
 			}
-			if c, e := model.LoadCache(ws.GameID, inst.Version); e == nil && c != nil {
-				h.CacheVersion = c.GameVersion
-				h.CacheStale = c.GameVersion != inst.Version && inst.Version != ""
-			}
 		}
+	}
+	if c, e := model.LoadCache(workspaceID); e == nil {
+		applyCacheHealth(h, c)
 	}
 	if live := s.pool().Get(workspaceID); live != nil {
 		h.IndexReady = true
 		if idx := live.Index(); idx != nil {
 			h.DefCount = len(idx.Defs)
 		}
+		applyCacheHealth(h, live.Cache())
 	}
 	return h, nil
+}
+
+func applyCacheHealth(h *LanguageHealth, c *model.Cache) {
+	if c == nil {
+		return
+	}
+	h.CacheVersion = c.GameVersion
+	h.ScannedAt = c.ScannedAt
+	h.CacheStale = c.GameVersion != h.GameVersion && h.GameVersion != ""
 }
 
 // LaunchGameDebug starts the game with debug flags (best-effort).
@@ -391,16 +405,6 @@ func (s *LanguageModelService) FoldingRanges(workspaceID, path string) (_ []lsp.
 	return lsp.FoldingRanges(sess, path), nil
 }
 
-// SemanticTokens returns highlight spans.
-func (s *LanguageModelService) SemanticTokens(workspaceID, path string) (_ []lsp.SemanticSpan, err error) {
-	defer recoverErr(&err)
-	sess, err := s.sess(workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	return lsp.SemanticTokens(sess, path), nil
-}
-
 // SignatureHelp returns a signature tooltip.
 func (s *LanguageModelService) SignatureHelp(workspaceID, path string, line, character int) (_ *lsp.SignatureHelp, err error) {
 	defer recoverErr(&err)
@@ -409,16 +413,6 @@ func (s *LanguageModelService) SignatureHelp(workspaceID, path string, line, cha
 		return nil, err
 	}
 	return lsp.SignatureAt(sess, path, line, character), nil
-}
-
-// InlayHints returns loc-value previews and scope labels.
-func (s *LanguageModelService) InlayHints(workspaceID, path string) (_ []lsp.InlayHint, err error) {
-	defer recoverErr(&err)
-	sess, err := s.sess(workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	return lsp.InlayHints(sess, path), nil
 }
 
 // CodeActions returns quick-fixes for the file.
@@ -461,7 +455,7 @@ func (s *LanguageModelService) GetEventGraph(workspaceID string, params graph.Ev
 	return graph.Graph(sess, params), nil
 }
 
-// GetEventDetail returns inspector content and simSteps for one event id.
+// GetEventDetail returns inspector content for one event id.
 func (s *LanguageModelService) GetEventDetail(workspaceID, eventID string) (_ *graph.EventDetail, err error) {
 	defer recoverErr(&err)
 	sess, err := s.sess(workspaceID)

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * Compact install/cache/index health strip for Library and IDE.
+ * Compact install/cache/index health strip for Library and IDE, with scan progress.
  */
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { Events } from "@wailsio/runtime";
 import {
   EnsureSession,
   GetLanguageHealth,
@@ -18,6 +19,16 @@ const props = defineProps<{
 const health = ref<LanguageHealth | null>(null);
 const scanning = ref(false);
 const launching = ref(false);
+const scanPct = ref(0);
+const scanMsg = ref("");
+
+const lastScanned = computed(() => {
+  const raw = health.value?.scannedAt;
+  if (!raw) return "";
+  const ms = Date.parse(raw);
+  if (Number.isNaN(ms)) return raw;
+  return new Date(ms).toLocaleString();
+});
 
 /** Load health for the current workspace. */
 async function load(): Promise<void> {
@@ -36,12 +47,16 @@ async function load(): Promise<void> {
 async function rescan(): Promise<void> {
   if (!props.workspaceId || scanning.value) return;
   scanning.value = true;
+  scanPct.value = 0;
+  scanMsg.value = "starting";
   try {
     await RebuildWorkspaceSemantics(props.workspaceId);
     await EnsureSession(props.workspaceId);
     await load();
   } finally {
     scanning.value = false;
+    scanMsg.value = "";
+    scanPct.value = 0;
   }
 }
 
@@ -61,12 +76,26 @@ function onFocus(): void {
   void load();
 }
 
+/** Apply a scan-progress Wails event if it is for this workspace. */
+function onScanProgress(ev: { data?: unknown }): void {
+  const data = ev.data;
+  if (!data || typeof data !== "object") return;
+  const row = data as { workspaceId?: string; pct?: number; msg?: string };
+  if (row.workspaceId && row.workspaceId !== props.workspaceId) return;
+  if (typeof row.pct === "number") scanPct.value = row.pct;
+  if (typeof row.msg === "string") scanMsg.value = row.msg;
+}
+
+let offScan: (() => void) | undefined;
+
 onMounted(() => {
   void load();
   window.addEventListener("focus", onFocus);
+  offScan = Events.On("lang:scan-progress", onScanProgress);
 });
 onUnmounted(() => {
   window.removeEventListener("focus", onFocus);
+  offScan?.();
 });
 watch(
   () => props.workspaceId,
@@ -105,6 +134,19 @@ watch(
       :loading="scanning"
       @click.stop="rescan"
     />
+    <span v-if="!scanning && lastScanned">Scanned {{ lastScanned }}</span>
+    <div
+      v-if="scanning"
+      class="flex min-w-40 max-w-64 flex-1 items-center gap-2"
+    >
+      <UProgress
+        :model-value="scanPct"
+        :max="100"
+        size="xs"
+        class="min-w-24 flex-1"
+      />
+      <span class="shrink-0 text-xs text-muted">{{ scanMsg }}</span>
+    </div>
     <span v-if="!health.docsPresent && health.dumpHint" class="opacity-80">
       {{ health.dumpHint }}
     </span>

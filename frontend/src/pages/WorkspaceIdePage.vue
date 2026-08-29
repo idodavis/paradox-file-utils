@@ -20,7 +20,7 @@ const workspaceId = computed(() => String(route.params.id ?? ""));
 const error = ref("");
 const loading = ref(false);
 
-/** Load workspace and remount workbench roots (after App initializes host). */
+/** Load workspace; folder I/O must not hold the loading banner. */
 async function boot(): Promise<void> {
   loading.value = true;
   error.value = "";
@@ -40,6 +40,7 @@ async function boot(): Promise<void> {
       settings.values["_global.theme"] ||
       document.documentElement.dataset.theme ||
       "PMT";
+    loading.value = false;
     await setWorkbenchRoots(roots, theme);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

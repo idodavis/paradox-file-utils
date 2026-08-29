@@ -26,6 +26,7 @@ type Watcher struct {
 
 	mu     sync.Mutex
 	timers map[string]*time.Timer
+	closed bool
 	done   chan struct{}
 }
 
@@ -44,9 +45,17 @@ func NewWatcher(roots []string, onChange func(path string)) (*Watcher, error) {
 	return w, nil
 }
 
-// Close stops watching and releases resources.
+// Close stops watching and releases resources. Pending debounce timers are
+// stopped so onChange cannot fire after teardown.
 func (w *Watcher) Close() error {
 	close(w.done)
+	w.mu.Lock()
+	w.closed = true
+	for name, t := range w.timers {
+		t.Stop()
+		delete(w.timers, name)
+	}
+	w.mu.Unlock()
 	return w.fsw.Close()
 }
 
@@ -99,7 +108,11 @@ func (w *Watcher) handle(ev fsnotify.Event) {
 	w.timers[name] = time.AfterFunc(watchDebounce, func() {
 		w.mu.Lock()
 		delete(w.timers, name)
+		closed := w.closed
 		w.mu.Unlock()
+		if closed {
+			return
+		}
 		w.onChange(name)
 	})
 	w.mu.Unlock()

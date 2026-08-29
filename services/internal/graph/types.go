@@ -4,6 +4,7 @@
 package graph
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -29,10 +30,16 @@ type EventGraph struct {
 	EmptyReason string                `json:"emptyReason,omitempty"`
 }
 
-// EventGraphSuggestions is the mod-side catalog for the query box.
+// EventGraphSuggestions is the catalog for root and namespace pickers.
 type EventGraphSuggestions struct {
-	IDs        []string `json:"ids"`
-	Namespaces []string `json:"namespaces"`
+	IDs        []SuggestionItem `json:"ids"`
+	Namespaces []SuggestionItem `json:"namespaces"`
+}
+
+// SuggestionItem is one picker entry. Origin is "" for vanilla, else a mod id.
+type SuggestionItem struct {
+	ID     string `json:"id"`
+	Origin string `json:"origin"`
 }
 
 // EventGraphStep is one card row in execution order.
@@ -151,10 +158,12 @@ type EventRefInfo struct {
 	DefCount int    `json:"defCount,omitempty"`
 }
 
-// EventDetail is the inspector payload for one event, including sim order.
+// EventDetail is the inspector payload for one event.
 type EventDetail struct {
 	ID       string             `json:"id"`
 	File     string             `json:"file"`
+	Rel      string             `json:"rel,omitempty"`
+	Origin   string             `json:"origin,omitempty"`
 	Line     int                `json:"line"`
 	EndLine  int                `json:"endLine"`
 	Fields   []EventFieldInfo   `json:"fields"`
@@ -167,28 +176,16 @@ type EventDetail struct {
 	Sections []EventSectionInfo `json:"sections"`
 	Options  []EventOptionInfo  `json:"options"`
 	Refs     []EventRefInfo     `json:"refs"`
-	SimSteps []SimStep          `json:"simSteps"`
-}
-
-// SimStep is one firing-order block of an event.
-type SimStep struct {
-	Kind          string            `json:"kind"`
-	Title         string            `json:"title"`
-	Subtitle      string            `json:"subtitle"`
-	Line          int               `json:"line"`
-	Note          string            `json:"note"`
-	Lines         []EventScriptLine `json:"lines"`
-	Hidden        int               `json:"hidden"`
-	Targets       []EventStepTarget `json:"targets"`
-	HiddenTargets int               `json:"hiddenTargets"`
 }
 
 // LocIssue is one coverage finding.
 type LocIssue struct {
-	Key   string `json:"key"`
-	File  string `json:"file,omitempty"`
-	Line  int    `json:"line,omitempty"`
-	Value string `json:"value,omitempty"`
+	Key    string `json:"key"`
+	File   string `json:"file,omitempty"`
+	Rel    string `json:"rel,omitempty"`
+	Line   int    `json:"line,omitempty"`
+	Value  string `json:"value,omitempty"`
+	Origin string `json:"origin,omitempty"`
 }
 
 // LocCoverage is per-language localization health for the workspace mods.
@@ -205,6 +202,7 @@ type LocLookup struct {
 	Key    string `json:"key"`
 	Text   string `json:"text"`
 	File   string `json:"file,omitempty"`
+	Rel    string `json:"rel,omitempty"`
 	Line   int    `json:"line,omitempty"`
 	Origin string `json:"origin,omitempty"`
 }
@@ -240,7 +238,6 @@ type Dependencies struct {
 var (
 	eventIDRe    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*\.\d+$`)
 	targetNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]*$`)
-	scopePrefix  = regexp.MustCompile(`^(scope|var|local_var|global_var):([A-Za-z0-9_.-]+)$`)
 )
 
 func blockOf(v parser.Value) *parser.Block {
@@ -266,15 +263,8 @@ func parseOf(s *session.Session, path string) parser.Result {
 }
 
 func locValue(s *session.Session, key string) string {
-	if idx := s.Index(); idx != nil {
-		if v, ok := idx.Loc[key]; ok {
-			return v
-		}
-	}
-	if c := s.Cache(); c != nil && c.LocEnglish != nil {
-		return c.LocEnglish[key]
-	}
-	return ""
+	v, _ := s.EnglishLoc(key)
+	return v
 }
 
 func titleOf(s *session.Session, id string) string {
@@ -328,21 +318,10 @@ func isCallKind(t string) bool {
 	}
 }
 
-func fireKind(key string) string {
-	switch strings.ToLower(key) {
-	case "trigger_event", "events", "random_events", "first_valid", "fallback":
-		return "event"
-	case "on_action", "on_actions":
-		return "on_action"
-	default:
-		return ""
-	}
-}
-
 func inFocus(s *session.Session, path, modRoot string) bool {
 	origin, _, ok := s.Locate(path)
 	if !ok {
-		return false
+		return modRoot == ""
 	}
 	if modRoot == "" {
 		return true
@@ -353,6 +332,22 @@ func inFocus(s *session.Session, path, modRoot string) bool {
 		}
 	}
 	return false
+}
+
+// relOf is the mod-root-relative path from Locate, else filepath.Rel to the install.
+func relOf(s *session.Session, path string) string {
+	if path == "" {
+		return ""
+	}
+	if _, rel, ok := s.Locate(path); ok {
+		return filepath.ToSlash(rel)
+	}
+	if c := s.Cache(); c != nil && c.InstallPath != "" {
+		if rel, err := filepath.Rel(c.InstallPath, path); err == nil {
+			return filepath.ToSlash(rel)
+		}
+	}
+	return filepath.ToSlash(path)
 }
 
 func clip(s string, n int) string {

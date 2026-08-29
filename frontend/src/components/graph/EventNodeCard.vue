@@ -11,11 +11,13 @@ const props = defineProps<NodeProps<EventGraphNode>>();
 
 <template>
   <div
-    class="rounded-md border bg-elevated px-2 py-1.5 text-left shadow-sm"
+    class="rounded-md border px-2 py-1.5 text-left shadow-sm"
     :class="
       props.selected
-        ? 'border-primary ring-1 ring-primary'
-        : 'border-default'
+        ? 'border-primary bg-elevated ring-1 ring-primary'
+        : props.data.source === 'mod'
+          ? 'border-primary/60 bg-elevated'
+          : 'border-default bg-default'
     "
     :style="{ width: `${NODE_W}px` }"
   >

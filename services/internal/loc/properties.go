@@ -8,15 +8,15 @@ import "strings"
 
 // strictProps virtually always hold a loc key.
 var strictProps = map[string]bool{
-	"title":         true,
-	"desc":          true,
-	"flavor":        true,
+	"title":          true,
+	"desc":           true,
+	"flavor":         true,
 	"custom_tooltip": true,
-	"confirm_text":  true,
-	"confirm_title": true,
-	"prompt":        true,
-	"failure_desc":  true,
-	"success_desc":  true,
+	"confirm_text":   true,
+	"confirm_title":  true,
+	"prompt":         true,
+	"failure_desc":   true,
+	"success_desc":   true,
 }
 
 // broadProps often hold a loc key (superset of strict). These also hold non-loc
@@ -39,15 +39,28 @@ const (
 	PropBroad Property = "broad"
 )
 
-// Classify returns whether prop holds a loc key (case-insensitive). Strict wins
-// over broad; broadProps holds only the additional (non-strict) names.
+// Classify returns whether prop holds a loc key. Names match the listed
+// lowercase engine fields (`title`, `desc`); ALL_CAPS trigger arguments
+// (`TITLE = primary_title`) are not loc properties.
 func Classify(prop string) Property {
-	p := strings.ToLower(prop)
-	if strictProps[p] {
+	if strictProps[prop] {
 		return PropStrict
 	}
-	if broadProps[p] {
+	if broadProps[prop] {
 		return PropBroad
 	}
 	return PropNone
+}
+
+// LooksLikeKey reports whether s is a plausible loc key (not yes/no/none,
+// not a `scope:` / `character:` prefix, not a built-in scope).
+func LooksLikeKey(s string) bool {
+	if s == "" || strings.Contains(s, ":") {
+		return false
+	}
+	switch strings.ToLower(s) {
+	case "yes", "no", "none", "root", "prev", "this", "from":
+		return false
+	}
+	return true
 }

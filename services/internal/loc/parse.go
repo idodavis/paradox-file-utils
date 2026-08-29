@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -160,8 +161,11 @@ func (s *scanner) processLine(line string, base int) {
 		if m := headerRe.FindStringSubmatch(line); m != nil {
 			s.headerFound = true
 			s.language = m[1]
-			idx := indexOf(line, "l_")
-			colon := indexOfFrom(line, ":", idx)
+			idx := strings.Index(line, "l_")
+			colon := strings.Index(line[max(idx, 0):], ":")
+			if colon >= 0 {
+				colon += max(idx, 0)
+			}
 			end := base + len(line)
 			if colon >= 0 {
 				end = base + colon + 1
@@ -233,7 +237,7 @@ func (s *scanner) parseEntry(entry string, entryBase int, fullLine string, lineB
 	quoteOpen := j
 	valueInnerStart := entryBase + quoteOpen + 1
 
-	quoteClose := lastIndexOf(entry, '"')
+	quoteClose := strings.LastIndexByte(entry, '"')
 	if quoteClose == quoteOpen {
 		s.errs = append(s.errs, Error{
 			Code:    ErrUnterminatedValue,
@@ -269,54 +273,25 @@ func (s *scanner) badEntry(fullLine string, lineBase int) {
 	})
 }
 
-// small byte-offset string helpers (kept local so loc imports no engine packages).
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
-}
-
-func indexOfFrom(s, sub string, from int) int {
-	if from < 0 {
-		from = 0
-	}
-	for i := from; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
-}
-
-func lastIndexOf(s string, c byte) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == c {
-			return i
-		}
-	}
-	return -1
-}
-
 // decode strips a UTF-8 BOM and falls back to latin1 for invalid UTF-8. Kept
 // local to avoid importing the parser package (loc has no engine dependencies).
 func decode(raw []byte) (text string, hadBOM bool) {
 	if len(raw) >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF {
 		body := raw[3:]
 		if utf8.Valid(body) {
-			return string(body), true
+			return stripCR(string(body)), true
 		}
 	}
 	if utf8.Valid(raw) {
-		return string(raw), false
+		return stripCR(string(raw)), false
 	}
-	// latin1 fallback
 	buf := make([]rune, 0, len(raw))
 	for _, b := range raw {
 		buf = append(buf, rune(b))
 	}
-	return string(buf), false
+	return stripCR(string(buf)), false
+}
+
+func stripCR(s string) string {
+	return strings.ReplaceAll(s, "\r", "")
 }

@@ -122,7 +122,7 @@ function onDblclick(ev: NodeMouseEvent): void {
 </script>
 
 <template>
-  <div class="h-full min-h-0 w-full text-muted">
+  <div class="h-full min-h-0 w-full text-default">
     <VueFlow
       :id="FLOW_ID"
       :nodes="flowNodes"
@@ -148,10 +148,13 @@ function onDblclick(ev: NodeMouseEvent): void {
 
 <style scoped>
 :deep(.vue-flow__edge-path) {
-  stroke: currentColor;
+  stroke: var(--ui-primary, currentColor);
 }
 :deep(.vue-flow__edge-text) {
   fill: var(--ui-text, currentColor);
+}
+:deep(.vue-flow__edge-textbg) {
+  fill: var(--ui-bg, transparent);
 }
 :deep(.vue-flow__controls) {
   box-shadow: none;

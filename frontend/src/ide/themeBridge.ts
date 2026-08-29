@@ -19,6 +19,7 @@ export function workbenchSettingsForTheme(
     "workbench.iconTheme": "pmt-icons",
     "workbench.tree.indent": 16,
     "workbench.tree.renderIndentGuides": "always",
+    "editor.semanticHighlighting.enabled": false,
   };
 }
 

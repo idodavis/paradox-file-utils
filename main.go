@@ -23,11 +23,6 @@ func main() {
 		log.Fatalf("db startup: %v", err)
 	}
 
-	logSvc := &services.LogService{}
-	if err := logSvc.ServiceStartup(); err != nil {
-		log.Fatalf("log startup: %v", err)
-	}
-
 	fileSvc := &services.FileService{}
 	mergeSvc := &services.MergeService{FileService: fileSvc}
 	settingsSvc := &services.SettingsService{DB: dbSvc.DB, Version: version}
@@ -52,6 +47,13 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
+	})
+
+	// DbService is internal (no RPC bindings), so wire its shutdown here.
+	app.OnShutdown(func() {
+		if err := dbSvc.ServiceShutdown(); err != nil {
+			log.Printf("db shutdown: %v", err)
+		}
 	})
 
 	gh, err := github.New(github.Config{

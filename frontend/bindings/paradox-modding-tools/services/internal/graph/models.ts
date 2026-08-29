@@ -38,11 +38,13 @@ export interface DependencyItem {
 }
 
 /**
- * EventDetail is the inspector payload for one event, including sim order.
+ * EventDetail is the inspector payload for one event.
  */
 export interface EventDetail {
     "id": string;
     "file": string;
+    "rel"?: string;
+    "origin"?: string;
     "line": number;
     "endLine": number;
     "fields": EventFieldInfo[] | null;
@@ -55,7 +57,6 @@ export interface EventDetail {
     "sections": EventSectionInfo[] | null;
     "options": EventOptionInfo[] | null;
     "refs": EventRefInfo[] | null;
-    "simSteps": SimStep[] | null;
 }
 
 /**
@@ -141,11 +142,11 @@ export interface EventGraphStep {
 }
 
 /**
- * EventGraphSuggestions is the mod-side catalog for the query box.
+ * EventGraphSuggestions is the catalog for root and namespace pickers.
  */
 export interface EventGraphSuggestions {
-    "ids": string[] | null;
-    "namespaces": string[] | null;
+    "ids": SuggestionItem[] | null;
+    "namespaces": SuggestionItem[] | null;
 }
 
 /**
@@ -243,8 +244,10 @@ export interface LocCoverage {
 export interface LocIssue {
     "key": string;
     "file"?: string;
+    "rel"?: string;
     "line"?: number;
     "value"?: string;
+    "origin"?: string;
 }
 
 /**
@@ -254,21 +257,15 @@ export interface LocLookup {
     "key": string;
     "text": string;
     "file"?: string;
+    "rel"?: string;
     "line"?: number;
     "origin"?: string;
 }
 
 /**
- * SimStep is one firing-order block of an event.
+ * SuggestionItem is one picker entry. Origin is "" for vanilla, else a mod id.
  */
-export interface SimStep {
-    "kind": string;
-    "title": string;
-    "subtitle": string;
-    "line": number;
-    "note": string;
-    "lines": EventScriptLine[] | null;
-    "hidden": number;
-    "targets": EventStepTarget[] | null;
-    "hiddenTargets": number;
+export interface SuggestionItem {
+    "id": string;
+    "origin": string;
 }

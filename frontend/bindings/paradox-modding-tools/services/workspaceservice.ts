@@ -103,7 +103,7 @@ export function ListGameInstalls(gameID: string): $CancellablePromise<repos$0.Ga
 }
 
 /**
- * ListGames returns all supported games from the DB.
+ * ListGames returns supported games from the Go registry.
  */
 export function ListGames(): $CancellablePromise<repos$0.Game[] | null> {
     return $Call.ByID(1635414117);

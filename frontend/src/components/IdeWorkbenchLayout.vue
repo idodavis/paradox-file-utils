@@ -17,6 +17,7 @@ const editor = ref<HTMLElement | null>(null);
 const panel = ref<HTMLElement | null>(null);
 
 let initStarted = false;
+let initDone = false;
 
 /** Initialize monaco workbench only when the IDE shell is shown. */
 async function tryInitWorkbench(): Promise<void> {
@@ -37,6 +38,7 @@ async function tryInitWorkbench(): Promise<void> {
       },
       { theme: props.theme },
     );
+    initDone = true;
   } catch (error) {
     initStarted = false;
     console.error("workbench init", error);
@@ -46,7 +48,12 @@ async function tryInitWorkbench(): Promise<void> {
 watch(
   () => props.visible,
   (visible) => {
-    if (visible) void tryInitWorkbench();
+    if (!visible) return;
+    if (initDone) {
+      void import("../ide/workbenchHost").then((m) => m.revealWorkbench());
+      return;
+    }
+    void tryInitWorkbench();
   },
   { immediate: true },
 );

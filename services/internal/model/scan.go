@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -50,11 +50,11 @@ var stoplist = map[string]bool{
 	"first_valid": true, "triggered_desc": true, "random_list": true,
 }
 
-// Scan harvests installPath into a Cache for gameID. scriptDocsDir points at an
-// optional in-game script_docs dump ("" to skip enrichment). onProgress may be nil.
+// Scan harvests installPath into a Cache for workspaceID. scriptDocsDir points at
+// an optional in-game script_docs dump ("" to skip enrichment). onProgress may be nil.
 func Scan(
 	ctx context.Context,
-	gameID, installPath, scriptDocsDir string,
+	workspaceID, gameID, installPath, scriptDocsDir string,
 	onProgress func(pct int, msg string),
 ) (*Cache, error) {
 	info := game.Get(gameID)
@@ -71,32 +71,39 @@ func Scan(
 	}
 
 	progress(onProgress, 70, "reading localization")
-	locEnglish := readEnglish(inv.loc)
+	locEnglish, locSites := readEnglish(inv.loc)
 
 	progress(onProgress, 80, "reading docs")
-	fieldDocs, docStructs := harvestDocs(gameID, inv.docs)
+	fieldDocs, fieldByKind, docStructs := harvestDocs(gameID, inv.docs)
 	for kind, keys := range docStructs {
+		set := acc.structures[kind]
+		if set == nil {
+			set = map[string]bool{}
+			acc.structures[kind] = set
+		}
 		for k := range keys {
-			acc.structures[kind][k] = true
+			set[k] = true
 		}
 	}
 
 	c := &Cache{
-		FormatVersion: CacheFormatVersion,
-		GameID:        gameID,
-		InstallPath:   installPath,
-		GameVersion:   game.ReadGameVersion(installPath),
-		ScannedAt:     time.Now().UTC().Format(time.RFC3339),
-		Defs:          acc.defs,
-		LocEnglish:    locEnglish,
-		FieldDocs:     fieldDocs,
-		Structures:    setsToLists(acc.structures),
-		Vocabulary:    sortedKeys(acc.vocab),
-		Objects:       sortedKeys(acc.objects),
-		GUITypes:      sortedKeys(acc.guiTypes),
-		GUIProps:      sortedKeys(acc.guiProps),
-		MetaKeys:      readMetaKeys(installPath, inv.meta),
-		RootScopes:    map[string]string{},
+		FormatVersion:   CacheFormatVersion,
+		WorkspaceID:     workspaceID,
+		GameID:          gameID,
+		InstallPath:     installPath,
+		GameVersion:     game.ReadGameVersion(installPath),
+		ScannedAt:       time.Now().UTC().Format(time.RFC3339),
+		Defs:            acc.defs,
+		LocEnglish:      locEnglish,
+		LocEnglishSites: locSites,
+		FieldDocs:       fieldDocs,
+		FieldDocsByKind: fieldByKind,
+		Structures:      setsToLists(acc.structures),
+		Vocabulary:      sortedKeys(acc.vocab),
+		Objects:         sortedKeys(acc.objects),
+		GUITypes:        sortedKeys(acc.guiTypes),
+		GUIProps:        sortedKeys(acc.guiProps),
+		MetaKeys:        readMetaKeys(installPath, inv.meta),
 	}
 
 	progress(onProgress, 90, "reading script_docs")
@@ -431,15 +438,16 @@ func blockOf(v parser.Value) *parser.Block {
 	}
 }
 
-// readEnglish parses english loc files into a key->value map (values capped).
-func readEnglish(files []string) map[string]string {
+// readEnglish parses english loc files (filename or header) into values + sites.
+func readEnglish(files []string) (map[string]string, map[string]LocSite) {
 	out := map[string]string{}
+	sites := map[string]LocSite{}
 	for _, f := range files {
-		if loc.LanguageFromFilename(f) != "english" {
-			continue
-		}
 		res, err := loc.ParseFile(f)
 		if err != nil {
+			continue
+		}
+		if loc.LanguageOf(f, res.Language) != "english" {
 			continue
 		}
 		for _, e := range res.Entries {
@@ -448,15 +456,21 @@ func readEnglish(files []string) map[string]string {
 				v = v[:locValueLimit]
 			}
 			out[e.Key] = v
+			sites[e.Key] = LocSite{File: f, Line: e.Line}
 		}
 	}
-	return out
+	return out, sites
 }
 
-// harvestDocs reads shipped `_*.info`/`*.md` docs into field prose and per-kind
-// documented structure keys.
-func harvestDocs(gameID string, docs []fileRef) (fieldDocs map[string]string, structs map[string]map[string]bool) {
+// harvestDocs reads shipped `_*.info`/`*.md` docs into global field prose,
+// per-kind field prose, and per-kind documented structure keys.
+func harvestDocs(gameID string, docs []fileRef) (
+	fieldDocs map[string]string,
+	byKind map[string]map[string]string,
+	structs map[string]map[string]bool,
+) {
 	fieldDocs = map[string]string{}
+	byKind = map[string]map[string]string{}
 	structs = map[string]map[string]bool{}
 	for _, f := range docs {
 		raw, err := os.ReadFile(f.abs)
@@ -469,6 +483,14 @@ func harvestDocs(gameID string, docs []fileRef) (fieldDocs map[string]string, st
 				if _, seen := fieldDocs[key]; !seen {
 					fieldDocs[key] = doc
 				}
+				if kind != "" {
+					if byKind[kind] == nil {
+						byKind[kind] = map[string]string{}
+					}
+					if _, seen := byKind[kind][key]; !seen {
+						byKind[kind][key] = doc
+					}
+				}
 			}
 			if kind != "" {
 				if structs[kind] == nil {
@@ -478,7 +500,7 @@ func harvestDocs(gameID string, docs []fileRef) (fieldDocs map[string]string, st
 			}
 		}
 	}
-	return fieldDocs, structs
+	return fieldDocs, byKind, structs
 }
 
 // harvestDocFile extracts `key = value  # doc` candidates from one doc file, with
@@ -553,6 +575,9 @@ func enrichScriptDocs(dir, format string, c *Cache) {
 	for _, v := range c.Vocabulary {
 		vocab[v] = true
 	}
+	if c.FieldDocs == nil {
+		c.FieldDocs = map[string]string{}
+	}
 	for _, e := range entries {
 		vocab[e.name] = true
 		if e.doc != "" {
@@ -575,11 +600,10 @@ func enrichScriptDocs(dir, format string, c *Cache) {
 	c.Modifiers = sortedKeys(modifiers)
 }
 
-// docToken is one entry parsed from a script_docs dump.
-type docToken struct{ name, kind, doc string }
+type docToken struct {
+	name, kind, doc string
+}
 
-// parseScriptDocs reads a script_docs dump directory. "markdown" reads `## name`
-// sections from *.md; "classic" reads blank-line-separated blocks from *.log.
 func parseScriptDocs(dir, format string) []docToken {
 	var out []docToken
 	entries, err := os.ReadDir(dir)
@@ -605,9 +629,12 @@ func parseScriptDocs(dir, format string) []docToken {
 	return out
 }
 
-// kindFromDocFilename maps a dump filename to a token kind by keyword.
 func kindFromDocFilename(name string) string {
 	switch {
+	case strings.Contains(name, "event_target"):
+		return "event_target"
+	case strings.Contains(name, "event_scope"):
+		return "scope_type"
 	case strings.Contains(name, "effect"):
 		return "effect"
 	case strings.Contains(name, "trigger"):
@@ -619,16 +646,16 @@ func kindFromDocFilename(name string) string {
 	}
 }
 
-// parseMarkdownDocs reads `## name` sections; the body until the next header is doc.
 func parseMarkdownDocs(text, kind string) []docToken {
 	var out []docToken
 	var cur *docToken
 	var body []string
 	flush := func() {
-		if cur != nil {
-			cur.doc = strings.TrimSpace(strings.Join(strings.Fields(strings.Join(body, " ")), " "))
-			out = append(out, *cur)
+		if cur == nil {
+			return
 		}
+		cur.doc = strings.TrimSpace(strings.Join(strings.Fields(strings.Join(body, " ")), " "))
+		out = append(out, *cur)
 		cur, body = nil, body[:0]
 	}
 	for _, line := range strings.Split(text, "\n") {
@@ -647,22 +674,41 @@ func parseMarkdownDocs(text, kind string) []docToken {
 	return out
 }
 
-// parseClassicDocs reads blank-line-separated blocks; the first token names the
-// entry and the remaining lines are its doc.
 func parseClassicDocs(text, kind string) []docToken {
 	var out []docToken
-	for _, block := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n\n") {
-		lines := strings.Split(strings.TrimSpace(block), "\n")
-		if len(lines) == 0 || lines[0] == "" {
-			continue
+	var cur *docToken
+	var prose []string
+	flush := func() {
+		if cur == nil {
+			return
 		}
-		name := tokenRe.FindString(strings.TrimSpace(lines[0]))
-		if name == "" {
-			continue
-		}
-		doc := strings.TrimSpace(strings.Join(strings.Fields(strings.Join(lines[1:], " ")), " "))
-		out = append(out, docToken{name: name, kind: kind, doc: doc})
+		cur.doc = strings.TrimSpace(strings.Join(strings.Fields(strings.Join(prose, " ")), " "))
+		out = append(out, *cur)
+		cur, prose = nil, nil
 	}
+	for _, raw := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		trimmed := strings.TrimSpace(raw)
+		if strings.HasPrefix(trimmed, "----") {
+			flush()
+			continue
+		}
+		if trimmed == "" {
+			continue
+		}
+		if cur == nil {
+			name := tokenRe.FindString(trimmed)
+			if name == "" {
+				continue
+			}
+			cur = &docToken{name: name, kind: kind}
+			if i := strings.Index(trimmed, " - "); i >= 0 {
+				prose = append(prose, trimmed[i+3:])
+			}
+			continue
+		}
+		prose = append(prose, trimmed)
+	}
+	flush()
 	return out
 }
 
@@ -681,7 +727,7 @@ func sortedKeys(set map[string]bool) []string {
 	for k := range set {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -27,33 +28,25 @@ func (f *FileService) GetUserDownloadsDir() (string, error) {
 	return filepath.Join(home, "Downloads", "PMT-Merge"), nil
 }
 
+// SelectDirectory prompts for a folder. Cancel yields an empty path (no error).
 func (f *FileService) SelectDirectory(title string) (string, error) {
-	app := application.Get()
-	dialog := app.Dialog.OpenFile()
+	dialog := application.Get().Dialog.OpenFile()
 	dialog.SetTitle(title)
 	dialog.CanChooseDirectories(true)
 	dialog.CanChooseFiles(false)
-	path, err := dialog.PromptForSingleSelection()
-	if err != nil {
-		return "", nil
-	}
-	return path, err
+	return dialog.PromptForSingleSelection()
 }
 
+// SelectSingleFile prompts for a file. Cancel yields an empty path (no error).
 func (f *FileService) SelectSingleFile(title, filter string) (string, error) {
-	app := application.Get()
-	dialog := app.Dialog.OpenFile()
+	dialog := application.Get().Dialog.OpenFile()
 	dialog.SetTitle(title)
 	dialog.CanChooseFiles(true)
 	dialog.CanChooseDirectories(false)
 	if filter != "" {
 		dialog.AddFilter(filter, filter)
 	}
-	path, err := dialog.PromptForSingleSelection()
-	if err != nil {
-		return "", nil
-	}
-	return path, err
+	return dialog.PromptForSingleSelection()
 }
 
 // WriteWithBOM writes content to outputPath as UTF-8 with BOM. Creates parent directories as needed.
@@ -305,7 +298,7 @@ func (f *FileService) StatPath(fullPath string) (PathStat, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return PathStat{Exists: false}, nil
 		}
 		return PathStat{}, err

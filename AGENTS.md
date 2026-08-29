@@ -1,6 +1,10 @@
 ## Learned User Preferences
 
 - Prefer the smallest clear implementation: cut duplication, dead-end helpers, and over-engineering; do not add code for backwards compatibility.
+- Never hand-edit `frontend/bindings/**`; regenerate with `task common:generate:bindings` after Go DTO/service changes.
+- Put display fields (relative paths, origin) on Go payloads. `session.Locate` already returns origin+rel; use `filepath.Rel` for vanilla/install paths. Do not write frontend path-stripping helpers.
+- Render inspector/table fields from the payload. Do not re-derive view-models for values Go already computed.
+- Prefer stdlib (`filepath.Rel`, Node `node:path`) over custom utilities when client-side path math is unavoidable.
 - Change only what was explicitly requested; avoid unrelated refactors or drive-by edits.
 - Keep plans short, actionable, and free of stale wording after iterative edits; ask clarifying questions when requirements are ambiguous.
 - Prefer game-agnostic shared parser/semantics logic; keep game-specific facts and outputs under each game's own files/dirs.

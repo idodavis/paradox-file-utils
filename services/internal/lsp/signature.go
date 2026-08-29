@@ -14,28 +14,32 @@ func SignatureAt(s *session.Session, path string, line, col int) *SignatureHelp 
 		return nil
 	}
 	res := parseOf(s, path, src)
-	chain := parser.NodeAtOffset(res.Root, offsetOf(src, line, col))
+	off := offsetOf(src, line, col)
+	if inComment(res, off) || res.Root == nil {
+		return nil
+	}
+	kind := enclosingKind(s, path, src, off)
+	chain := parser.NodeAtOffset(res.Root, off)
 	for i := len(chain) - 1; i >= 0; i-- {
 		a, ok := chain[i].(*parser.Assignment)
 		if !ok {
 			continue
 		}
 		key := a.Key.Text
-		doc := docsFor(s, key)
-		label := key
+		doc := docsFor(s, key, kind)
 		if doc != "" {
-			return &SignatureHelp{Label: label, Documentation: doc}
+			return &SignatureHelp{Label: key, Documentation: doc}
 		}
 		if d := s.Resolve(key); d != nil {
 			return &SignatureHelp{Label: d.Type + " " + d.Key}
 		}
 		return &SignatureHelp{Label: key}
 	}
-	word, _, _ := wordAt(src, offsetOf(src, line, col))
+	word, _, _ := wordAt(src, off)
 	if word == "" {
 		return nil
 	}
-	if doc := docsFor(s, word); doc != "" {
+	if doc := docsFor(s, word, kind); doc != "" {
 		return &SignatureHelp{Label: word, Documentation: doc}
 	}
 	return nil

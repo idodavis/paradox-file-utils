@@ -34,7 +34,7 @@ func CodeActions(s *session.Session, path string) []CodeAction {
 	}
 	seen := map[string]bool{}
 	for _, r := range idx.Refs {
-		if r.Path != path || r.Kind != "loc" || locDefined(s, r.Key) || seen[r.Key] {
+		if !session.SamePath(r.Path, path) || r.Kind != "loc" || locDefined(s, r.Key) || seen[r.Key] {
 			continue
 		}
 		seen[r.Key] = true

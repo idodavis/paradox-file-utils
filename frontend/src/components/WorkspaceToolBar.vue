@@ -4,6 +4,7 @@
  */
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import type { NavigationMenuItem } from "@nuxt/ui";
 
 const props = defineProps<{
   workspaceId: string;
@@ -24,14 +25,15 @@ const tools: { label: string; icon: string; name: string }[] = [
   { label: "Mod Patcher", icon: "i-lucide-git-compare", name: "patcher" },
 ];
 
-function isActive(name: string): boolean {
-  if (props.active) return props.active === name;
-  return route.name === name;
-}
-
-function go(name: string): void {
-  void router.push({ name, params: { id: id.value } });
-}
+/** Tool routes as navigation-menu items with active-state highlighting. */
+const toolItems = computed<NavigationMenuItem[]>(() =>
+  tools.map((t) => ({
+    label: t.label,
+    icon: t.icon,
+    active: props.active ? props.active === t.name : route.name === t.name,
+    to: { name: t.name, params: { id: id.value } },
+  })),
+);
 </script>
 
 <template>
@@ -48,18 +50,12 @@ function go(name: string): void {
       @click="router.push({ name: 'library' })"
     />
     <span class="font-semibold text-default">{{ title }}</span>
-    <div class="flex flex-wrap items-center gap-1">
-      <UButton
-        v-for="tool in tools"
-        :key="tool.name"
-        :label="tool.label"
-        :icon="tool.icon"
-        :color="isActive(tool.name) ? 'primary' : 'neutral'"
-        :variant="isActive(tool.name) ? 'soft' : 'ghost'"
-        size="sm"
-        @click="go(tool.name)"
-      />
-    </div>
+    <UNavigationMenu
+      :items="toolItems"
+      variant="pill"
+      highlight
+      class="flex-wrap"
+    />
     <div class="ml-auto flex items-center gap-2">
       <slot name="trailing" />
     </div>

@@ -1,161 +1,252 @@
 <script setup lang="ts">
 /**
- * Read-only inspector for one Go EventDetail (including simSteps).
+ * Event inspector: header, loc, attributes, sections, incoming edges, options, refs.
  */
 import { computed } from "vue";
+import type { AccordionItem } from "@nuxt/ui";
 import type {
   EventDetail,
-  EventScriptLine,
+  EventGraphEdge,
+  EventOptionInfo,
 } from "@services/internal/graph/models";
 import { useOpenInIde } from "../../composables/useOpenInIde";
+import EventDetailHeader from "./EventDetailHeader.vue";
+import EventScriptBlock from "./EventScriptBlock.vue";
+import EventRefsAccordion from "./EventRefsAccordion.vue";
 
 const props = defineProps<{
   workspaceId: string;
   detail: EventDetail | null;
+  incoming?: EventGraphEdge[];
 }>();
+
+const emit = defineEmits<{ select: [id: string] }>();
 
 const { openInIde } = useOpenInIde();
 
-const locBits = computed(() => {
-  const d = props.detail;
-  if (!d) return [];
-  return [
-    { label: "Title", loc: d.title },
-    { label: "Desc", loc: d.desc },
-    { label: "Flavor", loc: d.flavor },
-  ].filter((x) => x.loc);
-});
+const GATES = new Set(["trigger", "cancellation_trigger", "on_trigger_fail"]);
 
-const simItems = computed(() =>
-  (props.detail?.simSteps ?? []).map((step, i) => ({
-    label: step.title || step.kind,
-    value: `sim-${i}`,
-    step,
+const gates = computed(() =>
+  (props.detail?.sections ?? []).filter((s) => GATES.has(s.name.toLowerCase())),
+);
+const effects = computed(() =>
+  (props.detail?.sections ?? []).filter((s) => !GATES.has(s.name.toLowerCase())),
+);
+const optionItems = computed((): AccordionItem[] =>
+  (props.detail?.options ?? []).map((option, i) => ({
+    label: option.name?.text || option.name?.key || `option ${i + 1}`,
+    value: `opt-${i}`,
+    option,
   })),
 );
 
-/** Open a path from this detail in the workspace IDE. */
 function open(path?: string, line?: number): void {
-  if (!path) return;
-  void openInIde(props.workspaceId, path, line);
+  if (path) void openInIde(props.workspaceId, path, line);
 }
 
-/** Open the event's defining file. */
-function openDef(): void {
-  const d = props.detail;
-  if (!d?.file) return;
-  open(d.file, d.line);
+function asOption(item: AccordionItem): EventOptionInfo | undefined {
+  return (item as AccordionItem & { option?: EventOptionInfo }).option;
 }
 
-/** Indent a rendered script line from Go (display only). */
-function linePad(line: EventScriptLine): string {
-  return `${Math.min(line.depth, 8) * 0.75}rem`;
+function sectionColor(name: string): "warning" | "info" | "neutral" {
+  switch (name.toLowerCase()) {
+    case "trigger":
+    case "cancellation_trigger":
+    case "on_trigger_fail":
+      return "warning";
+    case "immediate":
+    case "after":
+      return "info";
+    default:
+      return "neutral";
+  }
 }
 </script>
 
 <template>
-  <aside
-    class="flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden border-l
-      border-default bg-default"
-  >
+  <aside class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-default">
     <div
       v-if="!detail"
-      class="p-3 text-sm text-muted"
+      class="p-2 text-xs text-muted"
     >
       Click a node to inspect. Double-click to re-root.
     </div>
     <template v-else>
-      <div class="shrink-0 space-y-1 border-b border-default px-3 py-2">
-        <div class="truncate font-semibold text-default">{{ detail.id }}</div>
-        <div class="flex flex-wrap items-center gap-1 text-xs text-muted">
-          <UBadge v-if="detail.type" color="neutral" variant="subtle" size="xs">
-            {{ detail.type }}
-          </UBadge>
-          <UBadge v-if="detail.hidden" color="warning" variant="subtle" size="xs">
-            hidden
-          </UBadge>
-          <span v-if="detail.theme">{{ detail.theme }}</span>
-        </div>
-        <UButton
-          label="Open in IDE"
-          icon="i-lucide-file-code"
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          :disabled="!detail.file"
-          @click="openDef"
-        />
-      </div>
-      <div class="min-h-0 flex-1 space-y-3 overflow-auto p-3">
-        <div v-if="locBits.length" class="space-y-1 text-sm">
-          <div v-for="bit in locBits" :key="bit.label">
-            <div class="text-xs text-muted">{{ bit.label }}</div>
-            <button
-              v-if="bit.loc?.file"
-              type="button"
-              class="text-left text-default hover:underline"
-              @click="open(bit.loc.file, bit.loc.line)"
-            >
-              {{ bit.loc.text || bit.loc.key }}
-            </button>
-            <div v-else class="text-default">
-              {{ bit.loc?.text || bit.loc?.key }}
-            </div>
-          </div>
-        </div>
-        <div v-if="simItems.length" class="space-y-2">
-          <div class="text-xs font-medium text-muted">Sim order</div>
-          <div
-            v-for="item in simItems"
-            :key="item.value"
-            class="space-y-1 border-b border-default pb-2 last:border-0"
-          >
-            <div class="text-sm font-medium text-default">{{ item.label }}</div>
-            <p v-if="item.step.subtitle" class="text-xs text-muted">
-              {{ item.step.subtitle }}
-            </p>
-            <p v-if="item.step.note" class="text-xs text-muted">
-              {{ item.step.note }}
-            </p>
-            <div
-              v-for="(line, i) in item.step.lines ?? []"
-              :key="i"
-              class="font-mono text-xs text-default"
-              :style="{ paddingLeft: linePad(line) }"
-            >
-              {{ line.text }}
-            </div>
-            <div
-              v-for="(t, i) in item.step.targets ?? []"
-              :key="`t-${i}`"
-              class="text-xs text-muted"
-            >
-              {{ t.via }} → {{ t.name }}
-            </div>
-          </div>
-        </div>
-        <div v-if="detail.options?.length" class="space-y-1">
-          <div class="text-xs font-medium text-muted">Options</div>
-          <div
-            v-for="(opt, i) in detail.options"
-            :key="i"
-            class="text-sm text-default"
-          >
-            {{ opt.name?.text || opt.name?.key || `option ${i + 1}` }}
-          </div>
-        </div>
-        <div v-if="detail.refs?.length" class="space-y-1">
-          <div class="text-xs font-medium text-muted">Refs</div>
+      <EventDetailHeader
+        :detail="detail"
+        @open="open(detail.file, detail.line)"
+      />
+      <div class="min-h-0 flex-1 space-y-3 overflow-auto p-2 text-xs">
+        <div
+          v-if="detail.title"
+          class="border-l-2 border-info pl-2"
+        >
+          <div class="text-muted">Title</div>
           <button
-            v-for="(r, i) in detail.refs"
-            :key="i"
+            v-if="detail.title.file"
             type="button"
-            class="block text-left text-xs text-default hover:underline"
-            :disabled="!r.defFile"
-            @click="open(r.defFile, r.defLine)"
+            class="text-left text-default hover:underline"
+            @click="open(detail.title.file, detail.title.line)"
           >
-            {{ r.kind }} {{ r.name }}
+            “{{ detail.title.text || detail.title.key }}”
           </button>
+          <div v-else class="text-default">
+            “{{ detail.title.text || detail.title.key }}”
+          </div>
+        </div>
+        <div
+          v-if="detail.desc"
+          class="border-l-2 border-info pl-2"
+        >
+          <div class="text-muted">Desc</div>
+          <button
+            v-if="detail.desc.file"
+            type="button"
+            class="text-left text-default hover:underline"
+            @click="open(detail.desc.file, detail.desc.line)"
+          >
+            “{{ detail.desc.text || detail.desc.key }}”
+          </button>
+          <div v-else class="text-default">
+            “{{ detail.desc.text || detail.desc.key }}”
+          </div>
+        </div>
+        <div
+          v-if="detail.flavor"
+          class="border-l-2 border-info pl-2"
+        >
+          <div class="text-muted">Flavor</div>
+          <button
+            v-if="detail.flavor.file"
+            type="button"
+            class="text-left text-default hover:underline"
+            @click="open(detail.flavor.file, detail.flavor.line)"
+          >
+            “{{ detail.flavor.text || detail.flavor.key }}”
+          </button>
+          <div v-else class="text-default">
+            “{{ detail.flavor.text || detail.flavor.key }}”
+          </div>
+        </div>
+
+        <div v-if="detail.fields?.length" class="space-y-0.5">
+          <div class="font-medium text-toned">Attributes</div>
+          <button
+            v-for="f in detail.fields"
+            :key="f.key"
+            type="button"
+            class="block w-full truncate text-left hover:underline"
+            @click="open(detail.file, f.line)"
+          >
+            <span class="text-muted">{{ f.key }}</span>
+            <span class="text-default">
+              = {{ f.quoted ? `"${f.value}"` : f.value }}
+            </span>
+          </button>
+        </div>
+
+        <div v-if="gates.length" class="space-y-2">
+          <div class="font-medium text-toned">When it runs</div>
+          <div
+            v-for="sec in gates"
+            :key="sec.name"
+            class="border-l-2 border-warning pl-2"
+          >
+            <UBadge
+              :label="sec.name"
+              :color="sectionColor(sec.name)"
+              variant="subtle"
+              size="xs"
+            />
+            <EventScriptBlock
+              class="mt-1"
+              :lines="sec.lines"
+              :targets="sec.targets"
+              @select="emit('select', $event)"
+            />
+          </div>
+        </div>
+
+        <div v-if="incoming?.length" class="space-y-1">
+          <div class="font-medium text-toned">Fired by</div>
+          <UButton
+            v-for="(e, i) in incoming"
+            :key="i"
+            :label="`${e.from}${e.via ? ` · ${e.via}` : ''}`"
+            size="xs"
+            color="neutral"
+            variant="subtle"
+            @click="emit('select', e.from)"
+          />
+        </div>
+
+        <div v-if="effects.length" class="space-y-2">
+          <div class="font-medium text-toned">What it fires</div>
+          <div
+            v-for="sec in effects"
+            :key="sec.name"
+            class="border-l-2 border-info pl-2"
+          >
+            <UBadge
+              :label="sec.name"
+              :color="sectionColor(sec.name)"
+              variant="subtle"
+              size="xs"
+            />
+            <EventScriptBlock
+              class="mt-1"
+              :lines="sec.lines"
+              :targets="sec.targets"
+              @select="emit('select', $event)"
+            />
+          </div>
+        </div>
+
+        <div v-if="optionItems.length" class="space-y-1">
+          <div class="font-medium text-toned">Branching options</div>
+          <UAccordion
+            type="multiple"
+            :items="optionItems"
+            :ui="{ trigger: 'text-xs', body: 'text-xs' }"
+          >
+            <template #body="{ item }">
+              <div
+                v-for="f in asOption(item)?.fields ?? []"
+                :key="f.key"
+                class="truncate"
+              >
+                <span class="text-muted">{{ f.key }}</span>
+                <span class="text-default">
+                  = {{ f.quoted ? `"${f.value}"` : f.value }}
+                </span>
+              </div>
+              <EventScriptBlock
+                class="mt-1"
+                :lines="asOption(item)?.lines"
+                :targets="asOption(item)?.targets"
+                @select="emit('select', $event)"
+              />
+              <div
+                v-if="asOption(item)?.trigger"
+                class="mt-1 border-l-2 border-warning pl-2"
+              >
+                <div class="text-muted">trigger</div>
+                <EventScriptBlock :lines="asOption(item)?.trigger?.lines" />
+              </div>
+              <div
+                v-if="asOption(item)?.aiChance"
+                class="mt-1 border-l-2 border-neutral pl-2"
+              >
+                <div class="text-muted">ai_chance</div>
+                <EventScriptBlock :lines="asOption(item)?.aiChance?.lines" />
+              </div>
+            </template>
+          </UAccordion>
+        </div>
+
+        <div v-if="detail.refs?.length" class="space-y-1">
+          <div class="font-medium text-toned">Refs</div>
+          <EventRefsAccordion :refs="detail.refs" @open="open" />
         </div>
       </div>
     </template>

@@ -116,7 +116,7 @@ func missingLocDiags(s *session.Session, path string) []Diagnostic {
 	var out []Diagnostic
 	src := fileText(s, path)
 	for _, r := range idx.Refs {
-		if r.Path != path || r.Kind != "loc" {
+		if !session.SamePath(r.Path, path) || r.Kind != "loc" {
 			continue
 		}
 		if locDefined(s, r.Key) {

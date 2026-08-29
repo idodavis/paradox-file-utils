@@ -6,11 +6,11 @@ package model
 
 // CacheFormatVersion is the on-disk schema version of a vanilla Cache. Bump it
 // whenever the Cache shape changes; LoadCache rejects any other version.
-const CacheFormatVersion = 1
+const CacheFormatVersion = 4
 
 // IndexFormatVersion is the on-disk schema version of a workspace Index; bumping
 // it invalidates saved indexes (LoadIndex rejects a mismatch, caller rebuilds).
-const IndexFormatVersion = 1
+const IndexFormatVersion = 5
 
 // Def is one definition: a named object the game (or a mod) declares. Path is the
 // absolute file it lives in; Line is 0-based. Type is the definition kind as
@@ -24,8 +24,9 @@ type Def struct {
 	Origin string `json:"origin,omitempty"`
 }
 
-// Ref is a use-site pointing at a definition key. Kind classifies the reference
-// (currently "loc"). Start/End are UTF-8 byte offsets of the referenced token.
+// Ref is a use-site pointing at a definition key. Kind is "loc", "loc-broad",
+// "event", or "on_action". Start/End are UTF-8 byte offsets of the referenced
+// token.
 type Ref struct {
 	Key   string `json:"key"`
 	Kind  string `json:"kind"`
@@ -67,11 +68,11 @@ type Index struct {
 	Order         []string          `json:"order"`
 }
 
-// Cache is the vanilla semantic model for one (game, version). It is derived
-// entirely from the install and reused across every workspace on that version.
+// Cache is the vanilla semantic model for one workspace's install scan.
 // All string slices are sorted, de-duplicated membership sets (no frequencies).
 type Cache struct {
 	FormatVersion int    `json:"formatVersion"`
+	WorkspaceID   string `json:"workspaceId"`
 	GameID        string `json:"gameId"`
 	InstallPath   string `json:"installPath"`
 	GameVersion   string `json:"gameVersion"`
@@ -81,9 +82,14 @@ type Cache struct {
 	Defs []Def `json:"defs"`
 	// LocEnglish maps every english loc key to its (length-capped) value.
 	LocEnglish map[string]string `json:"locEnglish"`
+	// LocEnglishSites maps every english loc key to its defining file and line.
+	LocEnglishSites map[string]LocSite `json:"locEnglishSites"`
 	// FieldDocs maps a field/token key to human doc prose from shipped docs or
-	// a script_docs dump.
+	// a script_docs dump (global first-wins fallback).
 	FieldDocs map[string]string `json:"fieldDocs"`
+	// FieldDocsByKind maps a definition kind to field-key prose from `_*.info`
+	// files classified by game.MatchExtract (kind → field → prose).
+	FieldDocsByKind map[string]map[string]string `json:"fieldDocsByKind"`
 	// Structures maps a definition kind to the set of keys valid as its direct
 	// children (union of documented keys and keys observed in the corpus).
 	Structures map[string][]string `json:"structures"`
@@ -104,7 +110,10 @@ type Cache struct {
 	GUIProps []string `json:"guiProps"`
 	// MetaKeys are the top-level keys seen in .metadata/metadata.json files.
 	MetaKeys []string `json:"metaKeys"`
-	// RootScopes maps a definition kind to the scope its body runs in, when the
-	// shipped docs declared it (e.g. "scripted_effect" is scopeless -> absent).
-	RootScopes map[string]string `json:"rootScopes,omitempty"`
+}
+
+// LocSite is one vanilla english localization definition (file + 0-based line).
+type LocSite struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
 }

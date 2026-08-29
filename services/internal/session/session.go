@@ -6,7 +6,6 @@ package session
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -49,6 +48,9 @@ func New(workspaceID, gameID string, cache *model.Cache, mods []model.ModInput) 
 		lastIndexed: map[string]string{},
 	}
 	s.index = model.BuildIndex(workspaceID, gameID, mods, cache)
+	if s.index.Loc == nil {
+		s.index.Loc = map[string]string{}
+	}
 	s.order = orderMap(s.index.Order)
 	return s
 }
@@ -67,6 +69,13 @@ func (s *Session) Cache() *model.Cache {
 	return s.cache
 }
 
+// ReplaceCache swaps the vanilla Cache after a Rescan without dropping the session.
+func (s *Session) ReplaceCache(c *model.Cache) {
+	s.mu.Lock()
+	s.cache = c
+	s.mu.Unlock()
+}
+
 // ReindexCount reports how many single-file reindexes have run (test/telemetry).
 func (s *Session) ReindexCount() int {
 	s.mu.RLock()
@@ -78,7 +87,7 @@ func (s *Session) ReindexCount() int {
 func (s *Session) Result(path string) (parser.Result, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if b := s.buffers[path]; b != nil {
+	if b := s.buffers[CanonPath(path)]; b != nil {
 		return b.result, true
 	}
 	return parser.Result{}, false
@@ -94,11 +103,12 @@ func (s *Session) DidChange(path, text string) { s.edit(path, text) }
 func (s *Session) DidClose(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.buffers, path)
+	delete(s.buffers, CanonPath(path))
 }
 
 // DidSave reindexes from the open buffer if present, else from disk.
 func (s *Session) DidSave(path string) {
+	path = CanonPath(path)
 	s.mu.Lock()
 	text, ok := "", false
 	if b := s.buffers[path]; b != nil {
@@ -110,7 +120,7 @@ func (s *Session) DidSave(path string) {
 		if err != nil {
 			return
 		}
-		text = string(raw)
+		text, _ = parser.Decode(raw)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -119,6 +129,7 @@ func (s *Session) DidSave(path string) {
 
 // ExternalChange reindexes a file touched outside the editor (watcher-driven).
 func (s *Session) ExternalChange(path string) {
+	path = CanonPath(path)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		s.mu.Lock()
@@ -126,22 +137,28 @@ func (s *Session) ExternalChange(path string) {
 		s.mu.Unlock()
 		return
 	}
+	text, _ := parser.Decode(raw)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.reindexFileLocked(path, string(raw))
+	s.reindexFileLocked(path, text)
 }
 
 // edit updates the buffer (parsing once) and reindexes the file.
 func (s *Session) edit(path, text string) {
+	path = CanonPath(path)
+	text = parser.Normalize(text)
+	result := parser.Parse(text)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.buffers[path] = &buffer{text: text, result: parser.Parse(text)}
+	s.buffers[path] = &buffer{text: text, result: result}
 	s.reindexFileLocked(path, text)
 }
 
 // reindexFileLocked patches the index for one path only. Identical bytes are a
 // no-op so editor-save + watcher-of-the-same-write does not double-index.
 func (s *Session) reindexFileLocked(path, text string) {
+	path = CanonPath(path)
+	text = parser.Normalize(text)
 	if prev, ok := s.lastIndexed[path]; ok && prev == text {
 		return
 	}
@@ -154,6 +171,9 @@ func (s *Session) reindexFileLocked(path, text string) {
 	s.index.Defs = append(s.index.Defs, defs...)
 	s.index.Refs = append(s.index.Refs, refs...)
 	s.index.Edges = append(s.index.Edges, edges...)
+	if s.index.Loc == nil {
+		s.index.Loc = map[string]string{}
+	}
 	for k, v := range locEng {
 		s.index.Loc[k] = v
 	}
@@ -193,8 +213,23 @@ func (s *Session) Locate(path string) (origin, rel string, ok bool) {
 func (s *Session) Text(path string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if b := s.buffers[path]; b != nil {
+	if b := s.buffers[CanonPath(path)]; b != nil {
 		return b.text, true
+	}
+	return "", false
+}
+
+// EnglishLoc returns the english localization string for key, if known.
+func (s *Session) EnglishLoc(key string) (string, bool) {
+	if idx := s.Index(); idx != nil && idx.Loc != nil {
+		if v, ok := idx.Loc[key]; ok {
+			return v, true
+		}
+	}
+	if c := s.Cache(); c != nil && c.LocEnglish != nil {
+		if v, ok := c.LocEnglish[key]; ok {
+			return v, true
+		}
 	}
 	return "", false
 }
@@ -260,8 +295,9 @@ func (s *Session) Close() {
 
 // locate finds the mod origin and root-relative path for an absolute file path.
 func (s *Session) locate(path string) (origin, rel string, ok bool) {
+	path = CanonPath(path)
 	for _, m := range s.mods {
-		if r, err := filepath.Rel(m.Root, path); err == nil && !strings.HasPrefix(r, "..") {
+		if r, inside := RelPath(m.Root, path); inside {
 			return m.Origin, r, true
 		}
 	}
@@ -271,7 +307,7 @@ func (s *Session) locate(path string) (origin, rel string, ok bool) {
 func keepDefs(in []model.Def, drop string) []model.Def {
 	out := in[:0]
 	for _, d := range in {
-		if d.Path != drop {
+		if !SamePath(d.Path, drop) {
 			out = append(out, d)
 		}
 	}
@@ -281,7 +317,7 @@ func keepDefs(in []model.Def, drop string) []model.Def {
 func keepRefs(in []model.Ref, drop string) []model.Ref {
 	out := in[:0]
 	for _, r := range in {
-		if r.Path != drop {
+		if !SamePath(r.Path, drop) {
 			out = append(out, r)
 		}
 	}
@@ -291,7 +327,7 @@ func keepRefs(in []model.Ref, drop string) []model.Ref {
 func keepEdges(in []model.Edge, drop string) []model.Edge {
 	out := in[:0]
 	for _, e := range in {
-		if e.Path != drop {
+		if !SamePath(e.Path, drop) {
 			out = append(out, e)
 		}
 	}

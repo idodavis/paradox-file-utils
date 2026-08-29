@@ -43,21 +43,15 @@ export interface FoldingRange {
 }
 
 /**
- * HoverResult is hover card text.
+ * HoverResult is hover card text. Origin/rel/line/rootPath describe the def site.
  */
 export interface HoverResult {
     "contents": string;
     "range"?: Range | null;
-}
-
-/**
- * InlayHint is a loc-value preview or scope label.
- */
-export interface InlayHint {
-    "line": number;
-    "character": number;
-    "label": string;
-    "kind"?: number;
+    "origin"?: string;
+    "rel"?: string;
+    "line"?: number;
+    "rootPath"?: string;
 }
 
 /**
@@ -82,16 +76,6 @@ export interface Position {
 export interface Range {
     "start": Position;
     "end": Position;
-}
-
-/**
- * SemanticSpan is one highlighted token in UTF-8 columns.
- */
-export interface SemanticSpan {
-    "line": number;
-    "startCol": number;
-    "length": number;
-    "type": string;
 }
 
 /**

@@ -149,10 +149,3 @@ func (r *PatchRepository) GetInstallInfo(installID string) (path, gameID string,
 	err = r.db.Get(&inst, `SELECT path, game_id FROM game_installs WHERE id = ?`, installID)
 	return inst.Path, inst.GameID, err
 }
-
-// GetGameScriptRoot returns the script_root for a game.
-func (r *PatchRepository) GetGameScriptRoot(gameID string) (string, error) {
-	var scriptRoot string
-	err := r.db.Get(&scriptRoot, `SELECT script_root FROM games WHERE id = ?`, gameID)
-	return scriptRoot, err
-}

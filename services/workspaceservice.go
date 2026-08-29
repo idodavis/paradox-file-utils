@@ -2,11 +2,13 @@
 package services
 
 import (
+	"cmp"
 	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
@@ -29,12 +31,22 @@ func (w *WorkspaceService) getRepo() *repos.WorkspaceRepository {
 	return w.repo
 }
 
-// ListGames returns all supported games from the DB.
+// ListGames returns supported games from the Go registry.
 func (w *WorkspaceService) ListGames() ([]repos.Game, error) {
-	out, err := w.getRepo().ListGames()
-	if err != nil {
-		return nil, fmt.Errorf("list games: %w", err)
+	all := game.All()
+	out := make([]repos.Game, 0, len(all))
+	for _, g := range all {
+		out = append(out, repos.Game{
+			ID:         g.ID,
+			Name:       g.Name,
+			WikiAPI:    g.WikiAPI,
+			ScriptRoot: g.ScriptRoot,
+			SteamAppID: g.SteamAppID,
+		})
 	}
+	slices.SortFunc(out, func(a, b repos.Game) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
 	return out, nil
 }
 
@@ -49,6 +61,9 @@ func (w *WorkspaceService) ListGameInstalls(gameID string) ([]repos.GameInstall,
 
 // AddGameInstall adds a new game installation record. Detects version if possible.
 func (w *WorkspaceService) AddGameInstall(gameID, name, path string) (*repos.GameInstall, error) {
+	if game.Get(gameID) == nil {
+		return nil, fmt.Errorf("unknown game %s", gameID)
+	}
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
@@ -129,6 +144,9 @@ func (w *WorkspaceService) GetWorkspace(id string) (*repos.Workspace, error) {
 
 // CreateWorkspace creates a new workspace. Sets default staging dir if not provided.
 func (w *WorkspaceService) CreateWorkspace(gameID, name, installID, tagsJSON, thumbnailPath string) (*repos.Workspace, error) {
+	if game.Get(gameID) == nil {
+		return nil, fmt.Errorf("unknown game %s", gameID)
+	}
 	id := uuid.New().String()
 	stagingDir, err := w.DefaultStagingDir(id)
 	if err != nil {

@@ -14,7 +14,7 @@ shell).
 | ---------------- | ------- |
 | `types.go`       | DTOs + shared position/word helpers |
 | `diagnostics.go` | CST/loc errors, missing loc, BOM, descriptor |
-| `hover.go`       | def / fieldDocs / wiki |
+| `hover.go`       | def / kind-scoped fieldDocs / wiki |
 | `complete.go`    | vocab + defs + descriptor/meta keys |
 | `definition.go`  | overlay + vanilla on-demand parse |
 | `references.go`  | index refs + defs |
@@ -23,7 +23,6 @@ shell).
 | `folding.go`     | block fold ranges |
 | `tokens.go`      | semantic highlight spans |
 | `signature.go`   | field-doc signature |
-| `inlay.go`       | loc preview / missing loc / scope labels |
 | `codeactions.go` | create loc key (UTF-8 BOM), add BOM |
 | `symbols.go`     | document + workspace symbols |
 | `scopes.go`      | completion ranking only |

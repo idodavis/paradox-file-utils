@@ -1,6 +1,6 @@
 // pool.go owns the workspaceID -> *Session map and builds each session at most once
-// even under concurrent callers (singleflight). It emits a ready/reindexed event so
-// the frontend refreshes without polling; the emitter and builder are injected so
+// even under concurrent callers (singleflight). It emits a ready event so the
+// frontend refreshes without polling; the emitter and builder are injected so
 // this package stays free of Wails and the workspace layout.
 
 package session
@@ -16,11 +16,8 @@ type Builder func(workspaceID string) (*Session, error)
 // Emitter publishes a lifecycle event to the frontend (e.g. "lang:ready").
 type Emitter func(event string, data any)
 
-// Event names emitted by the pool on session lifecycle transitions.
-const (
-	EventReady     = "lang:ready"
-	EventReindexed = "lang:reindexed"
-)
+// EventReady fires once a workspace session is built and live.
+const EventReady = "lang:ready"
 
 // Pool caches live sessions keyed by workspace id.
 type Pool struct {

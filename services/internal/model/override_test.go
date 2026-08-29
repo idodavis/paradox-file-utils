@@ -69,6 +69,9 @@ func TestOverridesIncludesVanillaShadow(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("rows = %d, want 1", len(rows))
 	}
+	if rows[0].Overlay || rows[0].ModCount != 2 {
+		t.Errorf("row overlay=%v modCount=%d, want conflict", rows[0].Overlay, rows[0].ModCount)
+	}
 	if rows[0].Winner != "b" {
 		t.Errorf("winner = %q, want b", rows[0].Winner)
 	}
@@ -78,5 +81,35 @@ func TestOverridesIncludesVanillaShadow(t *testing.T) {
 	}
 	if !origins[""] || !origins["a"] || !origins["b"] {
 		t.Errorf("sites = %+v, want vanilla+a+b", rows[0].Sites)
+	}
+}
+
+func TestOverridesVanillaOverlayOnly(t *testing.T) {
+	idx := &Index{
+		Order: []string{"a"},
+		Defs:  []Def{{Type: "trait", Key: "brave", Origin: "a", Path: "a.txt", Line: 1}},
+	}
+	cache := &Cache{Defs: []Def{
+		{Type: "trait", Key: "brave", Origin: "", Path: "vanilla.txt", Line: 9},
+	}}
+	rows := Overrides(idx, cache)
+	if len(rows) != 1 || !rows[0].Overlay || rows[0].ModCount != 1 {
+		t.Fatalf("rows = %+v, want one overlay", rows)
+	}
+}
+
+func TestOverridesSkipsLocKeyAndIsolatesKind(t *testing.T) {
+	idx := &Index{
+		Order: []string{"a", "b"},
+		Defs: []Def{
+			{Type: "loc_key", Key: "brave", Origin: "a", Path: "a.yml"},
+			{Type: "loc_key", Key: "brave", Origin: "b", Path: "b.yml"},
+			{Type: "trait", Key: "same", Origin: "a", Path: "t.txt"},
+			{Type: "event", Key: "same", Origin: "b", Path: "e.txt"},
+		},
+	}
+	rows := Overrides(idx, nil)
+	if len(rows) != 0 {
+		t.Fatalf("rows = %+v, want none (loc skipped; kinds isolated)", rows)
 	}
 }

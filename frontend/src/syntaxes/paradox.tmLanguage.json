@@ -13,6 +13,7 @@
     { "include": "#number" },
     { "include": "#constant" },
     { "include": "#color-model" },
+    { "include": "#control-keyword" },
     { "include": "#block-type" },
     { "include": "#attribute-key" },
     { "include": "#saved-scope-ref" },
@@ -81,6 +82,11 @@
       "comment": "color = rgb { 255 0 0 } / hsv { 0.5 1 1 } / hsv360 { 180 100 100 }: the model tag before the block",
       "name": "support.type.color-model.paradox",
       "match": "\\b(rgb|hsv360|hsv)\\b(?=\\s*\\{)"
+    },
+    "control-keyword": {
+      "comment": "Control-flow and boolean combinators (before attribute-key)",
+      "name": "keyword.control.paradox",
+      "match": "\\b(if|else_if|else|limit|AND|OR|NOT|NOR|NAND)\\b"
     },
     "block-type": {
       "comment": "HCL-style: ident = { opens a block (type name)",

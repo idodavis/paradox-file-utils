@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +37,14 @@ func ck3Install(t *testing.T) string {
 	writeFixture(t, base, "game/common/traits/_traits.info", `# The trait category
 category = personality
 `)
+	writeFixture(t, base, "game/events/_events.info", `# Event presentation type
+type = character_event
+# Dynamic loc key
+title = loc_key
+`)
+	writeFixture(t, base, "game/common/activities/_invite_rules.info", `# Invite rule type
+type = friend
+`)
 	writeFixture(t, base, "game/events/test_events.txt", `namespace = test
 
 test.1 = {
@@ -56,6 +65,9 @@ scripted_effect my_inline = {
  test.1.t:0 "Test Event"
  brave_desc: "Brave"
 `)
+	writeFixture(t, base, "game/localization/english/header_only.yml", `l_english:
+ header_key:0 "From header"
+`)
 	return base
 }
 
@@ -66,6 +78,10 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func containsDoc(got, needle string) bool {
+	return strings.Contains(got, needle)
 }
 
 func findDef(defs []Def, kind, key string) bool {
@@ -79,7 +95,7 @@ func findDef(defs []Def, kind, key string) bool {
 
 func TestScanCorpusBaseline(t *testing.T) {
 	base := ck3Install(t)
-	c, err := Scan(context.Background(), "ck3", base, "", nil)
+	c, err := Scan(context.Background(), "ws", "ck3", base, "", nil)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -99,6 +115,18 @@ func TestScanCorpusBaseline(t *testing.T) {
 	}
 	if c.FieldDocs["category"] == "" {
 		t.Errorf("fieldDocs[category] empty, want prose from _traits.info")
+	}
+	if got := c.LocEnglish["header_key"]; got != "From header" {
+		t.Errorf("locEnglish[header_key] = %q, want header-only english", got)
+	}
+	if site, ok := c.LocEnglishSites["header_key"]; !ok || site.File == "" {
+		t.Errorf("locEnglishSites[header_key] missing: %+v", c.LocEnglishSites)
+	}
+	if got := c.FieldDocsByKind["event"]["type"]; !containsDoc(got, "presentation") {
+		t.Errorf("fieldDocsByKind[event][type] = %q, want events.info prose", got)
+	}
+	if got := c.FieldDocsByKind["event"]["title"]; !containsDoc(got, "Dynamic") {
+		t.Errorf("fieldDocsByKind[event][title] = %q, want events.info prose", got)
 	}
 
 	for _, k := range []string{"category", "opposites", "ai_boldness"} {
@@ -132,7 +160,7 @@ func TestScanScriptDocsEnrichment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, err := Scan(context.Background(), "ck3", base, docs, nil)
+	c, err := Scan(context.Background(), "ws", "ck3", base, docs, nil)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -141,5 +169,24 @@ func TestScanScriptDocsEnrichment(t *testing.T) {
 	}
 	if c.FieldDocs["add_gold"] == "" {
 		t.Errorf("fieldDocs[add_gold] empty after enrichment")
+	}
+}
+
+func TestClassicDumpNestedTypeIsNotEffect(t *testing.T) {
+	base := ck3Install(t)
+	docs := t.TempDir()
+	body := "----\nadd_gold\n\tAdds gold.\n\n\tSupported Scopes: artifact\n\ttype = enum\n----\n"
+	if err := os.WriteFile(filepath.Join(docs, "effects.log"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Scan(context.Background(), "ws", "ck3", base, docs, nil)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if !contains(c.Effects, "add_gold") {
+		t.Errorf("effects missing add_gold: %v", c.Effects)
+	}
+	if contains(c.Effects, "type") {
+		t.Fatalf("nested dump field type leaked into effects: %v", c.Effects)
 	}
 }

@@ -2,11 +2,12 @@
 /**
  * Mod Patcher: select mod, versions, run patch, preview, accept/skip; workbench diffs for conflicts.
  */
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
 import { useRoute, useRouter } from "vue-router";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
-import { GetWorkspace, ListWorkspaceMods, ListGameInstalls } from "@services/workspaceservice";
-import { Workspace, WorkspaceMod, GameInstall, PatchRun, PatchRunFile } from "@services/internal/repos/models";
+import { ListGameInstalls } from "@services/workspaceservice";
+import { GameInstall, PatchRun, PatchRunFile } from "@services/internal/repos/models";
 import {
   StartPatchRun,
   PreviewPatchRun,
@@ -17,16 +18,18 @@ import {
 import { PatchRunPreview } from "@services/models";
 import { openFile } from "../ide/commands";
 import { useIdeShellStore } from "../stores/ideShell";
+import { useWorkspaceStore } from "../stores/workspace";
 
 type PatchRunFileStats = { added?: number; changed?: number; conflicts?: number };
 const ideShell = useIdeShellStore();
+const ws = useWorkspaceStore();
 
 const route = useRoute();
 const router = useRouter();
 
 const workspaceId = computed(() => route.params.id as string);
-const workspace = ref<Workspace | null>(null);
-const mods = ref<WorkspaceMod[]>([]);
+// Workspace + mods come from the shared store; installs are patcher-specific.
+const { activeWorkspace: workspace, workspaceMods: mods } = storeToRefs(ws);
 const installs = ref<GameInstall[]>([]);
 const selectedModId = ref<string | null>(null);
 const baselineInstallId = ref<string | null>(null);
@@ -42,14 +45,16 @@ const baselineInstall = computed(() => installs.value.find((i) => i.id === basel
 const targetInstall = computed(() => installs.value.find((i) => i.id === targetInstallId.value));
 const canStart = computed(() => !!selectedModId.value && !!baselineInstallId.value && !!targetInstallId.value);
 
-/** Load workspace data. */
+/** Load workspace installs; workspace + mods come from the shared store. */
 async function loadData(): Promise<void> {
   loading.value = true;
   error.value = "";
   try {
-    workspace.value = await GetWorkspace(workspaceId.value);
+    if (ws.activeWorkspace?.id !== workspaceId.value) {
+      ws.setActiveWorkspace(workspaceId.value);
+    }
+    await ws.loadActiveWorkspace();
     if (!workspace.value) throw new Error("Workspace not found");
-    mods.value = (await ListWorkspaceMods(workspaceId.value)) ?? [];
     installs.value = (await ListGameInstalls(workspace.value.gameId)) ?? [];
     if (mods.value.length) selectedModId.value = mods.value[0].id;
     if (installs.value.length >= 2) {
@@ -147,7 +152,6 @@ async function applyPatch(): Promise<void> {
 }
 
 watch(workspaceId, loadData, { immediate: true });
-onMounted(loadData);
 </script>
 
 <template>

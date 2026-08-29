@@ -67,19 +67,12 @@ export interface LanguageHealth {
     "gameVersion": string;
     "cacheVersion": string;
     "cacheStale": boolean;
+    "scannedAt": string;
     "docsPresent": boolean;
     "docsPath": string;
     "indexReady": boolean;
     "defCount": number;
     "dumpHint": string;
-}
-
-/**
- * MergePreset holds a named merge options profile (JSON-safe for bindings)
- */
-export interface MergePreset {
-    "name": string;
-    "options": MergerOptions;
 }
 
 /**

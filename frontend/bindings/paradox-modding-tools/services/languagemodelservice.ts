@@ -123,7 +123,7 @@ export function GetDependencies(workspaceID: string, name: string, kind: string)
 }
 
 /**
- * GetEventDetail returns inspector content and simSteps for one event id.
+ * GetEventDetail returns inspector content for one event id.
  */
 export function GetEventDetail(workspaceID: string, eventID: string): $CancellablePromise<graph$0.EventDetail | null> {
     return $Call.ByID(80590861, workspaceID, eventID);
@@ -172,13 +172,6 @@ export function Hover(workspaceID: string, path: string, line: number, character
 }
 
 /**
- * InlayHints returns loc-value previews and scope labels.
- */
-export function InlayHints(workspaceID: string, path: string): $CancellablePromise<lsp$0.InlayHint[] | null> {
-    return $Call.ByID(1609217995, workspaceID, path);
-}
-
-/**
  * LaunchGameDebug starts the game with debug flags (best-effort).
  */
 export function LaunchGameDebug(workspaceID: string): $CancellablePromise<void> {
@@ -211,13 +204,6 @@ export function References(workspaceID: string, path: string, line: number, char
  */
 export function Rename(workspaceID: string, path: string, line: number, character: number, newName: string): $CancellablePromise<lsp$0.WorkspaceEdit | null> {
     return $Call.ByID(3163683066, workspaceID, path, line, character, newName);
-}
-
-/**
- * SemanticTokens returns highlight spans.
- */
-export function SemanticTokens(workspaceID: string, path: string): $CancellablePromise<lsp$0.SemanticSpan[] | null> {
-    return $Call.ByID(3095483774, workspaceID, path);
 }
 
 /**

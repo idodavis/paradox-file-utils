@@ -1,5 +1,8 @@
 /**
  * Register Paradox languages, PMT color themes, and Material+Paradox file icons.
+ *
+ * Language configuration supplies `#` line comments so Ctrl+/ (Toggle Line
+ * Comment) works for script, GUI, loc, info, and .mod files.
  */
 import { registerExtension } from "@codingame/monaco-vscode-api/extensions";
 import { ExtensionHostKind } from "@codingame/monaco-vscode-extensions-service-override";
@@ -10,9 +13,18 @@ import paradoxInfoGrammar from "../syntaxes/paradox-info.tmLanguage.json";
 import { registerPmtColorThemes } from "./colorThemes";
 import { registerPmtFileIcons } from "./fileIcons";
 
+/** Language ids that share Clausewitz/Jomini `#` line comments. */
+const PARADOX_LANGUAGE_IDS = [
+  "paradox",
+  "paradox-gui",
+  "paradox-loc",
+  "paradox-info",
+  "paradox-mod",
+] as const;
+
 /** Contribute Paradox grammars, language ids, color themes, and icons. */
 export async function registerParadoxLanguages(): Promise<void> {
-  const { registerFileUrl, whenReady } = registerExtension(
+  const { registerFileUrl, whenReady, getApi } = registerExtension(
     {
       name: "pmt-paradox-languages",
       publisher: "pmt",
@@ -97,6 +109,12 @@ export async function registerParadoxLanguages(): Promise<void> {
   );
 
   await whenReady();
+  const vscode = await getApi();
+  for (const id of PARADOX_LANGUAGE_IDS) {
+    vscode.languages.setLanguageConfiguration(id, {
+      comments: { lineComment: "#" },
+    });
+  }
   await registerPmtColorThemes();
   await registerPmtFileIcons();
 }

@@ -1,6 +1,6 @@
 // complete.go prefixes-filters vocabulary and definitions. Items are never
-// hidden; scopes.go only reorders them. Descriptor .mod and metadata.json have
-// their own tiny key lists.
+// hidden by Rank; scopes.go only reorders them. Descriptor .mod and
+// metadata.json have their own tiny key lists.
 
 package lsp
 
@@ -16,7 +16,8 @@ func Complete(s *session.Session, path string, line, col int) []CompletionItem {
 	src := fileText(s, path)
 	off := offsetOf(src, line, col)
 	prefix := ""
-	if _, start, _ := wordAt(src, off); start < off && start < len(src) {
+	// Ident before the cursor only — an empty span is not prefix src[0:off].
+	if word, start, _ := wordAt(src, off); word != "" && start < off {
 		prefix = src[start:off]
 	}
 
@@ -27,22 +28,20 @@ func Complete(s *session.Session, path string, line, col int) []CompletionItem {
 		return prefixFilter(metaItems(s), prefix)
 	}
 	if isLocPath(path) {
-		return prefixFilter(locItems(s), prefix)
+		return capComplete(locItems(s, prefix))
 	}
 
-	items := scriptItems(s, path, src, off)
-	Rank(s, path, src, off, items)
-	return prefixFilter(items, prefix)
+	kind := enclosingKind(s, path, src, off)
+	items := scriptItems(s, path, kind, prefix)
+	Rank(s, kind, items)
+	return capComplete(items)
 }
 
 func prefixFilter(items []CompletionItem, prefix string) []CompletionItem {
 	if prefix == "" {
-		if len(items) > maxComplete {
-			return items[:maxComplete]
-		}
-		return items
+		return capComplete(items)
 	}
-	out := items[:0]
+	out := make([]CompletionItem, 0, min(len(items), maxComplete))
 	for _, it := range items {
 		if lowerPrefix(it.Label, prefix) {
 			out = append(out, it)
@@ -52,6 +51,13 @@ func prefixFilter(items []CompletionItem, prefix string) []CompletionItem {
 		}
 	}
 	return out
+}
+
+func capComplete(items []CompletionItem) []CompletionItem {
+	if len(items) > maxComplete {
+		return items[:maxComplete]
+	}
+	return items
 }
 
 func modItems() []CompletionItem {
@@ -74,11 +80,14 @@ func metaItems(s *session.Session) []CompletionItem {
 	return out
 }
 
-func locItems(s *session.Session) []CompletionItem {
+func locItems(s *session.Session, prefix string) []CompletionItem {
+	if prefix == "" {
+		return nil
+	}
 	seen := map[string]bool{}
 	var out []CompletionItem
 	add := func(k string) {
-		if k == "" || seen[k] {
+		if len(out) >= maxComplete || k == "" || seen[k] || !lowerPrefix(k, prefix) {
 			return
 		}
 		seen[k] = true
@@ -87,45 +96,63 @@ func locItems(s *session.Session) []CompletionItem {
 	if idx := s.Index(); idx != nil {
 		for k := range idx.Loc {
 			add(k)
+			if len(out) >= maxComplete {
+				return out
+			}
 		}
 		for _, d := range idx.Defs {
 			if d.Type == "loc_key" {
 				add(d.Key)
+				if len(out) >= maxComplete {
+					return out
+				}
 			}
 		}
 	}
 	if c := s.Cache(); c != nil {
 		for k := range c.LocEnglish {
 			add(k)
+			if len(out) >= maxComplete {
+				return out
+			}
 		}
 	}
 	return out
 }
 
-func scriptItems(s *session.Session, path, src string, offset int) []CompletionItem {
+func scriptItems(s *session.Session, path, kind, prefix string) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
-	add := func(label, detail string, kind int) {
-		if label == "" || seen[label] {
+	add := func(label, detail string, k int) {
+		if len(out) >= maxComplete || label == "" || seen[label] ||
+			!lowerPrefix(label, prefix) {
 			return
 		}
 		seen[label] = true
-		out = append(out, CompletionItem{Label: label, Kind: kind, Detail: detail})
+		out = append(out, CompletionItem{Label: label, Kind: k, Detail: detail})
 	}
 	c := s.Cache()
-	kind := enclosingKind(s, path, src, offset)
 	if c != nil {
 		for _, k := range c.Structures[kind] {
 			add(k, kind, 5)
 		}
 		for _, k := range c.Effects {
 			add(k, "effect", 3)
+			if len(out) >= maxComplete {
+				return out
+			}
 		}
 		for _, k := range c.Triggers {
 			add(k, "trigger", 3)
+			if len(out) >= maxComplete {
+				return out
+			}
 		}
 		for _, k := range c.Vocabulary {
 			add(k, "script", 6)
+			if len(out) >= maxComplete {
+				return out
+			}
 		}
 		if isGUIPath(path) {
 			for _, k := range c.GUITypes {
@@ -133,17 +160,29 @@ func scriptItems(s *session.Session, path, src string, offset int) []CompletionI
 			}
 			for _, k := range c.GUIProps {
 				add(k, "gui", 5)
+				if len(out) >= maxComplete {
+					return out
+				}
 			}
 		}
 	}
 	if idx := s.Index(); idx != nil {
 		for _, d := range idx.Defs {
+			if d.Type == "saved_scope" {
+				continue
+			}
 			add(d.Key, d.Type, 12)
+			if len(out) >= maxComplete {
+				return out
+			}
 		}
 	}
 	if c != nil {
 		for _, d := range c.Defs {
 			add(d.Key, d.Type, 12)
+			if len(out) >= maxComplete {
+				return out
+			}
 		}
 	}
 	return out
