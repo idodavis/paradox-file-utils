@@ -1,6 +1,6 @@
-// detect.go finds game installs (via Steam library folders), reads the installed
-// version from launcher-settings.json, and recognizes mod roots. It avoids the
-// Windows registry so it cross-compiles; it scans well-known Steam locations.
+// detect.go finds game installs (via Steam library folders) and reads the
+// installed version from launcher-settings.json. It avoids the Windows registry
+// so it cross-compiles; it scans well-known Steam locations.
 
 package game
 
@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/bytedance/sonic"
 )
 
 // DetectedInstall is a game install found on disk.
@@ -22,55 +24,44 @@ type DetectedInstall struct {
 	AppID   int    `json:"appId"`
 }
 
-// rawVersionRe / versionRe pull the version out of launcher-settings.json without
-// a full JSON decode (the file has both "rawVersion" and "version").
 var (
-	rawVersionRe = regexp.MustCompile(`"rawVersion"\s*:\s*"([^"]+)"`)
-	versionRe    = regexp.MustCompile(`"version"\s*:\s*"([^"]+)"`)
 	vdfPathRe    = regexp.MustCompile(`"path"\s*"([^"]+)"`)
 	installDirRe = regexp.MustCompile(`"installdir"\s*"([^"]+)"`)
 )
 
-// ReadGameVersion reads the installed version from launcher-settings.json in the
-// install path (checking the game/ subfolder too). Returns "" if unreadable.
-func ReadGameVersion(installPath string) string {
-	for _, rel := range []string{"launcher-settings.json", filepath.Join("game", "launcher-settings.json")} {
-		data, err := os.ReadFile(filepath.Join(installPath, rel))
-		if err != nil {
-			continue
-		}
-		if m := rawVersionRe.FindSubmatch(data); m != nil {
-			return string(m[1])
-		}
-		if m := versionRe.FindSubmatch(data); m != nil {
-			return string(m[1])
-		}
-	}
-	return ""
+type launcherSettings struct {
+	RawVersion string `json:"rawVersion"`
+	Version    string `json:"version"`
 }
 
-// IsModRoot reports whether path is a valid mod root for gameID.
-func IsModRoot(gameID, path string) bool {
+// ReadGameVersion reads rawVersion (then version, stripping a parenthetical
+// codename) from launcher/launcher-settings.json. Missing file → "".
+func ReadGameVersion(installPath string) string {
+	data, err := os.ReadFile(filepath.Join(installPath, "launcher", "launcher-settings.json"))
+	if err != nil {
+		return ""
+	}
+	var ls launcherSettings
+	if err := sonic.Unmarshal(data, &ls); err != nil {
+		return ""
+	}
+	if ls.RawVersion != "" {
+		return ls.RawVersion
+	}
+	v := ls.Version
+	if i := strings.Index(v, " ("); i >= 0 {
+		v = v[:i]
+	}
+	return strings.TrimSpace(v)
+}
+
+// DescriptorPath is the expected descriptor file for gameID under a mod root.
+func DescriptorPath(gameID, root string) string {
 	info := Get(gameID)
-	if info == nil {
-		return false
+	if info != nil && info.Descriptor == "metadata" {
+		return filepath.Join(root, ".metadata", "metadata.json")
 	}
-	switch info.Descriptor {
-	case "mod":
-		return fileExists(filepath.Join(path, "descriptor.mod"))
-	case "metadata":
-		if fileExists(filepath.Join(path, ".metadata", "metadata.json")) {
-			return true
-		}
-		for _, stage := range info.StageRoots {
-			if dirExists(filepath.Join(path, stage)) {
-				return true
-			}
-		}
-		return false
-	default:
-		return false
-	}
+	return filepath.Join(root, "descriptor.mod")
 }
 
 // FindInstalls returns Steam-detected installs for a game.
@@ -152,11 +143,6 @@ func defaultSteamRoots() []string {
 			filepath.Join(home, ".local", "share", "Steam"),
 		}
 	}
-}
-
-func fileExists(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && !st.IsDir()
 }
 
 func dirExists(path string) bool {

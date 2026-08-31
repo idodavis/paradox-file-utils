@@ -9,12 +9,13 @@ import (
 	"testing"
 )
 
-func TestEnsureSessionBuildsOnce(t *testing.T) {
+func TestEnsureSession(t *testing.T) {
 	var builds int32
+	var events []string
 	pool := NewPool(func(id string) (*Session, error) {
 		atomic.AddInt32(&builds, 1)
-		return New(id, "ck3", nil, nil), nil
-	}, nil)
+		return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+	}, func(event string, _ any) { events = append(events, event) })
 
 	const n = 20
 	var wg sync.WaitGroup
@@ -40,17 +41,6 @@ func TestEnsureSessionBuildsOnce(t *testing.T) {
 		if sessions[i] != sessions[0] {
 			t.Fatalf("caller %d got a different session instance", i)
 		}
-	}
-}
-
-func TestEnsureSessionEmitsReady(t *testing.T) {
-	var events []string
-	pool := NewPool(
-		func(id string) (*Session, error) { return New(id, "ck3", nil, nil), nil },
-		func(event string, _ any) { events = append(events, event) },
-	)
-	if _, err := pool.EnsureSession("ws"); err != nil {
-		t.Fatal(err)
 	}
 	if len(events) != 1 || events[0] != EventReady {
 		t.Errorf("events = %v, want [%s]", events, EventReady)

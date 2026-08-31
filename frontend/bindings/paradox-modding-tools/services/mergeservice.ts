@@ -24,6 +24,6 @@ export function Merge(tasks: $models.PreviewItem[] | null, opts: $models.MergerO
 /**
  * MergePreview collects matching files from pathA/pathB and returns preview items with output paths.
  */
-export function MergePreview(pathA: string, pathB: string, outputDir: string, opts: $models.MergerOptions): $CancellablePromise<$models.PreviewItem[] | null> {
-    return $Call.ByID(2633360575, pathA, pathB, outputDir, opts);
+export function MergePreview(pathA: string, pathB: string, outputDir: string): $CancellablePromise<$models.PreviewItem[] | null> {
+    return $Call.ByID(2633360575, pathA, pathB, outputDir);
 }

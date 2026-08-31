@@ -1,10 +1,8 @@
-// Package session holds the live state of one open workspace: file buffers, their
-// parse results, and the model.Index built from the mods on disk. It answers
-// "what does the workspace look like right now?" as the user edits. It owns the
-// single reindex path shared by editor saves and the external-change watcher, and
-// resolves override winners through model.Winner (never its own logic).
+// Package session holds the live state of one open workspace: file buffers,
+// their parse results, VanillaCache, and RAM harvest maps rebuilt on open
+// (catalog.BuildIndex). It is the only type that holds both. lsp and views
+// call Session methods; public Cache() getters do not exist. There is no
+// persisted mod Index.
 //
-// Files: session.go (buffers + DidOpen/Change/Close/Save + reindex + resolve),
-// pool.go (workspaceID -> *Session, coalesced construction), watcher.go (fsnotify
-// -> reindex for external changes), ignore.go (pmt:ignore comment directives).
+// Files: session.go, pool.go, watcher.go, path.go.
 package session

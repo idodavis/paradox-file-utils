@@ -1,327 +1,171 @@
 <script setup lang="ts">
 /**
- * Conflict monitor: GetOverrides with overview filters. FIOS/LIOS is computed in Go.
+ * Conflict monitor: GetOverrides. FIOS/LIOS is computed in Go.
+ * Filters live in UTable column state (overlay, kind, origin, rule).
  */
-import { computed, ref, watch } from "vue";
-import { storeToRefs } from "pinia";
+import { computed, shallowRef, useTemplateRef } from "vue";
 import { useRoute } from "vue-router";
-import type { SplitterItem } from "@nuxt/ui";
-import { GetOverrides } from "@services/languagemodelservice";
-import type { OverrideRow } from "@services/internal/model/models";
+import { useQuery } from "@pinia/colada";
+import { getFacetedUniqueValues, type ColumnFiltersState } from "@tanstack/table-core";
+import type { TableColumn } from "@nuxt/ui";
+import { GetOverrides } from "@services/viewsservice";
+import type { OverrideRow } from "@services/internal/views/models";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
-import IssueOverviewPane from "../components/issues/IssueOverviewPane.vue";
-import type {
-  OverviewChip,
-  OverviewNode,
-} from "../components/issues/IssueOverviewPane.vue";
-import { useWorkspaceStore } from "../stores/workspace";
 import { useOpenInIde } from "../composables/useOpenInIde";
-import { originHex } from "../ide/rootDecorations";
+import { useLiveEnabled } from "../composables/useSessionQuery";
 
-type Bucket = "conflict" | "overlay";
+defineOptions({ name: "ConflictPage" });
 
 const route = useRoute();
-const ws = useWorkspaceStore();
-const { workspaceMods } = storeToRefs(ws);
 const { openInIde } = useOpenInIde();
-
 const workspaceId = computed(() => String(route.params.id ?? ""));
-const rows = ref<OverrideRow[]>([]);
-const query = ref("");
-const kindFilter = ref<string | undefined>();
-const ruleFilter = ref<string | undefined>();
-const modOrigin = ref<string | undefined>();
-const bucket = ref<Bucket>("conflict");
-const loading = ref(false);
-const error = ref("");
+const live = useLiveEnabled(workspaceId);
+const globalFilter = shallowRef("");
+const columnFilters = shallowRef<ColumnFiltersState>([
+  { id: "overlay", value: false },
+]);
+const table = useTemplateRef<{ tableApi?: { getColumn: (id: string) => {
+  getFilterValue: () => unknown
+  setFilterValue: (v: unknown) => void
+  getFacetedUniqueValues: () => Map<unknown, number>
+} | undefined } }>("table");
 
-const liveMods = computed(() =>
-  workspaceMods.value.filter((m) => !m.isBroken && m.path),
-);
+const {
+  data: rowsData,
+  error: loadError,
+  isPending,
+} = useQuery({
+  key: () => ["session", "overrides", workspaceId.value],
+  query: () => GetOverrides(workspaceId.value),
+  enabled: () => live.value,
+});
 
-const bucketItems: { label: string; value: Bucket }[] = [
-  { label: "Conflicts", value: "conflict" },
-  { label: "Vanilla overlays", value: "overlay" },
+const rows = computed(() => rowsData.value ?? []);
+const error = computed(() => loadError.value?.message ?? "");
+
+const overlayItems = [
+  { label: "Conflicts", value: false },
+  { label: "Vanilla overlays", value: true },
 ];
 
-const ruleItems = [
-  { label: "LIOS", value: "LIOS" },
-  { label: "FIOS", value: "FIOS" },
-];
-
-const modItems = computed(() =>
-  liveMods.value.map((m) => ({ label: m.name, origin: m.id, path: m.path })),
-);
-
-const kindItems = computed(() => {
-  const set = new Set<string>();
-  for (const r of rows.value) {
-    if (r.kind) set.add(r.kind);
-  }
-  return [...set].sort().map((k) => ({ label: k, value: k }));
-});
-
-const filteredRows = computed((): OverrideRow[] => {
-  const q = query.value.trim().toLowerCase();
-  return rows.value.filter((r) => {
-    const overlay = !!r.overlay;
-    if (bucket.value === "overlay" ? !overlay : overlay) return false;
-    if (kindFilter.value && r.kind !== kindFilter.value) return false;
-    if (ruleFilter.value && r.rule !== ruleFilter.value) return false;
-    if (modOrigin.value) {
-      const hit = (r.sites ?? []).some((s) => s.origin === modOrigin.value);
-      if (!hit) return false;
-    }
-    if (q && !`${r.kind} ${r.name}`.toLowerCase().includes(q)) return false;
-    return true;
-  });
-});
-
-const chips = computed((): OverviewChip[] => {
-  const byKind = new Map<string, number>();
-  const base = rows.value.filter((r) => {
-    const overlay = !!r.overlay;
-    if (bucket.value === "overlay" ? !overlay : overlay) return false;
-    if (ruleFilter.value && r.rule !== ruleFilter.value) return false;
-    if (modOrigin.value) {
-      const hit = (r.sites ?? []).some((s) => s.origin === modOrigin.value);
-      if (!hit) return false;
-    }
-    return true;
-  });
-  for (const r of base) {
-    byKind.set(r.kind, (byKind.get(r.kind) ?? 0) + 1);
-  }
-  return [...byKind.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
-    .map(([id, count]) => ({
-      id,
-      label: id,
-      count,
-      color: "primary" as const,
-    }));
-});
-
-const treeNodes = computed((): OverviewNode[] => {
-  const by = new Map<string, number>();
-  for (const r of filteredRows.value) {
-    for (const s of r.sites ?? []) {
-      if (!s.file || !s.origin) continue;
-      by.set(s.origin, (by.get(s.origin) ?? 0) + 1);
-    }
-  }
-  return [...by.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([origin, count]) => ({
-      id: origin,
-      label: liveMods.value.find((m) => m.id === origin)?.name ?? origin,
-      count,
-    }));
-});
-
-const columns = [
-  { accessorKey: "kind", header: "Kind" },
+const columns: TableColumn<OverrideRow>[] = [
+  { accessorKey: "overlay", header: "Scope", filterFn: "equals" },
+  { accessorKey: "kind", header: "Kind", filterFn: "equals" },
   { accessorKey: "name", header: "Name" },
-  { accessorKey: "rule", header: "Rule" },
+  { accessorKey: "rule", header: "Rule", filterFn: "equals" },
+  {
+    id: "origin",
+    header: "Origin",
+    accessorFn: (row) =>
+      (row.sites ?? []).map((s) => s.originName || "Vanilla"),
+    getUniqueValues: (row) =>
+      (row.sites ?? []).map((s) => s.originName || "Vanilla"),
+    filterFn: (row, id, value) => {
+      if (value == null || value === "") return true;
+      return (row.getValue(id) as string[]).includes(value as string);
+    },
+  },
   { id: "winner", header: "Winner" },
   { id: "sites", header: "Sites" },
 ];
 
-const splitItems: SplitterItem[] = [
-  {
-    slot: "overview",
-    minSize: 16,
-    defaultSize: 22,
-    class: "min-h-0 min-w-0 overflow-hidden border-r border-default",
-  },
-  { slot: "table", minSize: 40, defaultSize: 78, class: "min-h-0 min-w-0 overflow-hidden" },
-];
-
-const splitUi = {
-  handle:
-    "data-[orientation=horizontal]:w-px bg-border transition-colors " +
-    "data-[state=hover]:bg-primary data-[state=drag]:bg-primary",
-};
-
-/** Fetch override rows from Go. */
-async function load(): Promise<void> {
-  if (!workspaceId.value) return;
-  loading.value = true;
-  error.value = "";
-  try {
-    const ready = await ws.ensureReady();
-    if (!ready) {
-      error.value = "Language session is not live. Use Rescan in the toolbar.";
-      rows.value = [];
-      return;
-    }
-    rows.value = (await GetOverrides(workspaceId.value)) ?? [];
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-    rows.value = [];
-  } finally {
-    loading.value = false;
-  }
+function facetItems(id: string): { label: string; value: string }[] {
+  const col = table.value?.tableApi?.getColumn(id);
+  return [...(col?.getFacetedUniqueValues() ?? new Map())].map(([v, n]) => ({
+    label: `${String(v)} (${n})`,
+    value: String(v),
+  }));
+}
+function filterString(c: { getFilterValue: () => unknown }) {
+  const v = c.getFilterValue();
+  return v == null ? undefined : String(v);
+}
+function overlayFilter(c: { getFilterValue: () => unknown }) {
+  return c.getFilterValue() === true;
 }
 
 /** Open a definition site in the workspace IDE. */
 function open(file: string, line: number): void {
   void openInIde(workspaceId.value, file, line);
 }
-
-/** Display name for a site origin. */
-function originLabel(origin: string): string {
-  if (!origin) return "vanilla";
-  return liveMods.value.find((m) => m.id === origin)?.name ?? origin;
-}
-
-function onChip(id: string | undefined): void {
-  kindFilter.value = id;
-}
-
-function onNode(id: string | undefined): void {
-  modOrigin.value = id;
-}
-
-watch(workspaceId, load, { immediate: true });
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <WorkspaceToolBar
-      :workspace-id="workspaceId"
-      title="Conflicts"
-      active="conflicts"
-    >
+    <WorkspaceToolBar :workspace-id="workspaceId" title="Conflicts" active="conflicts">
       <template #trailing>
-        <UInput
-          v-model="query"
-          icon="i-lucide-search"
-          placeholder="Filter"
-          size="xs"
-          class="w-48"
-        />
-        <LanguageHealthStrip
-          v-if="workspaceId"
-          :workspace-id="workspaceId"
-        />
+        <UInput v-model="globalFilter" icon="i-lucide-search" placeholder="Filter"
+          size="xs" class="w-48" />
+        <LanguageHealthStrip v-if="workspaceId" :workspace-id="workspaceId" />
       </template>
     </WorkspaceToolBar>
+    <UAlert v-if="error" color="error" variant="subtle" :description="error" class="m-2" />
 
-    <UAlert
-      v-if="error"
-      color="error"
-      variant="subtle"
-      :description="error"
-      class="m-2"
-    />
-
-    <div
-      class="flex shrink-0 flex-wrap items-center gap-2 border-b border-default
-        px-2 py-1"
-    >
-      <USelect
-        v-model="bucket"
-        :items="bucketItems"
-        value-key="value"
-        size="xs"
-        class="w-44"
-      />
-      <USelectMenu
-        v-model="kindFilter"
-        :items="kindItems"
-        value-key="value"
-        placeholder="All kinds"
-        size="xs"
-        class="w-40"
-      />
-      <USelectMenu
-        v-model="ruleFilter"
-        :items="ruleItems"
-        value-key="value"
-        placeholder="All rules"
-        size="xs"
-        class="w-32"
-      />
-      <USelectMenu
-        v-model="modOrigin"
-        :items="modItems"
-        value-key="origin"
-        placeholder="All mods"
-        size="xs"
-        class="w-44"
+    <div class="min-h-0 flex-1 overflow-auto p-2">
+      <UTable
+        ref="table"
+        :column-filters="columnFilters"
+        :global-filter="globalFilter"
+        :data="rows"
+        :columns="columns"
+        :loading="isPending"
+        :faceted-options="{ getFacetedUniqueValues: getFacetedUniqueValues() }"
+        sticky="header"
+        empty="No overlapping definitions across workspace mods."
+        :get-row-id="(row: OverrideRow) => `${row.kind}:${row.name}`"
+        @update:column-filters="(v?: ColumnFiltersState) => { if (v) columnFilters = v }"
+        @update:global-filter="(v?: string) => { globalFilter = v ?? '' }"
       >
-        <template #item-leading="{ item }">
-          <span
-            class="size-2 shrink-0 rounded-full"
-            :style="{ backgroundColor: originHex({ kind: 'mod', path: item.path }) }"
-          />
+        <template #overlay-header="{ column }">
+          <USelect :model-value="overlayFilter(column)" :items="overlayItems"
+            value-key="value" size="xs" class="w-44"
+            @update:model-value="column.setFilterValue($event)" />
         </template>
-      </USelectMenu>
+        <template #kind-header="{ column }">
+          <USelect :model-value="filterString(column)" :items="facetItems('kind')"
+            placeholder="Kind" size="xs" class="w-36"
+            @update:model-value="column.setFilterValue($event)" />
+        </template>
+        <template #origin-header="{ column }">
+          <USelect :model-value="filterString(column)" :items="facetItems('origin')"
+            placeholder="Origin" size="xs" class="w-40"
+            @update:model-value="column.setFilterValue($event)" />
+        </template>
+        <template #rule-header="{ column }">
+          <USelect :model-value="filterString(column)" :items="facetItems('rule')"
+            placeholder="Rule" size="xs" class="w-28"
+            @update:model-value="column.setFilterValue($event)" />
+        </template>
+        <template #overlay-cell="{ row }">
+          <UBadge :label="row.original.overlay ? 'overlay' : 'conflict'"
+            :color="row.original.overlay ? 'neutral' : 'warning'"
+            variant="subtle" size="xs" />
+        </template>
+        <template #rule-cell="{ row }">
+          <UBadge :label="row.original.rule"
+            :color="row.original.rule === 'FIOS' ? 'warning' : 'info'"
+            variant="subtle" size="xs" />
+        </template>
+        <template #winner-cell="{ row }">
+          <UBadge :label="row.original.winnerName || 'Vanilla'"
+            :color="row.original.winner ? 'primary' : 'neutral'"
+            variant="subtle" size="xs" />
+        </template>
+        <template #sites-cell="{ row }">
+          <div class="flex flex-wrap gap-1">
+            <UButton
+              v-for="(site, i) in row.original.sites ?? []"
+              :key="i"
+              :label="`${site.originName || 'Vanilla'}:${site.line}`"
+              size="xs"
+              :color="site.origin ? 'primary' : 'neutral'"
+              variant="subtle"
+              @click="open(site.file, site.line)"
+            />
+          </div>
+        </template>
+      </UTable>
     </div>
-
-    <USplitter
-      id="conflicts-split"
-      auto-save-id="pmt-conflicts-split"
-      class="min-h-0 w-full flex-1 overflow-hidden"
-      :ui="splitUi"
-      :items="splitItems"
-    >
-      <template #overview>
-        <IssueOverviewPane
-          :chips="chips"
-          :nodes="treeNodes"
-          :active-chip="kindFilter"
-          :active-node="modOrigin"
-          tree-label="By mod"
-          @select-chip="onChip"
-          @select-node="onNode"
-        />
-      </template>
-      <template #table>
-        <div class="h-full min-h-0 overflow-auto p-2">
-          <UTable
-            :data="filteredRows"
-            :columns="columns"
-            :loading="loading"
-            sticky="header"
-            empty="No overlapping definitions."
-            :get-row-id="(row: OverrideRow) => `${row.kind}:${row.name}`"
-          >
-            <template #rule-cell="{ row }">
-              <UBadge
-                :label="row.original.rule"
-                :color="row.original.rule === 'FIOS' ? 'warning' : 'info'"
-                variant="subtle"
-                size="xs"
-              />
-            </template>
-            <template #winner-cell="{ row }">
-              <UBadge
-                :label="originLabel(row.original.winner)"
-                :color="row.original.winner ? 'primary' : 'neutral'"
-                variant="subtle"
-                size="xs"
-              />
-            </template>
-            <template #sites-cell="{ row }">
-              <div class="flex flex-wrap gap-1">
-                <UButton
-                  v-for="(site, i) in row.original.sites ?? []"
-                  :key="i"
-                  :label="`${originLabel(site.origin)}:${site.line}`"
-                  size="xs"
-                  :color="site.origin ? 'primary' : 'neutral'"
-                  variant="subtle"
-                  @click="open(site.file, site.line)"
-                />
-              </div>
-            </template>
-          </UTable>
-        </div>
-      </template>
-    </USplitter>
   </div>
 </template>

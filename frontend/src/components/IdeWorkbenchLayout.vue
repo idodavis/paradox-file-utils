@@ -1,11 +1,15 @@
 <script setup lang="ts">
 /**
- * VS Code ViewsService attachPart grid. Always mounted; visibility via class/inert —
- * attachPart containers must never sit under parent display:none.
+ * VS Code ViewsService attachPart grid. Always mounted at full size.
+ * Tool pages cover it; never hide this host with display/visibility/opacity/inert.
+ *
+ * The monaco root is a class-free element so Vue re-renders cannot wipe
+ * `monaco-workbench` (classList.add from LayoutService). Shell z-index lives
+ * on the outer wrapper.
  */
-import { onMounted, ref, watch } from "vue";
+import { onMounted, ref } from "vue";
 
-const props = defineProps<{
+defineProps<{
   visible: boolean;
   theme?: string;
 }>();
@@ -16,71 +20,51 @@ const sidebar = ref<HTMLElement | null>(null);
 const editor = ref<HTMLElement | null>(null);
 const panel = ref<HTMLElement | null>(null);
 
-let initStarted = false;
-let initDone = false;
-
-/** Initialize monaco workbench only when the IDE shell is shown. */
-async function tryInitWorkbench(): Promise<void> {
-  if (initStarted || !props.visible) return;
+onMounted(async () => {
   if (!root.value || !activityBar.value || !sidebar.value || !editor.value || !panel.value) {
     return;
   }
-  initStarted = true;
-  try {
-    const { ensureWorkbench } = await import("../ide/workbenchHost");
-    await ensureWorkbench(
-      {
-        root: root.value,
-        activityBar: activityBar.value,
-        sidebar: sidebar.value,
-        editor: editor.value,
-        panel: panel.value,
-      },
-      { theme: props.theme },
-    );
-    initDone = true;
-  } catch (error) {
-    initStarted = false;
-    console.error("workbench init", error);
-  }
-}
-
-watch(
-  () => props.visible,
-  (visible) => {
-    if (!visible) return;
-    if (initDone) {
-      void import("../ide/workbenchHost").then((m) => m.revealWorkbench());
-      return;
-    }
-    void tryInitWorkbench();
-  },
-  { immediate: true },
-);
-
-onMounted(() => void tryInitWorkbench());
+  root.value.classList.add("ide-monaco-host");
+  const { registerIdeParts } = await import("../ide/workbenchHost");
+  registerIdeParts({
+    root: root.value,
+    activityBar: activityBar.value,
+    sidebar: sidebar.value,
+    editor: editor.value,
+    panel: panel.value,
+  });
+});
 </script>
 
 <template>
   <div
-    ref="root"
-    :class="[
-      'absolute inset-0 flex min-h-0 flex-col bg-default',
-      visible ? 'z-0 overflow-hidden' : 'pointer-events-none invisible -z-10 overflow-hidden',
-    ]"
-    :inert="visible ? undefined : true"
+    class="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-default"
+    :class="visible ? 'z-10' : 'z-0 pointer-events-none'"
   >
     <slot name="toolbar" />
-    <div class="ide-layout__body flex min-h-0 min-w-0 flex-1">
-      <div ref="activityBar" class="ide-activity-bar shrink-0" />
-      <div ref="sidebar" class="ide-sidebar shrink-0" />
-      <div ref="editor" class="ide-editor min-h-0 min-w-0 flex-1" />
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div ref="root">
+        <div class="ide-layout__body flex min-h-0 min-w-0 flex-1">
+          <div ref="activityBar" class="ide-activity-bar shrink-0" />
+          <div ref="sidebar" class="ide-sidebar shrink-0" />
+          <div ref="editor" class="ide-editor min-h-0 min-w-0 flex-1" />
+        </div>
+        <div ref="panel" class="ide-panel shrink-0" />
+      </div>
     </div>
-    <div ref="panel" class="ide-panel shrink-0" />
   </div>
 </template>
 
 <style scoped>
+.ide-monaco-host {
+  display: flex;
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .ide-layout__body {
   position: relative;
 }

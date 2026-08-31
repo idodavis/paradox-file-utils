@@ -35,8 +35,10 @@ func NewPool(build Builder, emit Emitter) *Pool {
 }
 
 // EnsureSession returns the session for id, building it once if absent. Concurrent
-// callers for the same id share a single build.
+// callers for the same id share a single build. Other live sessions are Dropped
+// first so only one workspace is live.
 func (p *Pool) EnsureSession(id string) (*Session, error) {
+	p.dropOthers(id)
 	p.mu.RLock()
 	if s := p.sessions[id]; s != nil {
 		p.mu.RUnlock()
@@ -45,6 +47,13 @@ func (p *Pool) EnsureSession(id string) (*Session, error) {
 	p.mu.RUnlock()
 
 	v, err, _ := p.sf.Do(id, func() (any, error) {
+		p.mu.RLock()
+		if s := p.sessions[id]; s != nil {
+			p.mu.RUnlock()
+			return s, nil
+		}
+		p.mu.RUnlock()
+
 		s, err := p.build(id)
 		if err != nil {
 			return nil, err
@@ -61,14 +70,7 @@ func (p *Pool) EnsureSession(id string) (*Session, error) {
 	return v.(*Session), nil
 }
 
-// Get returns the live session for id, or nil if none is built.
-func (p *Pool) Get(id string) *Session {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.sessions[id]
-}
-
-// Drop discards the session for id (e.g. workspace closed).
+// Drop closes the session for id (if live) and removes it from the pool.
 func (p *Pool) Drop(id string) {
 	p.mu.Lock()
 	s := p.sessions[id]
@@ -77,6 +79,28 @@ func (p *Pool) Drop(id string) {
 	if s != nil {
 		s.Close()
 	}
+}
+
+func (p *Pool) dropOthers(keep string) {
+	p.mu.Lock()
+	var drop []*Session
+	for k, s := range p.sessions {
+		if k != keep {
+			drop = append(drop, s)
+			delete(p.sessions, k)
+		}
+	}
+	p.mu.Unlock()
+	for _, s := range drop {
+		s.Close()
+	}
+}
+
+// Get returns the live session for id, or nil if none is built.
+func (p *Pool) Get(id string) *Session {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.sessions[id]
 }
 
 // fire emits an event if an emitter is configured.

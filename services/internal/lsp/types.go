@@ -1,16 +1,13 @@
-// types.go holds LSP DTOs (UTF-8 line/byte-column throughout) and the small
-// shared helpers every feature uses to read a session file and the word at a
-// position.
-
+// types.go holds LSP DTOs and shared cursor/path helpers.
 package lsp
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 
-	"paradox-modding-tools/services/internal/loc"
-	"paradox-modding-tools/services/internal/parser"
+	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -31,24 +28,20 @@ type Diagnostic struct {
 	Range    Range  `json:"range"`
 	Severity int    `json:"severity"` // 1 error, 2 warning
 	Message  string `json:"message"`
-	Source   string `json:"source,omitempty"`
 	Code     string `json:"code,omitempty"`
 }
 
-// HoverResult is hover card text. Origin/rel/line/rootPath describe the def site.
+// HoverResult is hover card text. Origin/rel/line describe the def site.
 type HoverResult struct {
 	Contents string `json:"contents"`
-	Range    *Range `json:"range,omitempty"`
 	Origin   string `json:"origin,omitempty"`
 	Rel      string `json:"rel,omitempty"`
 	Line     int    `json:"line,omitempty"`
-	RootPath string `json:"rootPath,omitempty"`
 }
 
-// CompletionItem is one completion suggestion. Kind uses LSP CompletionItemKind.
+// CompletionItem is one completion suggestion.
 type CompletionItem struct {
 	Label  string `json:"label"`
-	Kind   int    `json:"kind,omitempty"`
 	Detail string `json:"detail,omitempty"`
 }
 
@@ -77,23 +70,15 @@ type FoldingRange struct {
 	EndLine   int `json:"endLine"`
 }
 
-// SignatureHelp is a call-signature tooltip.
-type SignatureHelp struct {
-	Label         string `json:"label"`
-	Documentation string `json:"documentation,omitempty"`
-}
-
 // CodeAction is a quick-fix.
 type CodeAction struct {
 	Title string         `json:"title"`
-	Kind  string         `json:"kind,omitempty"`
 	Edit  *WorkspaceEdit `json:"edit,omitempty"`
 }
 
 // SymbolInformation describes a document or workspace symbol.
 type SymbolInformation struct {
 	Name          string   `json:"name"`
-	Kind          int      `json:"kind"`
 	Location      Location `json:"location"`
 	ContainerName string   `json:"containerName,omitempty"`
 }
@@ -101,15 +86,98 @@ type SymbolInformation struct {
 const (
 	sevError   = 1
 	sevWarning = 2
-	srcScript  = "pmt-script"
-	srcLoc     = "pmt-loc"
-	srcGUI     = "pmt-gui"
-	srcMod     = "pmt-mod"
 )
 
-// byteRange converts a UTF-8 byte span in src into an LSP range.
-func byteRange(src string, start, end int) Range {
-	li := parser.NewLineIndex(src)
+// atPos is the parsed file and one NodeAtOffset probe at a cursor.
+type atPos struct {
+	src, word       string
+	off, start, end int
+	res             jomini.Result
+	kind            string
+	assign          *jomini.Assignment
+	saveName        string
+	saveOK          bool
+}
+
+// resolveAt parses path and returns the identifier covering (line, col).
+func resolveAt(s *session.Session, path string, line, col int) (atPos, bool) {
+	src := s.FileText(path)
+	if src == "" {
+		return atPos{}, false
+	}
+	res := s.Parsed(path)
+	off := res.Lines().OffsetAt(line, col)
+	if inComment(res, off) {
+		return atPos{}, false
+	}
+	word, start, end := res.TokenAt(off)
+	at := atPos{src: src, off: off, res: res, word: word, start: start, end: end}
+	rel := path
+	if _, r, ok := s.Locate(path); ok {
+		rel = r
+	}
+	at.kind = game.MatchExtract(s.GameID, rel).Kind
+	if res.Root == nil || s.KindFor(path) == "loc" {
+		return at, true
+	}
+	chain := jomini.NodeAtOffset(res.Root, off)
+	if len(chain) > 0 {
+		if a, ok := chain[0].(*jomini.Assignment); ok && !a.Key.Quoted {
+			if d := s.Resolve(a.Key.Text); d != nil && d.Type != "" && d.Type != "loc_key" {
+				at.kind = d.Type
+			}
+		}
+		for i := len(chain) - 1; i >= 0; i-- {
+			a, ok := chain[i].(*jomini.Assignment)
+			if !ok {
+				continue
+			}
+			if off >= a.Key.Range.Start && off < a.Key.Range.End {
+				at.assign = a
+			}
+			break
+		}
+		at.saveName, at.saveOK = saveScopeIn(chain, off)
+	}
+	return at, true
+}
+
+func saveScopeIn(chain []jomini.Statement, off int) (name string, ok bool) {
+	for _, n := range chain {
+		a, isA := n.(*jomini.Assignment)
+		if !isA || a.Key.Quoted {
+			continue
+		}
+		if game.IsSaveScopeKey(a.Key.Text) {
+			sc, isS := a.Value.(*jomini.Scalar)
+			if isS && !sc.Quoted && off >= sc.Range.Start && off <= sc.Range.End {
+				return sc.Text, true
+			}
+			return "", false
+		}
+		if !game.IsSaveScopeValueKey(a.Key.Text) {
+			continue
+		}
+		b := jomini.BlockOf(a.Value)
+		if b == nil {
+			continue
+		}
+		for _, st := range b.Statements {
+			ca, isC := st.(*jomini.Assignment)
+			if !isC || ca.Key.Text != "name" {
+				continue
+			}
+			sc, isS := ca.Value.(*jomini.Scalar)
+			if isS && !sc.Quoted && off >= sc.Range.Start && off <= sc.Range.End {
+				return sc.Text, true
+			}
+		}
+	}
+	return "", false
+}
+
+// byteRange converts a UTF-8 byte span using a cached LineIndex.
+func byteRange(li *jomini.LineIndex, start, end int) Range {
 	a := li.PositionAt(start)
 	b := li.PositionAt(end)
 	return Range{
@@ -118,102 +186,26 @@ func byteRange(src string, start, end int) Range {
 	}
 }
 
-// offsetOf maps a (line, UTF-8 column) to a byte offset in src.
-func offsetOf(src string, line, col int) int {
-	return parser.NewLineIndex(src).OffsetAt(line, col)
-}
-
-// wordAt returns the identifier covering offset. An empty span keeps the
-// offset (not 0, 0) so callers do not treat "no word" as a prefix from byte 0.
-func wordAt(src string, offset int) (word string, start, end int) {
-	if offset < 0 {
-		offset = 0
+func isMetaFile(s *session.Session, path string) bool {
+	if s.KindFor(path) != "meta" {
+		return false
 	}
-	if offset > len(src) {
-		offset = len(src)
-	}
-	start, end = offset, offset
-	for start > 0 && isIdentByte(src[start-1]) {
-		start--
-	}
-	for end < len(src) && isIdentByte(src[end]) {
-		end++
-	}
-	if start == end {
-		return "", start, end
-	}
-	return src[start:end], start, end
-}
-
-func isIdentByte(c byte) bool {
-	return c == '_' || c == '.' || c == '-' ||
-		(c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-}
-
-// fileText is the open buffer, or the decoded on-disk file.
-func fileText(s *session.Session, path string) string {
-	return s.FileText(path)
-}
-
-// parseOf returns the buffered parse result, or parses src on the fly.
-func parseOf(s *session.Session, path, src string) parser.Result {
-	if r, ok := s.Result(path); ok && r.Src == src {
-		return r
-	}
-	return parser.Parse(src)
-}
-
-func isLocPath(path string) bool {
-	l := strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
-	return strings.HasSuffix(l, ".yml") || strings.HasSuffix(l, ".yaml")
-}
-
-func isGUIPath(path string) bool {
-	return strings.HasSuffix(strings.ToLower(path), ".gui")
-}
-
-func isModPath(path string) bool {
-	return strings.HasSuffix(strings.ToLower(path), ".mod")
-}
-
-func isMetaJSON(path string) bool {
 	l := strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
 	return strings.Contains(l, "/.metadata/") && strings.HasSuffix(l, "/metadata.json")
 }
 
-func sourceFor(path string) string {
-	switch {
-	case isLocPath(path):
-		return srcLoc
-	case isGUIPath(path):
-		return srcGUI
-	case isModPath(path):
-		return srcMod
-	default:
-		return srcScript
-	}
-}
-
-// locValue looks up an english loc string in the workspace, then vanilla.
-func locValue(s *session.Session, key string) (string, bool) {
-	return s.EnglishLoc(key)
-}
-
 func locDefined(s *session.Session, key string) bool {
-	_, ok := locValue(s, key)
-	if ok {
+	if _, ok := s.DefaultLoc(key); ok {
 		return true
 	}
-	idx := s.Index()
-	if idx == nil {
-		return false
-	}
-	for _, d := range idx.Defs {
-		if d.Type == "loc_key" && d.Key == key {
-			return true
-		}
-	}
-	return false
+	_, _, _, ok := s.LocSite(key)
+	return ok
+}
+
+func resolveNonLoc(s *session.Session, word string) *catalog.Def {
+	return s.ResolveMatching(word, func(d catalog.Def) bool {
+		return d.Type != "loc_key" && d.Type != "saved_scope"
+	})
 }
 
 func fileExists(path string) bool {
@@ -234,37 +226,12 @@ func modRootOf(s *session.Session, path string) string {
 	return ""
 }
 
-func descriptorPath(gameID, root string) string {
-	switch gameID {
-	case "vic3", "eu5":
-		return filepath.Join(root, ".metadata", "metadata.json")
-	default:
-		return filepath.Join(root, "descriptor.mod")
-	}
-}
-
 func lowerPrefix(s, prefix string) bool {
-	if prefix == "" {
-		return true
-	}
-	return strings.HasPrefix(strings.ToLower(s), strings.ToLower(prefix))
-}
-
-func parseLoc(src string) loc.Result { return loc.Parse(src) }
-
-func assignmentBlock(a *parser.Assignment) *parser.Block {
-	switch v := a.Value.(type) {
-	case *parser.Block:
-		return v
-	case *parser.TaggedBlock:
-		return &v.Block
-	default:
-		return nil
-	}
+	return prefix == "" || strings.HasPrefix(strings.ToLower(s), strings.ToLower(prefix))
 }
 
 // inComment reports whether offset falls inside a `#` comment span.
-func inComment(res parser.Result, off int) bool {
+func inComment(res jomini.Result, off int) bool {
 	for _, c := range res.Comments {
 		if off >= c.Range.Start && off < c.Range.End {
 			return true

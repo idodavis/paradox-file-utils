@@ -2,29 +2,30 @@
 /**
  * Vue app root with library-centric shell and workbench singleton host.
  */
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { useColorMode } from "@vueuse/core";
 import { useRoute, useRouter } from "vue-router";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import appIcon from "@assets/PMT-SquareIcon-Mint.png?url";
 import PMTLogo from "./components/PMTLogo.vue";
 import GameIcon from "./components/GameIcon.vue";
-import { GAME_OPTIONS, useWorkspaceStore } from "./stores/workspace";
+import { useWorkspaceStore } from "./stores/workspace";
 import { useSettingsStore } from "./stores/settings";
 import {
-  THEME_SWATCHES,
+  applySeedCss,
+  currentWorkbenchTheme,
+  familyLabel,
+  normalizeThemeFamily,
   themeMenuItems,
+  workbenchThemeId,
+  type PmtThemeFamily,
   type ThemeMenuItem,
   type ThemeSwatchColors,
-} from "./composables/themeSwatches";
+} from "./ide/colorThemes";
 import { CheckForUpdates, GetVersion } from "@services/settingsservice";
 import { isWorkbenchReady } from "./ide/workbenchHost";
 import IdeWorkbenchLayout from "./components/IdeWorkbenchLayout.vue";
 import { applyWorkbenchTheme } from "./ide/themeBridge";
-import {
-  isDarkTheme,
-  normalizeThemeName,
-  PMT_THEME_NAMES,
-} from "./ide/appThemes";
 import { useIdeShellStore } from "./stores/ideShell";
 
 const route = useRoute();
@@ -33,16 +34,25 @@ const ws = useWorkspaceStore();
 const settings = useSettingsStore();
 const ideShell = useIdeShellStore();
 
-const themeNames = PMT_THEME_NAMES;
-const themeItems = themeMenuItems(themeNames);
-
-const currentTheme = ref("PMT");
+const colorMode = useColorMode();
+const currentFamily = shallowRef<PmtThemeFamily>("pmt");
+const appearance = computed(() =>
+  colorMode.value === "dark" ? ("dark" as const) : ("light" as const),
+);
+const themeItems = computed(() => themeMenuItems(appearance.value));
 const currentThemeSwatches = computed(
   (): ThemeSwatchColors =>
-    THEME_SWATCHES[currentTheme.value] ?? THEME_SWATCHES.PMT,
+    themeItems.value.find((i) => i.value === currentFamily.value)?.swatches ??
+    themeItems.value[0]!.swatches,
 );
+const currentFamilyLabel = computed(() => familyLabel(currentFamily.value));
 const version = ref("...");
 const helpOpen = ref(false);
+
+const KEEP_ALIVE_PAGES = [
+  "LibraryPage", "EventGraphPage", "ConflictPage", "LocCoveragePage",
+  "PatcherPage", "ToolsMergePage", "SettingsPage",
+];
 
 const currentTitle = computed(() => String(route.meta.title ?? "Tools"));
 const currentDescription = computed(
@@ -67,75 +77,55 @@ function menuGameId(item: unknown): string {
 
 const workspaceDropdownItems = computed<DropdownMenuItem[][]>(() => {
   const items: DropdownMenuItem[][] = [];
-  const all = ws.workspaces;
+  const grouped = ws.workspacesByGame;
   const activeId = ws.activeWorkspaceId;
   const activeGame = ws.activeWorkspace?.gameId ?? ws.currentGameId;
 
-  const toItem = (workspace: (typeof all)[number]): DropdownMenuItem => ({
+  const toItem = (workspace: (typeof ws.workspaces)[number]): DropdownMenuItem => ({
     label: workspace.name,
     icon: workspace.id === activeId ? "i-lucide-check" : "i-lucide-folder",
     onSelect: () => {
       ws.setActiveWorkspace(workspace.id);
-      void router.push({
-        name: "workspace-ide",
-        params: { id: workspace.id },
-      });
+      void router.push({ name: "workspace-ide", params: { id: workspace.id } });
     },
   });
-
-  /** Game group heading with official icon when one ships. */
   const gameLabel = (gameId: string): DropdownMenuItem => ({
-    label: gameId.toUpperCase(),
-    type: "label" as const,
-    disabled: true,
-    slot: "game-group",
-    gameId,
+    label: gameId.toUpperCase(), type: "label" as const, disabled: true,
+    slot: "game-group", gameId,
   });
 
-  const sameGame = all.filter((w) => w.gameId === activeGame);
-  const otherGames = GAME_OPTIONS.map((g) => g.value).filter(
-    (id) => id !== activeGame,
-  );
-
-  if (sameGame.length) {
-    items.push([gameLabel(activeGame), ...sameGame.slice(0, 8).map(toItem)]);
-  }
-  for (const gameId of otherGames) {
-    const group = all.filter((w) => w.gameId === gameId);
-    if (!group.length) continue;
-    items.push([gameLabel(gameId), ...group.slice(0, 5).map(toItem)]);
+  const ordered = [
+    ...grouped.filter((s) => s.gameId === activeGame),
+    ...grouped.filter((s) => s.gameId !== activeGame),
+  ];
+  for (const section of ordered) {
+    const limit = section.gameId === activeGame ? 8 : 5;
+    items.push([
+      gameLabel(section.gameId),
+      ...section.workspaces.slice(0, limit).map(toItem),
+    ]);
   }
   items.push([
-    {
-      label: "New Workspace",
-      icon: "i-lucide-plus",
-      onSelect: () => router.push({ name: "wizard" }),
-    },
-    {
-      label: "Library",
-      icon: "i-lucide-library",
-      onSelect: () => router.push({ name: "library" }),
-    },
-    {
-      label: "Ad-hoc Merge",
-      icon: "i-lucide-git-merge",
-      onSelect: () => router.push({ name: "tools-merge" }),
-    },
+    { label: "New Workspace", icon: "i-lucide-plus",
+      onSelect: () => router.push({ name: "wizard" }) },
+    { label: "Library", icon: "i-lucide-library",
+      onSelect: () => router.push({ name: "library" }) },
+    { label: "Ad-hoc Merge", icon: "i-lucide-git-merge",
+      onSelect: () => router.push({ name: "tools-merge" }) },
   ]);
   return items;
 });
 
-/** Apply a theme to the document. */
-function setTheme(theme: string): void {
-  const name = normalizeThemeName(theme);
-  currentTheme.value = name;
-  document.documentElement.dataset.theme = name;
-  document.documentElement.classList.toggle("dark", isDarkTheme(name));
+/** Apply a palette family to `data-theme` (appearance is color-mode). */
+function setFamily(family: PmtThemeFamily): void {
+  currentFamily.value = family;
+  document.documentElement.dataset.theme = family;
+  applySeedCss(workbenchThemeId(family, appearance.value));
 }
 
-/** Persist the theme via settings store. */
-async function saveTheme(theme: string): Promise<void> {
-  await settings.set("_global.theme", theme);
+/** Persist the palette family via settings store. */
+async function saveFamily(family: PmtThemeFamily): Promise<void> {
+  await settings.set("_global.theme", family);
 }
 
 /** Load version string. */
@@ -147,13 +137,14 @@ async function loadVersion(): Promise<void> {
   }
 }
 
-/** Apply and persist a theme; sync workbench colors when ready. */
+/** Apply and persist a palette family; sync workbench when ready. */
 async function onThemeChange(theme: string | null): Promise<void> {
-  if (!theme || !(theme in THEME_SWATCHES)) return;
-  setTheme(theme);
-  await saveTheme(theme);
+  if (!theme) return;
+  const family = normalizeThemeFamily(theme);
+  setFamily(family);
+  await saveFamily(family);
   if (isWorkbenchReady()) {
-    await applyWorkbenchTheme(theme);
+    await applyWorkbenchTheme(currentWorkbenchTheme());
   }
 }
 
@@ -161,8 +152,13 @@ async function onThemeChange(theme: string | null): Promise<void> {
 function itemSwatches(
   item: ThemeMenuItem | string | undefined,
 ): ThemeSwatchColors {
-  if (!item) return THEME_SWATCHES.PMT;
-  if (typeof item === "string") return THEME_SWATCHES[item] ?? THEME_SWATCHES.PMT;
+  if (!item) return themeItems.value[0]!.swatches;
+  if (typeof item === "string") {
+    return (
+      themeItems.value.find((i) => i.value === normalizeThemeFamily(item))
+        ?.swatches ?? themeItems.value[0]!.swatches
+    );
+  }
   return item.swatches;
 }
 
@@ -172,16 +168,24 @@ async function checkForUpdates(): Promise<void> {
 }
 
 watch(
-  currentTheme,
-  (value) => {
-    document.documentElement.dataset.theme = value;
+  [currentFamily, () => colorMode.value],
+  async () => {
+    document.documentElement.dataset.theme = currentFamily.value;
+    applySeedCss(workbenchThemeId(currentFamily.value, appearance.value));
+    if (isWorkbenchReady()) {
+      await applyWorkbenchTheme(currentWorkbenchTheme());
+    }
   },
-  { immediate: true },
 );
 
 onMounted(async () => {
   await Promise.all([settings.load(), loadVersion(), ws.refresh()]);
-  setTheme(normalizeThemeName(settings.values["_global.theme"]));
+  const stored = settings.values["_global.theme"];
+  const family = normalizeThemeFamily(stored);
+  if (colorMode.store.value === "auto") {
+    colorMode.store.value = "dark";
+  }
+  setFamily(family);
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (link) link.href = appIcon;
 });
@@ -203,23 +207,15 @@ onMounted(async () => {
               <template #game-group-leading="{ item }">
                 <GameIcon :game-id="menuGameId(item)" />
               </template>
-              <UButton
-                :label="ws.activeWorkspaceName"
-                trailing-icon="i-lucide-chevron-down"
-                color="neutral"
-                variant="outline"
-                class="max-w-48 truncate"
-              >
-                <template
-                  v-if="ws.activeWorkspace?.gameId"
-                  #leading
-                >
+              <UButton :label="ws.activeWorkspaceName" trailing-icon="i-lucide-chevron-down"
+                color="neutral" variant="outline" class="max-w-48 truncate">
+                <template v-if="ws.activeWorkspace?.gameId" #leading>
                   <GameIcon :game-id="ws.activeWorkspace.gameId" />
                 </template>
               </UButton>
             </UDropdownMenu>
             <USelectMenu
-              v-model="currentTheme"
+              :model-value="currentFamily"
               :items="themeItems"
               value-key="value"
               :ui="{
@@ -227,7 +223,6 @@ onMounted(async () => {
                 base: 'w-auto gap-1.5 ps-2 pe-2',
                 leading: 'static inset-auto',
                 trailing: 'static inset-auto',
-                value: 'hidden',
               }"
               @update:model-value="onThemeChange"
             >
@@ -245,7 +240,7 @@ onMounted(async () => {
                 </span>
               </template>
               <template #default>
-                <span class="sr-only">{{ currentTheme }}</span>
+                <span class="text-sm">{{ currentFamilyLabel }}</span>
               </template>
               <template #item-leading="{ item }">
                 <span
@@ -261,74 +256,69 @@ onMounted(async () => {
                 </span>
               </template>
             </USelectMenu>
-            <UButton
-              icon="i-lucide-settings"
-              color="neutral"
-              variant="ghost"
-              @click="router.push({ name: 'settings' })"
-            />
+            <UColorModeButton />
+            <UButton icon="i-lucide-settings" color="neutral" variant="ghost"
+              @click="router.push({ name: 'settings' })" />
           </div>
         </div>
       </header>
 
       <main class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div
-          v-if="!showWorkbench"
-          class="min-h-0 min-w-0 flex-1 overflow-hidden"
-        >
-          <router-view />
-        </div>
         <IdeWorkbenchLayout
           :visible="showWorkbench"
-          :theme="currentTheme"
+          :theme="currentFamily"
         >
           <template #toolbar>
             <div
-              v-if="route.name === 'workspace-ide'"
               class="shrink-0 border-b border-default"
+              :class="{ hidden: route.name !== 'workspace-ide' }"
             >
-              <router-view />
+              <router-view name="ide" v-slot="{ Component }">
+                <KeepAlive :max="2" include="WorkspaceIdePage">
+                  <component
+                    :is="Component"
+                    v-if="Component"
+                  />
+                </KeepAlive>
+              </router-view>
             </div>
             <div
-              v-else-if="ideShell.mergeReview"
+              v-if="ideShell.mergeReview"
               class="flex shrink-0 items-center gap-2 border-b border-default px-2 py-1"
             >
-              <UButton
-                label="Back to Patcher"
-                icon="i-lucide-arrow-left"
-                size="sm"
-                color="neutral"
-                variant="ghost"
-                @click="ideShell.endMergeReview()"
-              />
+              <UButton label="Back to Patcher" icon="i-lucide-arrow-left" size="sm"
+                color="neutral" variant="ghost" @click="ideShell.endMergeReview()" />
               <span class="text-xs text-muted">Reviewing diffs in workbench</span>
             </div>
           </template>
         </IdeWorkbenchLayout>
+        <div
+          class="absolute inset-0 overflow-hidden bg-default"
+          :class="showWorkbench ? 'z-0 pointer-events-none' : 'z-20'"
+        >
+          <router-view v-slot="{ Component }">
+            <KeepAlive :max="10" :include="KEEP_ALIVE_PAGES">
+              <component
+                :is="Component"
+                v-if="Component"
+                :key="String(route.name)"
+              />
+            </KeepAlive>
+          </router-view>
+        </div>
       </main>
 
       <footer
-        v-show="!showWorkbench"
-        class="z-10 flex shrink-0 items-center justify-between border-t border-default bg-default px-2 text-sm text-default"
+        class="z-10 flex shrink-0 items-center justify-between
+          border-t border-default bg-default px-2 text-sm text-default"
+        :class="{ hidden: showWorkbench }"
       >
         <PMTLogo :icon-height="25" :text-height="30" />
         <div class="flex items-center gap-2">
-          <UButton
-            :label="`Help for ${currentTitle}`"
-            icon="i-lucide-circle-help"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            @click="helpOpen = true"
-          />
-          <UButton
-            :label="version"
-            icon="i-lucide-refresh-cw"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            @click="checkForUpdates"
-          />
+          <UButton :label="`Help for ${currentTitle}`" icon="i-lucide-circle-help"
+            color="neutral" variant="ghost" size="sm" @click="helpOpen = true" />
+          <UButton :label="version" icon="i-lucide-refresh-cw"
+            color="neutral" variant="ghost" size="sm" @click="checkForUpdates" />
         </div>
       </footer>
 
@@ -339,13 +329,8 @@ onMounted(async () => {
         :ui="{ content: 'sm:max-w-2xl' }"
       >
         <template #footer="{ close }">
-          <UButton
-            label="Close"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-x"
-            @click="close"
-          />
+          <UButton label="Close" color="neutral" variant="outline" icon="i-lucide-x"
+            @click="close" />
         </template>
       </UModal>
     </div>

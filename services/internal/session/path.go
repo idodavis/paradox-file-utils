@@ -1,4 +1,4 @@
-// path.go canonicalizes filesystem paths so index rows, buffers, and LSP
+// path.go canonicalizes filesystem paths so session maps, buffers, and LSP
 // requests agree on Windows (slash/case) and Unix.
 
 package session
@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"paradox-modding-tools/services/internal/catalog"
 )
 
 // CanonPath returns a cleaned path for index and buffer identity.
@@ -49,4 +51,18 @@ func RelPath(root, file string) (rel string, ok bool) {
 		return "", false
 	}
 	return file[len(root)+1:], true
+}
+
+// FileKind classifies a root-relative path for indexing (script, gui, loc, …).
+func FileKind(rel, name string) string {
+	return catalog.ClassifyRel(rel, name)
+}
+
+// KindFor returns the catalog file kind for an absolute path.
+func (s *Session) KindFor(path string) string {
+	_, rel, ok := s.Locate(path)
+	if !ok {
+		rel = path
+	}
+	return FileKind(strings.ReplaceAll(rel, "\\", "/"), filepath.Base(path))
 }

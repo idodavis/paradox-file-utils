@@ -1,11 +1,9 @@
-// complete.go prefixes-filters vocabulary and definitions. Items are never
-// hidden by Rank; scopes.go only reorders them. Descriptor .mod and
-// metadata.json have their own tiny key lists.
-
+// complete.go serves completion for script, loc, mod, and metadata files.
 package lsp
 
 import (
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -13,28 +11,39 @@ const maxComplete = 80
 
 // Complete returns completion items at (line, UTF-8 column).
 func Complete(s *session.Session, path string, line, col int) []CompletionItem {
-	src := fileText(s, path)
-	off := offsetOf(src, line, col)
+	if s.KindFor(path) == "mod" {
+		return prefixFilter(modItems(), completePrefix(s, path, line, col))
+	}
+	if isMetaFile(s, path) {
+		return prefixFilter(metaItems(s), completePrefix(s, path, line, col))
+	}
+	if s.KindFor(path) == "loc" {
+		return capComplete(locItems(s, completePrefix(s, path, line, col)))
+	}
+	at, ok := resolveAt(s, path, line, col)
+	if !ok {
+		return nil
+	}
 	prefix := ""
-	// Ident before the cursor only — an empty span is not prefix src[0:off].
-	if word, start, _ := wordAt(src, off); word != "" && start < off {
-		prefix = src[start:off]
+	if at.word != "" && at.start < at.off {
+		prefix = at.src[at.start:at.off]
 	}
-
-	if isModPath(path) {
-		return prefixFilter(modItems(), prefix)
-	}
-	if isMetaJSON(path) {
-		return prefixFilter(metaItems(s), prefix)
-	}
-	if isLocPath(path) {
-		return capComplete(locItems(s, prefix))
-	}
-
-	kind := enclosingKind(s, path, src, off)
-	items := scriptItems(s, path, kind, prefix)
-	Rank(s, kind, items)
+	items := scriptItems(s, path, at.kind, prefix)
+	Rank(s, at.kind, items)
 	return capComplete(items)
+}
+
+func completePrefix(s *session.Session, path string, line, col int) string {
+	src := s.FileText(path)
+	if src == "" {
+		return ""
+	}
+	off := jomini.NewLineIndex(src).OffsetAt(line, col)
+	word, start, _ := jomini.Result{Src: src}.TokenAt(off)
+	if word != "" && start < off {
+		return src[start:off]
+	}
+	return ""
 }
 
 func prefixFilter(items []CompletionItem, prefix string) []CompletionItem {
@@ -60,22 +69,26 @@ func capComplete(items []CompletionItem) []CompletionItem {
 	return items
 }
 
+func item(label, detail string) CompletionItem {
+	return CompletionItem{Label: label, Detail: detail}
+}
+
 func modItems() []CompletionItem {
 	out := make([]CompletionItem, 0, len(game.DescriptorModKeys))
 	for _, k := range game.DescriptorModKeys {
-		out = append(out, CompletionItem{Label: k, Kind: 5, Detail: "mod descriptor"})
+		out = append(out, item(k, "mod descriptor"))
 	}
 	return out
 }
 
 func metaItems(s *session.Session) []CompletionItem {
-	c := s.Cache()
-	if c == nil {
+	keys := s.Vocab("meta")
+	if len(keys) == 0 {
 		return nil
 	}
-	out := make([]CompletionItem, 0, len(c.MetaKeys))
-	for _, k := range c.MetaKeys {
-		out = append(out, CompletionItem{Label: k, Kind: 5, Detail: "metadata"})
+	out := make([]CompletionItem, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, item(k, "metadata"))
 	}
 	return out
 }
@@ -91,30 +104,12 @@ func locItems(s *session.Session, prefix string) []CompletionItem {
 			return
 		}
 		seen[k] = true
-		out = append(out, CompletionItem{Label: k, Kind: 12, Detail: "loc key"})
+		out = append(out, item(k, "loc key"))
 	}
-	if idx := s.Index(); idx != nil {
-		for k := range idx.Loc {
-			add(k)
-			if len(out) >= maxComplete {
-				return out
-			}
-		}
-		for _, d := range idx.Defs {
-			if d.Type == "loc_key" {
-				add(d.Key)
-				if len(out) >= maxComplete {
-					return out
-				}
-			}
-		}
-	}
-	if c := s.Cache(); c != nil {
-		for k := range c.LocEnglish {
-			add(k)
-			if len(out) >= maxComplete {
-				return out
-			}
+	for _, k := range s.LocKeys(false) {
+		add(k)
+		if len(out) >= maxComplete {
+			return out
 		}
 	}
 	return out
@@ -123,66 +118,39 @@ func locItems(s *session.Session, prefix string) []CompletionItem {
 func scriptItems(s *session.Session, path, kind, prefix string) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
-	add := func(label, detail string, k int) {
-		if len(out) >= maxComplete || label == "" || seen[label] ||
-			!lowerPrefix(label, prefix) {
+	add := func(label, detail string) {
+		if len(out) >= maxComplete || label == "" || seen[label] || !lowerPrefix(label, prefix) {
 			return
 		}
 		seen[label] = true
-		out = append(out, CompletionItem{Label: label, Kind: k, Detail: detail})
+		out = append(out, item(label, detail))
 	}
-	c := s.Cache()
-	if c != nil {
-		for _, k := range c.Structures[kind] {
-			add(k, kind, 5)
-		}
-		for _, k := range c.Effects {
-			add(k, "effect", 3)
-			if len(out) >= maxComplete {
-				return out
-			}
-		}
-		for _, k := range c.Triggers {
-			add(k, "trigger", 3)
-			if len(out) >= maxComplete {
-				return out
-			}
-		}
-		for _, k := range c.Vocabulary {
-			add(k, "script", 6)
-			if len(out) >= maxComplete {
-				return out
-			}
-		}
-		if isGUIPath(path) {
-			for _, k := range c.GUITypes {
-				add(k, "gui type", 7)
-			}
-			for _, k := range c.GUIProps {
-				add(k, "gui", 5)
-				if len(out) >= maxComplete {
-					return out
-				}
-			}
-		}
+	for _, k := range s.Structures(kind) {
+		add(k, kind)
 	}
-	if idx := s.Index(); idx != nil {
-		for _, d := range idx.Defs {
-			if d.Type == "saved_scope" {
-				continue
-			}
-			add(d.Key, d.Type, 12)
+	for _, pair := range [][2]string{{"effect", "effect"}, {"trigger", "trigger"}, {"vocabulary", "script"}} {
+		for _, k := range s.Vocab(pair[0]) {
+			add(k, pair[1])
 			if len(out) >= maxComplete {
 				return out
 			}
 		}
 	}
-	if c != nil {
-		for _, d := range c.Defs {
-			add(d.Key, d.Type, 12)
+	if s.KindFor(path) == "gui" {
+		for _, k := range s.Vocab("gui_type") {
+			add(k, "gui type")
+		}
+		for _, k := range s.Vocab("gui_prop") {
+			add(k, "gui")
 			if len(out) >= maxComplete {
 				return out
 			}
+		}
+	}
+	for _, d := range s.FindDefs(prefix, maxComplete-len(out), true, true) {
+		add(d.Key, d.Type)
+		if len(out) >= maxComplete {
+			return out
 		}
 	}
 	return out

@@ -1,3 +1,4 @@
+// Package services provides backend services for the Paradox Modding Tools application.
 package services
 
 import (
@@ -7,16 +8,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
-
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 const utf8BOM = "\uFEFF"
 
-// FileService provides directory/file selection dialogs and filesystem helpers for merge/IDE.
+// FileService provides filesystem helpers for merge and the IDE workbench.
 type FileService struct{}
 
 // GetUserDownloadsDir returns the user's Downloads directory (e.g. ~/Downloads).
@@ -28,29 +26,8 @@ func (f *FileService) GetUserDownloadsDir() (string, error) {
 	return filepath.Join(home, "Downloads", "PMT-Merge"), nil
 }
 
-// SelectDirectory prompts for a folder. Cancel yields an empty path (no error).
-func (f *FileService) SelectDirectory(title string) (string, error) {
-	dialog := application.Get().Dialog.OpenFile()
-	dialog.SetTitle(title)
-	dialog.CanChooseDirectories(true)
-	dialog.CanChooseFiles(false)
-	return dialog.PromptForSingleSelection()
-}
-
-// SelectSingleFile prompts for a file. Cancel yields an empty path (no error).
-func (f *FileService) SelectSingleFile(title, filter string) (string, error) {
-	dialog := application.Get().Dialog.OpenFile()
-	dialog.SetTitle(title)
-	dialog.CanChooseFiles(true)
-	dialog.CanChooseDirectories(false)
-	if filter != "" {
-		dialog.AddFilter(filter, filter)
-	}
-	return dialog.PromptForSingleSelection()
-}
-
-// WriteWithBOM writes content to outputPath as UTF-8 with BOM. Creates parent directories as needed.
-func (f *FileService) WriteWithBOM(outputPath, content string) error {
+// writeWithBOM writes content to outputPath as UTF-8 with BOM.
+func (f *FileService) writeWithBOM(outputPath, content string) error {
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
@@ -60,27 +37,9 @@ func (f *FileService) WriteWithBOM(outputPath, content string) error {
 	return os.WriteFile(outputPath, []byte(content), 0o644)
 }
 
-func encodeBase64(data []byte) string {
-	return base64.StdEncoding.EncodeToString(data)
-}
-
-func decodeBase64(s string) ([]byte, error) {
-	return base64.StdEncoding.DecodeString(s)
-}
-
-type FileCollectorFilter struct {
-	Extensions  []string // e.g. [".txt", ".lua"]
-	FileNames   []string // e.g. ["readme.txt", "mod.lua"]
-	Regex       string   // e.g. "^(readme|mod)\.txt$"
-	IncludePath string   // regex on rel path, e.g. "events/" - include only if matches
-	ExcludePath string   // regex on rel path, e.g. "common/" - exclude if matches
-}
-
-// CollectFilesFromPath collects all .txt files from a mix of files and directories
-// Returns a map of relativePath -> fullPath
-func (f *FileService) CollectFilesFromPath(inputPath string, filter FileCollectorFilter) (map[string]string, error) {
+// collectFilesFromPath collects files under inputPath. Returns relativePath -> fullPath.
+func (f *FileService) collectFilesFromPath(inputPath string, exts []string) (map[string]string, error) {
 	files := make(map[string]string)
-
 	walkErr := filepath.WalkDir(inputPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -88,161 +47,43 @@ func (f *FileService) CollectFilesFromPath(inputPath string, filter FileCollecto
 		if d.IsDir() {
 			return nil
 		}
-
-		if len(filter.Extensions) > 0 && !slices.Contains(filter.Extensions, filepath.Ext(path)) {
-			return nil
-		}
-		if len(filter.FileNames) > 0 && !slices.Contains(filter.FileNames, filepath.Base(path)) {
+		if len(exts) > 0 && !slices.Contains(exts, filepath.Ext(path)) {
 			return nil
 		}
 		rel, err := filepath.Rel(inputPath, path)
 		if err != nil {
 			return err
 		}
-		relSlash := filepath.ToSlash(rel)
-		if filter.Regex != "" && !regexp.MustCompile(filter.Regex).MatchString(path) {
-			return nil
-		}
-		if filter.IncludePath != "" {
-			if re, err := regexp.Compile(filter.IncludePath); err == nil && !re.MatchString(relSlash) {
-				return nil
-			}
-		}
-		if filter.ExcludePath != "" {
-			if re, err := regexp.Compile(filter.ExcludePath); err == nil && re.MatchString(relSlash) {
-				return nil
-			}
-		}
-		files[relSlash] = path
+		files[filepath.ToSlash(rel)] = path
 		return nil
 	})
 	if walkErr != nil && walkErr != fs.SkipAll {
 		return nil, fmt.Errorf("Tree walk error in %s: %w", inputPath, walkErr)
 	}
-
 	return files, nil
 }
 
-// FileMatch represents a matched path pair
-type PathMatch struct {
+type pathMatch struct {
 	PathA string `json:"pathA"`
 	PathB string `json:"pathB"`
 }
 
-// FindMatchingPaths finds paths that exist in both sets. When matchByFilenameOnly is true,
-// matches only by filename (e.g. for zz_mod_file.txt where paths differ).
-func (f *FileService) FindMatchingPaths(filesA, filesB map[string]string, matchByFilenameOnly bool) (map[string]PathMatch, error) {
-	if matchByFilenameOnly {
-		return f.findMatchingByFilenameOnly(filesA, filesB), nil
-	}
-	return f.findMatchingByPath(filesA, filesB), nil
-}
-
-// CollectAndMatchPaths collects files from both paths and returns matching pairs.
-func (f *FileService) CollectAndMatchPaths(pathA, pathB string, filter FileCollectorFilter, matchByFilenameOnly bool) (map[string]PathMatch, error) {
-	filesA, err := f.CollectFilesFromPath(pathA, filter)
+func (f *FileService) collectAndMatchPaths(pathA, pathB string, exts []string) (map[string]pathMatch, error) {
+	filesA, err := f.collectFilesFromPath(pathA, exts)
 	if err != nil {
 		return nil, err
 	}
-	filesB, err := f.CollectFilesFromPath(pathB, filter)
+	filesB, err := f.collectFilesFromPath(pathB, exts)
 	if err != nil {
 		return nil, err
 	}
-	return f.FindMatchingPaths(filesA, filesB, matchByFilenameOnly)
-}
-
-func (f *FileService) findMatchingByFilenameOnly(filesA, filesB map[string]string) map[string]PathMatch {
-	matches := make(map[string]PathMatch)
-	matchedB := make(map[string]bool)
-	filenameToB := make(map[string][]string)
-	for k, p := range filesB {
-		base := filepath.Base(p)
-		filenameToB[base] = append(filenameToB[base], k)
-	}
-	for keyA, pathA := range filesA {
-		base := filepath.Base(pathA)
-		for _, keyB := range filenameToB[base] {
-			if matchedB[keyB] {
-				continue
-			}
-			pathB := filesB[keyB]
-			matchKey := keyA
-			if len(keyB) > len(keyA) {
-				matchKey = keyB
-			}
-			matches[matchKey] = PathMatch{PathA: pathA, PathB: pathB}
-			matchedB[keyB] = true
-			break
+	matches := make(map[string]pathMatch)
+	for keyA, pA := range filesA {
+		if pB, ok := filesB[keyA]; ok {
+			matches[keyA] = pathMatch{PathA: pA, PathB: pB}
 		}
 	}
-	return matches
-}
-
-func (f *FileService) findMatchingByPath(filesA, filesB map[string]string) map[string]PathMatch {
-	matches := make(map[string]PathMatch)
-	matchedA := make(map[string]bool)
-	matchedB := make(map[string]bool)
-
-	for keyA, pathA := range filesA {
-		if pathB, exists := filesB[keyA]; exists {
-			matches[keyA] = PathMatch{PathA: pathA, PathB: pathB}
-			matchedA[keyA] = true
-			matchedB[keyA] = true
-		}
-	}
-
-	for keyA, pathA := range filesA {
-		if matchedA[keyA] {
-			continue
-		}
-		partsA := strings.Split(keyA, string(filepath.Separator))
-		if len(partsA) <= 1 {
-			continue
-		}
-		relStructA := strings.Join(partsA[1:], string(filepath.Separator))
-		for keyB, pathB := range filesB {
-			if matchedB[keyB] {
-				continue
-			}
-			partsB := strings.Split(keyB, string(filepath.Separator))
-			if len(partsB) > 1 {
-				relStructB := strings.Join(partsB[1:], string(filepath.Separator))
-				if relStructA == relStructB {
-					matchKey := keyA
-					if len(keyB) > len(keyA) {
-						matchKey = keyB
-					}
-					matches[matchKey] = PathMatch{PathA: pathA, PathB: pathB}
-					matchedA[keyA] = true
-					matchedB[keyB] = true
-					break
-				}
-			}
-		}
-	}
-
-	for keyA, pathA := range filesA {
-		if matchedA[keyA] {
-			continue
-		}
-		filenameA := filepath.Base(pathA)
-		for keyB, pathB := range filesB {
-			if matchedB[keyB] {
-				continue
-			}
-			if filepath.Base(pathB) == filenameA {
-				matchKey := keyA
-				if len(keyB) > len(keyA) {
-					matchKey = keyB
-				}
-				matches[matchKey] = PathMatch{PathA: pathA, PathB: pathB}
-				matchedA[keyA] = true
-				matchedB[keyB] = true
-				break
-			}
-		}
-	}
-	return matches
+	return matches, nil
 }
 
 // DirEntry is one immediate child of a directory (for lazy file trees).
@@ -313,20 +154,30 @@ func (f *FileService) StatPath(fullPath string) (PathStat, error) {
 	}, nil
 }
 
-// ReadFileBase64 reads raw file bytes as standard base64 (binary-safe for the IDE bridge).
-func (f *FileService) ReadFileBase64(fullPath string) (string, error) {
+// FileBytes is a binary file payload for the IDE FS bridge. Missing files are
+// Exists=false with no error so the workbench can skip optional paths quietly.
+type FileBytes struct {
+	Exists bool   `json:"exists"`
+	B64    string `json:"b64,omitempty"`
+}
+
+// ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if missing.
+func (f *FileService) ReadFileBase64(fullPath string) (FileBytes, error) {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
-		return "", fmt.Errorf("read file: %w", err)
+		if errors.Is(err, os.ErrNotExist) {
+			return FileBytes{Exists: false}, nil
+		}
+		return FileBytes{}, fmt.Errorf("read file: %w", err)
 	}
-	return encodeBase64(data), nil
+	return FileBytes{Exists: true, B64: base64.StdEncoding.EncodeToString(data)}, nil
 }
 
 // WriteFileBase64 writes raw bytes from standard base64.
 func (f *FileService) WriteFileBase64(fullPath, b64 string) error {
 	fullPath = filepath.Clean(filepath.FromSlash(fullPath))
-	data, err := decodeBase64(b64)
+	data, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return fmt.Errorf("decode: %w", err)
 	}
@@ -366,4 +217,3 @@ func (f *FileService) ListDirectory(dirPath string) ([]DirEntry, error) {
 	})
 	return out, nil
 }
-

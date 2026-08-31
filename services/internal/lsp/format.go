@@ -1,57 +1,57 @@
-// format.go is a conservative formatter: script files get one tab per brace
-// depth (lexer-based); loc files get a header at column 0 and one-space entries.
+// format.go formats script/loc files and emits folding ranges for CST blocks.
 
 package lsp
 
 import (
 	"strings"
 
-	"paradox-modding-tools/services/internal/parser"
+	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
 
 // FormatDocument returns leading-whitespace edits for path, or nil if already
 // formatted / empty.
 func FormatDocument(s *session.Session, path string) []TextEdit {
-	src := fileText(s, path)
-	if src == "" || isMetaJSON(path) {
+	src := s.FileText(path)
+	if src == "" || isMetaFile(s, path) {
 		return nil
 	}
-	if isLocPath(path) {
+	if s.KindFor(path) == "loc" {
 		return formatLoc(src)
 	}
-	return formatScript(src)
+	return formatScript(s, src, path)
 }
 
-func formatScript(src string) []TextEdit {
-	indents := parser.LineIndents(src)
-	lines := splitKeep(src)
+func lineWSEdit(i, endCol int, text string) TextEdit {
+	return TextEdit{
+		Range: Range{
+			Start: Position{Line: i, Character: 0},
+			End:   Position{Line: i, Character: endCol},
+		},
+		NewText: text,
+	}
+}
+
+func formatScript(s *session.Session, src, path string) []TextEdit {
+	indents := s.Parsed(path).LineIndents()
 	var edits []TextEdit
-	for i, line := range lines {
+	for i, line := range splitKeep(src) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		cur := leadingWS(line)
 		want := strings.Repeat("\t", indents[i])
-		if cur == want {
-			continue
+		if cur != want {
+			edits = append(edits, lineWSEdit(i, len(cur), want))
 		}
-		edits = append(edits, TextEdit{
-			Range: Range{
-				Start: Position{Line: i, Character: 0},
-				End:   Position{Line: i, Character: len(cur)},
-			},
-			NewText: want,
-		})
 	}
 	return edits
 }
 
 func formatLoc(src string) []TextEdit {
-	lines := splitKeep(src)
 	var edits []TextEdit
 	headerDone := false
-	for i, line := range lines {
+	for i, line := range splitKeep(src) {
 		trim := strings.TrimSpace(line)
 		if trim == "" || strings.HasPrefix(trim, "#") {
 			continue
@@ -63,16 +63,9 @@ func formatLoc(src string) []TextEdit {
 		} else {
 			headerDone = true
 		}
-		if cur == want {
-			continue
+		if cur != want {
+			edits = append(edits, lineWSEdit(i, len(cur), want))
 		}
-		edits = append(edits, TextEdit{
-			Range: Range{
-				Start: Position{Line: i, Character: 0},
-				End:   Position{Line: i, Character: len(cur)},
-			},
-			NewText: want,
-		})
 	}
 	return edits
 }
@@ -89,4 +82,28 @@ func splitKeep(src string) []string {
 	src = strings.ReplaceAll(src, "\r\n", "\n")
 	src = strings.ReplaceAll(src, "\r", "\n")
 	return strings.Split(src, "\n")
+}
+
+// FoldingRanges returns foldable block ranges for path.
+func FoldingRanges(s *session.Session, path string) []FoldingRange {
+	src := s.FileText(path)
+	if src == "" || isMetaFile(s, path) || s.KindFor(path) == "loc" {
+		return nil
+	}
+	res := s.Parsed(path)
+	li := res.Lines()
+	var out []FoldingRange
+	jomini.Walk(res.Root, func(st jomini.Statement, _ int, _ *jomini.Block) bool {
+		b := jomini.ChildBlock(st)
+		if b == nil || b.CloseBrace < 0 {
+			return true
+		}
+		start := li.PositionAt(b.OpenBrace).Line
+		end := li.PositionAt(b.CloseBrace).Line
+		if end > start {
+			out = append(out, FoldingRange{StartLine: start, EndLine: end})
+		}
+		return true
+	})
+	return out
 }

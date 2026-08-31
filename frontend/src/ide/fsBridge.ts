@@ -1,8 +1,10 @@
 /**
  * Wails-backed VS Code file system provider for the embedded workbench.
  */
+import { Events } from "@wailsio/runtime";
 import {
   FileType,
+  FileChangeType,
   FileSystemProviderCapabilities,
   FileSystemProviderError,
   FileSystemProviderErrorCode,
@@ -48,6 +50,22 @@ function fsPath(resource: Uri): string {
   return p.replace(/\//g, "\\");
 }
 
+/** Decode standard base64 to bytes without a per-char loop. */
+function bytesFromB64(b64: string): Uint8Array {
+  const bin = atob(b64);
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+
+/** Encode bytes as standard base64 in chunks (avoids call-stack limits). */
+function b64FromBytes(data: Uint8Array): string {
+  const chunk = 0x8000;
+  const parts: string[] = [];
+  for (let i = 0; i < data.length; i += chunk) {
+    parts.push(String.fromCharCode(...data.subarray(i, i + chunk)));
+  }
+  return btoa(parts.join(""));
+}
+
 function underRoot(filePath: string, root: string): boolean {
   const a = filePath.replace(/\//g, "\\").toLowerCase();
   const b = root.replace(/\//g, "\\").toLowerCase().replace(/\\+$/, "");
@@ -85,6 +103,25 @@ export class WailsFileSystemProvider
   readonly onDidChangeFile = this._onDidChangeFile.event;
 
   private roots: IdeRoot[] = [];
+
+  constructor() {
+    Events.On("fs:changed", (ev: { data?: unknown }) => {
+      this.onExternalChange(ev.data);
+    });
+  }
+
+  /** Apply a session-watcher event to the workbench file tree. */
+  private onExternalChange(data: unknown): void {
+    if (!data || typeof data !== "object") return;
+    const row = data as { path?: string; deleted?: boolean };
+    if (!row.path) return;
+    this._onDidChangeFile.fire([
+      {
+        resource: monaco.Uri.file(row.path),
+        type: row.deleted ? FileChangeType.DELETED : FileChangeType.UPDATED,
+      },
+    ]);
+  }
 
   /** Update multi-root mount points and read-only game roots. */
   setRoots(roots: IdeRoot[]): void {
@@ -172,14 +209,9 @@ export class WailsFileSystemProvider
   async readFile(resource: Uri): Promise<Uint8Array> {
     const path = fsPath(resource);
     if (!this.manages(path)) this.notFound();
-    // Avoid Wails ERR logs for missing optional files (.vscode/*, etc.).
-    const st = await StatPath(path);
-    if (!st.exists) this.notFound();
-    const b64 = await ReadFileBase64(path);
-    const bin = atob(b64);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
+    const file = await ReadFileBase64(path);
+    if (!file.exists) this.notFound();
+    return bytesFromB64(file.b64 ?? "");
   }
 
   async writeFile(
@@ -190,10 +222,6 @@ export class WailsFileSystemProvider
     const path = fsPath(resource);
     if (!this.manages(path)) this.notFound();
     this.assertWritable(path);
-    let s = "";
-    for (let i = 0; i < content.length; i++) {
-      s += String.fromCharCode(content[i]!);
-    }
-    await WriteFileBase64(path, btoa(s));
+    await WriteFileBase64(path, b64FromBytes(content));
   }
 }

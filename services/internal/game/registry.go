@@ -1,5 +1,4 @@
-// registry.go holds the GameInfo identity table for the supported games and the
-// Get/All accessors. See doc.go for the package overview.
+// registry.go holds the GameInfo identity table for the supported games and Get.
 
 package game
 
@@ -10,10 +9,8 @@ type GameInfo struct {
 	Name      string
 	ShortName string
 
-	// WikiAPI is the MediaWiki api.php endpoint; WikiDocPages are the pages the
-	// wiki hover fallback caches.
-	WikiAPI      string
-	WikiDocPages []string
+	// WikiAPI is the MediaWiki api.php endpoint for this game's wiki.
+	WikiAPI string
 
 	// ScriptRoot is the install-relative folder holding script (e.g. "game").
 	// Empty for EU5, whose content is split across StageRoots.
@@ -34,8 +31,7 @@ type GameInfo struct {
 	// EntryModes are EU5 database entry-mode prefixes (INJECT:, REPLACE:, ...).
 	EntryModes []string
 
-	SteamAppID      int
-	EventNamespaces bool
+	SteamAppID int
 }
 
 // registry is the supported-game table, keyed by id.
@@ -45,35 +41,30 @@ var registry = map[string]*GameInfo{
 		Name:             "Crusader Kings III",
 		ShortName:        "CK3",
 		WikiAPI:          "https://ck3.paradoxwikis.com/api.php",
-		WikiDocPages:     []string{"Effects", "Triggers", "Modifiers", "Scopes"},
 		ScriptRoot:       "game",
 		Descriptor:       "mod",
 		DocsFolderName:   "Crusader Kings III",
 		ScriptDocsSubdir: "logs",
 		ScriptDocsFormat: "classic",
 		SteamAppID:       1158310,
-		EventNamespaces:  true,
 	},
 	"vic3": {
 		ID:               "vic3",
 		Name:             "Victoria 3",
 		ShortName:        "Vic3",
 		WikiAPI:          "https://vic3.paradoxwikis.com/api.php",
-		WikiDocPages:     []string{"Effects", "Triggers", "Modifiers", "Scopes"},
 		ScriptRoot:       "game",
 		Descriptor:       "metadata",
 		DocsFolderName:   "Victoria 3",
 		ScriptDocsSubdir: "docs",
 		ScriptDocsFormat: "markdown",
 		SteamAppID:       529340,
-		EventNamespaces:  true,
 	},
 	"eu5": {
 		ID:               "eu5",
 		Name:             "Europa Universalis V",
 		ShortName:        "EU5",
 		WikiAPI:          "https://eu5.paradoxwikis.com/api.php",
-		WikiDocPages:     []string{"Effects", "Triggers", "Modifiers", "Scopes"},
 		ScriptRoot:       "",
 		StageRoots:       []string{"in_game", "main_menu", "loading_screen"},
 		Descriptor:       "metadata",
@@ -82,16 +73,10 @@ var registry = map[string]*GameInfo{
 		ScriptDocsFormat: "markdown",
 		EntryModes:       []string{"INJECT", "REPLACE", "TRY_INJECT", "TRY_REPLACE", "INJECT_OR_CREATE", "REPLACE_OR_CREATE"},
 		SteamAppID:       3450310,
-		EventNamespaces:  true,
 	},
 }
 
 // Get returns the GameInfo for id, or nil if the game is not supported.
 func Get(id string) *GameInfo {
 	return registry[id]
-}
-
-// All returns the supported games in a stable-enough map (callers sort if needed).
-func All() map[string]*GameInfo {
-	return registry
 }

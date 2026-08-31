@@ -10,6 +10,9 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
+/**
+ * CheckForUpdates triggers the Wails updater.
+ */
 export function CheckForUpdates(): $CancellablePromise<void> {
     return $Call.ByID(2389207713);
 }
@@ -21,6 +24,9 @@ export function GetSettings(): $CancellablePromise<{ [_ in string]?: string } | 
     return $Call.ByID(1419253203);
 }
 
+/**
+ * GetVersion returns the app version string.
+ */
 export function GetVersion(): $CancellablePromise<string> {
     return $Call.ByID(2937747050);
 }
@@ -33,7 +39,7 @@ export function ResetData(): $CancellablePromise<void> {
 }
 
 /**
- * SaveSettings writes user settings to app_settings table.
+ * SaveSettings writes user settings keyed as "game.key".
  */
 export function SaveSettings(settings: { [_ in string]?: string } | null): $CancellablePromise<void> {
     return $Call.ByID(3145424170, settings);

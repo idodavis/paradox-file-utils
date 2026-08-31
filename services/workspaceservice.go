@@ -2,252 +2,197 @@
 package services
 
 import (
-	"cmp"
-	"database/sql"
-	"errors"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
+	"strings"
 	"time"
 
+	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
-	"paradox-modding-tools/services/internal/repos"
 
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 )
+
+func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
 
 // WorkspaceService manages workspaces, game installs, and mods.
 type WorkspaceService struct {
-	DB   *sqlx.DB
-	repo *repos.WorkspaceRepository
+	Store   *Store
+	Session *SessionService
 }
 
-func (w *WorkspaceService) getRepo() *repos.WorkspaceRepository {
-	if w.repo == nil {
-		w.repo = repos.NewWorkspaceRepository(w.DB)
-	}
-	return w.repo
-}
-
-// ListGames returns supported games from the Go registry.
-func (w *WorkspaceService) ListGames() ([]repos.Game, error) {
-	all := game.All()
-	out := make([]repos.Game, 0, len(all))
-	for _, g := range all {
-		out = append(out, repos.Game{
-			ID:         g.ID,
-			Name:       g.Name,
-			WikiAPI:    g.WikiAPI,
-			ScriptRoot: g.ScriptRoot,
-			SteamAppID: g.SteamAppID,
-		})
-	}
-	slices.SortFunc(out, func(a, b repos.Game) int {
-		return cmp.Compare(a.Name, b.Name)
+// ListGameInstalls returns all installs for a game.
+func (w *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error) {
+	var out []GameInstall
+	w.Store.Read(func(c *Config) {
+		for _, inst := range c.Installs {
+			if inst.GameID == gameID {
+				out = append(out, inst)
+			}
+		}
 	})
 	return out, nil
 }
 
-// ListGameInstalls returns all installs for a game.
-func (w *WorkspaceService) ListGameInstalls(gameID string) ([]repos.GameInstall, error) {
-	out, err := w.getRepo().ListInstalls(gameID)
-	if err != nil {
-		return nil, fmt.Errorf("list installs: %w", err)
-	}
-	return out, nil
-}
-
-// AddGameInstall adds a new game installation record. Detects version if possible.
-func (w *WorkspaceService) AddGameInstall(gameID, name, path string) (*repos.GameInstall, error) {
+// AddGameInstall adds a new game installation. version empty → detected or latest.
+func (w *WorkspaceService) AddGameInstall(gameID, name, path, version string) (*GameInstall, error) {
 	if game.Get(gameID) == nil {
 		return nil, fmt.Errorf("unknown game %s", gameID)
 	}
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
-	version := game.ReadGameVersion(path)
-	inst := &repos.GameInstall{
-		ID:        uuid.New().String(),
-		GameID:    gameID,
-		Name:      name,
-		Path:      path,
-		Version:   version,
-		DocsPath:  "",
-		IsBroken:  false,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	detected := game.ReadGameVersion(path)
+	if version == "" {
+		version = detected
 	}
-	if err := w.getRepo().InsertInstall(inst); err != nil {
+	if version == "" {
+		version = "latest"
+	}
+	inst := GameInstall{
+		ID: uuid.New().String(), GameID: gameID, Name: name, Path: path,
+		Version: version, VersionDetected: detected, CreatedAt: nowUTC(),
+	}
+	err := w.Store.Mutate(func(c *Config) error {
+		c.Installs = append(c.Installs, inst)
+		return nil
+	})
+	if err != nil {
 		return nil, fmt.Errorf("insert install: %w", err)
 	}
-	return inst, nil
+	return &inst, nil
 }
 
 // MarkBrokenPaths checks all installs and mods, marks missing paths as broken.
 func (w *WorkspaceService) MarkBrokenPaths() error {
-	repo := w.getRepo()
-
-	installs, err := repo.AllInstalls()
-	if err != nil {
-		return fmt.Errorf("select installs: %w", err)
-	}
-	for _, inst := range installs {
-		broken := false
-		if _, err := os.Stat(inst.Path); err != nil {
-			broken = true
+	return w.Store.Mutate(func(c *Config) error {
+		for i := range c.Installs {
+			_, err := os.Stat(c.Installs[i].Path)
+			c.Installs[i].IsBroken = err != nil
 		}
-		if err := repo.SetInstallBroken(inst.ID, broken); err != nil {
-			return fmt.Errorf("update install %s: %w", inst.ID, err)
+		for i := range c.Workspaces {
+			for j := range c.Workspaces[i].Mods {
+				_, err := os.Stat(c.Workspaces[i].Mods[j].Path)
+				c.Workspaces[i].Mods[j].IsBroken = err != nil
+			}
 		}
-	}
-
-	mods, err := repo.AllMods()
-	if err != nil {
-		return fmt.Errorf("select mods: %w", err)
-	}
-	for _, mod := range mods {
-		broken := false
-		if _, err := os.Stat(mod.Path); err != nil {
-			broken = true
-		}
-		if err := repo.SetModBroken(mod.ID, broken); err != nil {
-			return fmt.Errorf("update mod %s: %w", mod.ID, err)
-		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // ListWorkspaces returns workspaces, optionally filtered by game. Pass "" for all.
-func (w *WorkspaceService) ListWorkspaces(gameID string) ([]repos.Workspace, error) {
-	out, err := w.getRepo().ListWorkspaces(gameID)
-	if err != nil {
-		return nil, fmt.Errorf("list workspaces: %w", err)
-	}
+func (w *WorkspaceService) ListWorkspaces(gameID string) ([]Workspace, error) {
+	var out []Workspace
+	w.Store.Read(func(c *Config) {
+		for _, ws := range c.Workspaces {
+			if gameID == "" || ws.GameID == gameID {
+				out = append(out, cloneWorkspace(ws))
+			}
+		}
+	})
 	return out, nil
 }
 
 // GetWorkspace returns a workspace by ID.
-func (w *WorkspaceService) GetWorkspace(id string) (*repos.Workspace, error) {
+func (w *WorkspaceService) GetWorkspace(id string) (*Workspace, error) {
 	if id == "" {
 		return nil, fmt.Errorf("workspace id is required")
 	}
-	ws, err := w.getRepo().GetWorkspace(id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("workspace not found")
+	var ws *Workspace
+	w.Store.Read(func(c *Config) {
+		if found := findWorkspace(c, id); found != nil {
+			cp := cloneWorkspace(*found)
+			ws = &cp
 		}
-		return nil, fmt.Errorf("get workspace: %w", err)
+	})
+	if ws == nil {
+		return nil, fmt.Errorf("workspace not found")
 	}
 	return ws, nil
 }
 
-// CreateWorkspace creates a new workspace. Sets default staging dir if not provided.
-func (w *WorkspaceService) CreateWorkspace(gameID, name, installID, tagsJSON, thumbnailPath string) (*repos.Workspace, error) {
+// CreateWorkspace creates a new workspace and default staging dir.
+func (w *WorkspaceService) CreateWorkspace(
+	gameID, name, installID string, tags []string,
+) (*Workspace, error) {
 	if game.Get(gameID) == nil {
 		return nil, fmt.Errorf("unknown game %s", gameID)
 	}
 	id := uuid.New().String()
-	stagingDir, err := w.DefaultStagingDir(id)
+	stagingDir, err := w.defaultStagingDir(id)
 	if err != nil {
 		return nil, err
-	}
-	if tagsJSON == "" {
-		tagsJSON = "[]"
 	}
 	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create staging dir: %w", err)
 	}
-	ws := &repos.Workspace{
-		ID:            id,
-		GameID:        gameID,
-		Name:          name,
-		InstallID:     installID,
-		StagingDir:    stagingDir,
-		Tags:          tagsJSON,
-		ThumbnailPath: thumbnailPath,
-		IsActive:      false,
-		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+	ws := Workspace{
+		ID: id, GameID: gameID, Name: name, InstallID: installID,
+		StagingDir: stagingDir, Tags: tags, CreatedAt: nowUTC(),
 	}
-	if err := w.getRepo().InsertWorkspace(ws); err != nil {
+	err = w.Store.Mutate(func(c *Config) error {
+		c.Workspaces = append(c.Workspaces, ws)
+		return nil
+	})
+	if err != nil {
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
-	return ws, nil
+	return &ws, nil
 }
 
 // UpdateWorkspace updates workspace fields.
-func (w *WorkspaceService) UpdateWorkspace(id, name, installID, stagingDir, tagsJSON, thumbnailPath string) error {
-	if tagsJSON == "" {
-		tagsJSON = "[]"
-	}
-	if err := w.getRepo().UpdateWorkspace(id, name, installID, stagingDir, tagsJSON, thumbnailPath); err != nil {
-		return fmt.Errorf("update workspace: %w", err)
-	}
-	return nil
-}
-
-// DeleteWorkspace removes a workspace and cascades deletes to mods and runs.
-func (w *WorkspaceService) DeleteWorkspace(id string) error {
-	if err := w.getRepo().DeleteWorkspace(id); err != nil {
-		return fmt.Errorf("delete workspace: %w", err)
-	}
-	return nil
+func (w *WorkspaceService) UpdateWorkspace(
+	id, name, installID, stagingDir string, tags []string,
+) error {
+	return w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, id)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		ws.Name, ws.InstallID, ws.StagingDir, ws.Tags = name, installID, stagingDir, tags
+		return nil
+	})
 }
 
 // AddWorkspaceMod adds a mod to a workspace.
-func (w *WorkspaceService) AddWorkspaceMod(workspaceID, name, path string) (*repos.WorkspaceMod, error) {
-	broken := false
-	if _, err := os.Stat(path); err != nil {
-		broken = true
+func (w *WorkspaceService) AddWorkspaceMod(workspaceID, name, path string) (*WorkspaceMod, error) {
+	_, statErr := os.Stat(path)
+	mod := WorkspaceMod{
+		ID: uuid.New().String(), Name: name, Path: path,
+		IsBroken: statErr != nil, CreatedAt: nowUTC(),
 	}
-	mod := &repos.WorkspaceMod{
-		ID:          uuid.New().String(),
-		WorkspaceID: workspaceID,
-		Name:        name,
-		Path:        path,
-		IsBroken:    broken,
-		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
-	}
-	if err := w.getRepo().InsertMod(mod); err != nil {
+	err := w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, workspaceID)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		ws.Mods = append(ws.Mods, mod)
+		return nil
+	})
+	if err != nil {
 		return nil, fmt.Errorf("insert mod: %w", err)
 	}
-	return mod, nil
-}
-
-// RemoveWorkspaceMod deletes a mod from a workspace.
-func (w *WorkspaceService) RemoveWorkspaceMod(modID string) error {
-	if err := w.getRepo().DeleteMod(modID); err != nil {
-		return fmt.Errorf("delete mod: %w", err)
-	}
-	return nil
+	return &mod, nil
 }
 
 // ListWorkspaceMods returns all mods for a workspace.
-func (w *WorkspaceService) ListWorkspaceMods(workspaceID string) ([]repos.WorkspaceMod, error) {
-	out, err := w.getRepo().ListMods(workspaceID)
-	if err != nil {
-		return nil, fmt.Errorf("list mods: %w", err)
+func (w *WorkspaceService) ListWorkspaceMods(workspaceID string) ([]WorkspaceMod, error) {
+	var mods []WorkspaceMod
+	var ok bool
+	w.Store.Read(func(c *Config) {
+		if ws := findWorkspace(c, workspaceID); ws != nil {
+			ok, mods = true, append([]WorkspaceMod(nil), ws.Mods...)
+		}
+	})
+	if !ok {
+		return nil, fmt.Errorf("workspace not found")
 	}
-	return out, nil
+	return mods, nil
 }
 
-// SetActiveWorkspace sets a workspace as active (clears others for that game).
-func (w *WorkspaceService) SetActiveWorkspace(workspaceID string) error {
-	repo := w.getRepo()
-	gameID, err := repo.GetWorkspaceGameID(workspaceID)
-	if err != nil {
-		return fmt.Errorf("get workspace: %w", err)
-	}
-	if err := repo.ClearActiveForGame(gameID); err != nil {
-		return fmt.Errorf("clear active: %w", err)
-	}
-	if err := repo.SetWorkspaceActive(workspaceID); err != nil {
-		return fmt.Errorf("set active: %w", err)
-	}
-	return nil
-}
-
-// DetectGameVersion attempts to read version from launcher-settings.json.
+// DetectGameVersion reads version from launcher-settings.json.
 func (w *WorkspaceService) DetectGameVersion(path string) string {
 	return game.ReadGameVersion(path)
 }
@@ -258,36 +203,34 @@ func (w *WorkspaceService) FindGameInstalls(gameID string) []game.DetectedInstal
 }
 
 // UpdateGameInstall updates path and docs_path, then refreshes version.
-func (w *WorkspaceService) UpdateGameInstall(id, path, docsPath string) (*repos.GameInstall, error) {
+func (w *WorkspaceService) UpdateGameInstall(id, path, docsPath string) (*GameInstall, error) {
 	if path != "" {
 		if _, err := os.Stat(path); err != nil {
 			return nil, fmt.Errorf("invalid path: %w", err)
 		}
 	}
-	inst, err := w.getRepo().GetInstall(id)
+	var out *GameInstall
+	err := w.Store.Mutate(func(c *Config) error {
+		inst := findInstall(c, id)
+		if inst == nil {
+			return fmt.Errorf("install not found")
+		}
+		if path != "" {
+			inst.Path = path
+		}
+		inst.DocsPath = docsPath
+		inst.VersionDetected = game.ReadGameVersion(inst.Path)
+		cp := *inst
+		out = &cp
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("install: %w", err)
-	}
-	if path == "" {
-		path = inst.Path
-	}
-	if err := w.getRepo().UpdateInstallPath(id, path, docsPath); err != nil {
 		return nil, fmt.Errorf("update install: %w", err)
 	}
-	ver := game.ReadGameVersion(path)
-	if ver != "" {
-		_ = w.getRepo().UpdateInstallVersion(id, ver)
-	}
-	return w.getRepo().GetInstall(id)
+	return out, nil
 }
 
-// DetectModRoot reports whether path is a valid mod root for gameID.
-func (w *WorkspaceService) DetectModRoot(gameID, path string) bool {
-	return game.IsModRoot(gameID, path)
-}
-
-// DefaultStagingDir returns the default staging directory path for a workspace.
-func (w *WorkspaceService) DefaultStagingDir(workspaceID string) (string, error) {
+func (w *WorkspaceService) defaultStagingDir(workspaceID string) (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("user config dir: %w", err)
@@ -296,17 +239,14 @@ func (w *WorkspaceService) DefaultStagingDir(workspaceID string) (string, error)
 }
 
 // EnsureStagingDir creates the staging directory if it doesn't exist.
-// When staging_dir is empty, assigns the default path and persists it.
 func (w *WorkspaceService) EnsureStagingDir(workspaceID string) (string, error) {
 	ws, err := w.GetWorkspace(workspaceID)
 	if err != nil {
 		return "", err
 	}
-	dir := ws.StagingDir
-	needPersist := dir == ""
+	dir, needPersist := ws.StagingDir, ws.StagingDir == ""
 	if needPersist {
-		dir, err = w.DefaultStagingDir(workspaceID)
-		if err != nil {
+		if dir, err = w.defaultStagingDir(workspaceID); err != nil {
 			return "", err
 		}
 	}
@@ -314,25 +254,111 @@ func (w *WorkspaceService) EnsureStagingDir(workspaceID string) (string, error) 
 		return "", fmt.Errorf("create staging dir: %w", err)
 	}
 	if needPersist {
-		if err := w.getRepo().UpdateWorkspace(
-			ws.ID, ws.Name, ws.InstallID, dir, ws.Tags, ws.ThumbnailPath,
-		); err != nil {
+		err = w.UpdateWorkspace(ws.ID, ws.Name, ws.InstallID, dir, ws.Tags)
+		if err != nil {
 			return "", fmt.Errorf("persist staging dir: %w", err)
 		}
 	}
 	return dir, nil
 }
 
-// GetScriptRoot returns the script root path for a game install.
-func (w *WorkspaceService) GetScriptRoot(installID string) (string, error) {
-	repo := w.getRepo()
-	inst, err := repo.GetInstall(installID)
+// InstallCacheInfo is VanillaCache persist metadata for Settings/wizard cards.
+type InstallCacheInfo struct {
+	ScannedAt string `json:"scannedAt"`
+}
+
+// GetInstallCacheInfo returns scannedAt for the install's VanillaCache, or empty.
+func (w *WorkspaceService) GetInstallCacheInfo(installID string) (*InstallCacheInfo, error) {
+	var inst *GameInstall
+	w.Store.Read(func(c *Config) {
+		if found := findInstall(c, installID); found != nil {
+			cp := *found
+			inst = &cp
+		}
+	})
+	if inst == nil {
+		return nil, fmt.Errorf("install not found")
+	}
+	ver := inst.Version
+	if ver == "" {
+		ver = "latest"
+	}
+	return &InstallCacheInfo{ScannedAt: catalog.PeekCacheScannedAt(inst.ID, ver)}, nil
+}
+
+// DeleteGameInstall removes an install if no workspace uses it.
+func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err error) {
+	w.Store.Read(func(c *Config) {
+		for _, ws := range c.Workspaces {
+			if ws.InstallID == id {
+				inUse = append(inUse, ws.Name)
+			}
+		}
+	})
+	if len(inUse) > 0 {
+		return inUse, fmt.Errorf("install in use by: %s", strings.Join(inUse, ", "))
+	}
+	if err := catalog.DropVanillaFiles(id); err != nil {
+		return nil, err
+	}
+	return nil, w.Store.Mutate(func(c *Config) error {
+		kept := c.Installs[:0]
+		for _, inst := range c.Installs {
+			if inst.ID != id {
+				kept = append(kept, inst)
+			}
+		}
+		c.Installs = kept
+		return nil
+	})
+}
+
+// SetInstallVersion pins the cache-key version (user override; empty → latest).
+func (w *WorkspaceService) SetInstallVersion(id, version string) error {
+	if version == "" {
+		version = "latest"
+	}
+	return w.Store.Mutate(func(c *Config) error {
+		inst := findInstall(c, id)
+		if inst == nil {
+			return fmt.Errorf("install not found")
+		}
+		inst.Version = version
+		return nil
+	})
+}
+
+// SetWorkspaceLocLang sets default loc language and loc-harvests if a session is live.
+func (w *WorkspaceService) SetWorkspaceLocLang(id, lang string) error {
+	var inst *GameInstall
+	err := w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, id)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		ws.DefaultLocLang = lang
+		if found := findInstall(c, ws.InstallID); found != nil {
+			cp := *found
+			inst = &cp
+		}
+		return nil
+	})
+	if err != nil || w.Session == nil {
+		return err
+	}
+	live := w.Session.pool().Get(id)
+	if live == nil {
+		return nil
+	}
+	live.SetDefaultLang(lang)
+	if inst == nil {
+		return nil
+	}
+	vloc, err := loadVanillaLoc(
+		context.Background(), inst.ID, inst.GameID, inst.Path, inst.Version, lang)
 	if err != nil {
-		return "", fmt.Errorf("get install: %w", err)
+		return err
 	}
-	info := game.Get(inst.GameID)
-	if info == nil {
-		return "", fmt.Errorf("unknown game: %s", inst.GameID)
-	}
-	return filepath.Join(inst.Path, info.ScriptRoot), nil
+	live.ReplaceVanillaLoc(vloc)
+	return nil
 }

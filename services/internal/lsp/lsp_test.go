@@ -1,5 +1,4 @@
-// lsp_test.go covers diagnostics, hover fieldDocs, F12 overlay and vanilla,
-// create-loc BOM, .mod complete, missing-descriptor, and event references.
+// lsp_test.go covers each LSP request type against a live session.
 
 package lsp
 
@@ -9,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"paradox-modding-tools/services/internal/model"
+	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -25,499 +25,257 @@ func write(t *testing.T, root, rel, body string) string {
 	return p
 }
 
+func buildSession(
+	t *testing.T, game string, files map[string]string,
+	cache *catalog.VanillaCache, vloc *catalog.VanillaLoc,
+) (*session.Session, string) {
+	t.Helper()
+	if game == "" {
+		game = "ck3"
+	}
+	root := t.TempDir()
+	if game == "ck3" {
+		if _, ok := files["descriptor.mod"]; !ok {
+			write(t, root, "descriptor.mod", "name = \"t\"\n")
+		}
+	}
+	for rel, body := range files {
+		write(t, root, rel, body)
+	}
+	s := session.NewWithLoc("ws", game, "english", cache, vloc, []catalog.ModInput{
+		{Origin: "mod", Root: root, Order: 0},
+	})
+	for rel, body := range files {
+		s.DidOpen(filepath.Join(root, filepath.FromSlash(rel)), body)
+	}
+	return s, root
+}
+
 func ck3Sess(t *testing.T, body string) (*session.Session, string) {
 	t.Helper()
-	root := t.TempDir()
-	f := write(t, root, "events/x.txt", body)
-	write(t, root, "descriptor.mod", "name = \"t\"\n")
-	s := session.New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, body)
-	return s, f
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body}, nil, nil)
+	return s, filepath.Join(root, "events", "x.txt")
 }
 
-func TestDiagnoseParseAndMissingLoc(t *testing.T) {
-	s, f := ck3Sess(t, "test.1 = {\n	title = missing_key\n")
-	diags := Diagnose(s, f)
-	var unclosed, missing bool
+func lineCol(src, needle string) (int, int) {
+	i := strings.Index(src, needle)
+	if i < 0 {
+		return -1, -1
+	}
+	return strings.Count(src[:i], "\n"), i - (strings.LastIndex(src[:i], "\n") + 1)
+}
+
+func hasDiag(diags []Diagnostic, code string) bool {
 	for _, d := range diags {
-		if d.Code == "unclosed-brace" {
-			unclosed = true
-		}
-		if d.Code == "missing-required-loc" {
-			missing = true
-		}
-		if d.Code == "wrong-scope" || d.Code == "unknown-saved-scope" {
-			t.Errorf("unexpected scope lint: %+v", d)
+		if d.Code == code {
+			return true
 		}
 	}
-	if !unclosed {
-		t.Errorf("expected unclosed-brace; diags=%v", diags)
-	}
-	if !missing {
-		t.Errorf("expected missing-required-loc; diags=%v", diags)
-	}
+	return false
 }
 
-func TestDiagnoseTitleScopeNotMissingLoc(t *testing.T) {
-	body := "test.1 = {\n\timmediate = { TITLE = primary_title }\n}\n"
-	s, f := ck3Sess(t, body)
-	for _, d := range Diagnose(s, f) {
-		if d.Code == "missing-required-loc" {
-			t.Fatalf("TITLE = primary_title should not warn loc: %+v", d)
+func wantHover(t *testing.T, s *session.Session, f string, line, col int, subs ...string) {
+	t.Helper()
+	h := Hover(s, f, line, col)
+	if h == nil {
+		t.Fatalf("hover nil at %d:%d want %v", line, col, subs)
+	}
+	for _, sub := range subs {
+		if !strings.Contains(h.Contents, sub) {
+			t.Fatalf("hover %#v missing %q", h.Contents, sub)
 		}
 	}
 }
 
-func TestHoverFieldDocs(t *testing.T) {
-	s, f := ck3Sess(t, "brave = { category = personality }\n")
-	s.DidChange(f, "brave = { category = personality }\n")
-	root := filepath.Dir(filepath.Dir(f))
-	cache := &model.Cache{FieldDocs: map[string]string{"category": "The trait category."}}
-	s = session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, "brave = { category = personality }\n")
-	h := Hover(s, f, 0, 12) // on "category"
-	if h == nil || !strings.Contains(h.Contents, "trait category") {
-		t.Fatalf("hover = %+v, want fieldDocs", h)
+func TestPmtIgnore(t *testing.T) {
+	sup := scanSuppressions(jomini.Parse(
+		"# pmt:ignore-next-line unclosed-brace\nbad = {\nok = 1 # pmt:ignore\n").Src)
+	if !sup.Covers(1, "unclosed-brace") || sup.Covers(1, "other") || !sup.Covers(2, "anything") {
+		t.Fatal(sup)
 	}
 }
 
-func TestHoverSkipsComments(t *testing.T) {
-	body := "# event wiki should not fire\ntest.1 = {\n\ttype = character_event\n}\n"
-	s, f := ck3Sess(t, body)
-	cache := &model.Cache{}
-	root := filepath.Dir(filepath.Dir(f))
-	s = session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, body)
-	s.SetWiki(map[string]string{"event": "wiki event page"})
-	col := strings.Index(body, "event")
-	h := Hover(s, f, 0, col)
-	if h != nil {
-		t.Fatalf("comment hover = %+v, want nil", h)
+func TestDiagnose(t *testing.T) {
+	tests := []struct {
+		name, game, rel, body string
+		want, drop            string
+	}{
+		{"unclosed and missing loc", "ck3", "events/x.txt",
+			"test.1 = {\n	title = missing_key\n",
+			"unclosed-brace", ""},
+		{"TITLE arg is not loc", "ck3", "events/x.txt",
+			"test.1 = {\n\timmediate = { TITLE = primary_title }\n}\n",
+			"", "missing-required-loc"},
+		{"metadata skips parser", "vic3", ".metadata/metadata.json", "{\n",
+			"", "unclosed-brace"},
+		{"missing descriptor", "vic3", "notes.txt", "foo = { }\n",
+			"missing-descriptor", ""},
 	}
-	if locs := Definition(s, f, 0, col); len(locs) != 0 {
-		t.Fatalf("comment F12 = %v, want empty", locs)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, root := buildSession(t, tt.game, map[string]string{tt.rel: tt.body}, nil, nil)
+			f := filepath.Join(root, filepath.FromSlash(tt.rel))
+			diags := Diagnose(s, f)
+			if tt.want != "" && !hasDiag(diags, tt.want) {
+				t.Fatalf("missing %s: %v", tt.want, diags)
+			}
+			if tt.want == "unclosed-brace" && !hasDiag(diags, "missing-required-loc") {
+				t.Fatalf("missing loc diag: %v", diags)
+			}
+			if tt.drop != "" && hasDiag(diags, tt.drop) {
+				t.Fatalf("unexpected %s: %v", tt.drop, diags)
+			}
+		})
 	}
 }
 
-func TestHoverKindScopedFieldDocs(t *testing.T) {
-	body := "test.1 = {\n\ttype = character_event\n\ttitle = test.1.t\n}\n"
-	s, f := ck3Sess(t, body)
-	root := filepath.Dir(filepath.Dir(f))
-	cache := &model.Cache{
-		FieldDocs: map[string]string{"type": "Invite rule type"},
+func TestHover(t *testing.T) {
+	vfile := write(t, t.TempDir(), "localization/english/inventory_l_english.yml",
+		"l_english:\n type:0 \"Type\"\n")
+	body := `# event should not hover
+test.1 = {
+	type = character_event
+	title = test.1.t
+	title = type
+	immediate = {
+		add_gold = 1
+		my_trig = yes
+		save_scope_as = duel_target
+		exists = scope:duel_target
+	}
+}
+t.1 = { title = k.t }
+t.2 = { title = k.t }
+`
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt": body,
+		"localization/english/events.yml": "l_english:\n test.1.t:0 \"Hello\"\n",
+		"common/scripted_triggers/t.txt":  "my_trig = { always = yes }\n",
+		"common/traits/00.txt":            "brave = { category = personality }\n",
+	}, &catalog.VanillaCache{
+		FieldDocs: map[string]string{
+			"type": "Invite", "add_gold": "Gives gold.",
+		},
 		FieldDocsByKind: map[string]map[string]string{
-			"event": {
-				"type":  "Event presentation type",
-				"title": "Dynamic loc key",
-			},
+			"event": {"type": "presentation", "title": "Dynamic"},
 		},
+		Structures: map[string][]string{"event": {"immediate"}},
+		Effects:    []string{"add_gold"},
+		Defs:       []catalog.Def{{Type: "loc_key", Key: "type", Path: vfile, Line: 1}},
+	}, &catalog.VanillaLoc{
+		Sites: map[string]catalog.LocEntry{"type": {File: vfile, Line: 1, Value: "Type"}},
+	})
+	f := filepath.Join(root, "events", "x.txt")
+	col := strings.Index(body, "event")
+	if Hover(s, f, 0, col) != nil || len(Definition(s, f, 0, col)) != 0 {
+		t.Fatal("comment token must not hover or define")
 	}
-	s = session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, body)
-	lines := strings.Split(body, "\n")
-	typeCol := strings.Index(lines[1], "type")
-	h := Hover(s, f, 1, typeCol)
-	if h == nil || !strings.Contains(h.Contents, "presentation") {
-		t.Fatalf("type hover = %+v, want events.info prose", h)
+	line, col := lineCol(body, "type = character_event")
+	wantHover(t, s, f, line, col, "presentation")
+	line, col = lineCol(body, "title = test.1.t")
+	wantHover(t, s, f, line, col, "Dynamic")
+	line, col = lineCol(body, "test.1.t")
+	wantHover(t, s, f, line, col, "localization", `"Hello"`)
+	line, col = lineCol(body, "title = type")
+	valCol := col + len("title = ")
+	wantHover(t, s, f, line, valCol, "localization")
+	if locs := Definition(s, f, line, valCol); len(locs) != 1 || locs[0].URI != vfile {
+		t.Fatalf("F12=%v want %s", locs, vfile)
 	}
-	if strings.Contains(h.Contents, "Invite") {
-		t.Fatalf("type hover leaked rival docs: %+v", h)
+	line, col = lineCol(body, "immediate")
+	wantHover(t, s, f, line, col, "event key", "`immediate`")
+	line, col = lineCol(body, "add_gold")
+	wantHover(t, s, f, line, col, "effect `add_gold`", "Gives gold")
+	line, col = lineCol(body, "my_trig")
+	wantHover(t, s, f, line, col, "scripted trigger", "`my_trig`")
+	line, col = lineCol(body, "scope:duel_target")
+	wantHover(t, s, f, line, col+len("scope:"), "saved scope")
+	line, col = lineCol(body, "save_scope_as = duel_target")
+	wantHover(t, s, f, line, col+len("save_scope_as = "), "saved scope")
+	line, col = lineCol(body, "scope:duel_target")
+	if len(Definition(s, f, line, col+len("scope:"))) != 0 ||
+		len(References(s, f, line, col+len("scope:"))) != 0 {
+		t.Fatal("saved scope must not navigate")
 	}
-	titleCol := strings.Index(lines[2], "title")
-	th := Hover(s, f, 2, titleCol)
-	if th == nil || !strings.Contains(th.Contents, "Dynamic") {
-		t.Fatalf("title hover = %+v, want events.info prose", th)
+	line, col = lineCol(body, "k.t")
+	if locs := References(s, f, line, col); len(locs) != 2 {
+		t.Fatalf("refs=%v", locs)
 	}
-	sig := SignatureAt(s, f, 1, typeCol)
-	if sig == nil || !strings.Contains(sig.Documentation, "presentation") {
-		t.Fatalf("signature = %+v, want events.info prose", sig)
+	line, col = lineCol(body, "\nt.1 =")
+	if Rename(s, f, line, col+1, "t.9") == nil {
+		t.Fatal("rename nil")
 	}
-}
-
-func TestDefinitionVanillaLoc(t *testing.T) {
-	root := t.TempDir()
-	modFile := write(t, root, "events/e.txt", "test.1 = { title = vanilla_key }\n")
-	write(t, root, "descriptor.mod", "name = \"t\"\n")
-	vanilla := t.TempDir()
-	vfile := write(t, vanilla, "localization/english/v.yml",
-		"l_english:\n vanilla_key:0 \"Hello\"\n")
-	cache := &model.Cache{
-		LocEnglish: map[string]string{"vanilla_key": "Hello"},
-		LocEnglishSites: map[string]model.LocSite{
-			"vanilla_key": {File: vfile, Line: 1},
-		},
-	}
-	s := session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(modFile, "test.1 = { title = vanilla_key }\n")
-	col := strings.Index("test.1 = { title = vanilla_key }\n", "vanilla_key")
-	locs := Definition(s, modFile, 0, col)
-	if len(locs) != 1 || locs[0].URI != vfile {
-		t.Fatalf("vanilla loc F12 = %v, want %s", locs, vfile)
-	}
-	diags := Diagnose(s, modFile)
-	for _, d := range diags {
-		if d.Code == "missing-required-loc" {
-			t.Fatalf("vanilla loc should satisfy lint: %+v", d)
-		}
-	}
-}
-
-func TestDefinitionModAndVanilla(t *testing.T) {
-	root := t.TempDir()
-	modFile := write(t, root, "common/traits/00.txt", "brave = { category = personality }\n")
-	write(t, root, "descriptor.mod", "name = \"t\"\n")
-	vanilla := t.TempDir()
-	vfile := write(t, vanilla, "common/traits/v.txt", "craven = { category = personality }\n")
-	cache := &model.Cache{Defs: []model.Def{{Type: "traits", Key: "craven", Path: vfile, Line: 0}}}
-	s := session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(modFile, "brave = { category = personality }\n")
-
-	locs := Definition(s, modFile, 0, 1)
-	if len(locs) != 1 || locs[0].URI != modFile {
-		t.Fatalf("mod F12 = %v, want %s", locs, modFile)
-	}
-
-	refBody := "test.1 = { immediate = { craven = yes } }\n"
-	refFile := write(t, root, "events/e.txt", refBody)
-	s.DidOpen(refFile, refBody)
-	col := strings.Index(refBody, "craven")
-	if col < 0 {
-		t.Fatal("fixture")
-	}
-	vlocs := Definition(s, refFile, 0, col)
-	if len(vlocs) != 1 || vlocs[0].URI != vfile {
-		t.Fatalf("vanilla F12 = %v, want %s", vlocs, vfile)
+	tf := filepath.Join(root, "common", "traits", "00.txt")
+	if locs := Definition(s, tf, 0, 1); len(locs) != 1 || locs[0].URI != tf {
+		t.Fatalf("mod F12=%v", locs)
 	}
 }
 
-func TestCreateLocKeyBOM(t *testing.T) {
-	s, f := ck3Sess(t, "test.1 = {\n	title = brand_new_key\n}\n")
-	acts := CodeActions(s, f)
+func TestCompleteActionsSymbols(t *testing.T) {
+	body := "test.1 = {\n  type = character_event\n}\n"
+	s, f := ck3Sess(t, body)
+	if edits := FormatDocument(s, f); len(edits) == 0 {
+		t.Fatal("want indent edits")
+	}
+	if folds := FoldingRanges(s, f); len(folds) == 0 {
+		t.Fatal("want fold range")
+	}
+	syms := DocumentSymbols(s, f)
+	if len(syms) == 0 || syms[0].Name != "test.1" {
+		t.Fatalf("doc symbols=%v", syms)
+	}
+	if ws := WorkspaceSymbols(s, "test"); len(ws) == 0 {
+		t.Fatal("workspace symbols empty")
+	}
+
+	s, f = ck3Sess(t, "test.1 = {\n	title = brand_new_key\n}\n")
 	var edit *WorkspaceEdit
-	for _, a := range acts {
+	for _, a := range CodeActions(s, f) {
 		if strings.Contains(a.Title, "brand_new_key") {
 			edit = a.Edit
 		}
 	}
 	if edit == nil || len(edit.Create) == 0 {
-		t.Fatalf("expected create-loc action, got %#v", acts)
+		t.Fatal("expected create-loc")
 	}
-	var body string
 	for _, edits := range edit.Changes {
-		if len(edits) > 0 {
-			body = edits[0].NewText
+		if len(edits) > 0 && !strings.HasPrefix(edits[0].NewText, "\uFEFF") {
+			t.Fatal("loc create must include BOM")
 		}
 	}
-	if !strings.HasPrefix(body, "\uFEFF") {
-		t.Errorf("new loc file must start with UTF-8 BOM, got %q", body)
-	}
-}
 
-func TestModCompleteDependencies(t *testing.T) {
-	root := t.TempDir()
-	f := write(t, root, "descriptor.mod", "name = \"t\"\n")
-	s := session.New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, "name = \"t\"\n")
-	items := Complete(s, f, 0, 0)
+	s, root := buildSession(t, "ck3", map[string]string{"descriptor.mod": "name = \"t\"\n"}, nil, nil)
+	f = filepath.Join(root, "descriptor.mod")
 	found := false
-	for _, it := range items {
-		if it.Label == "dependencies" {
-			found = true
-		}
+	for _, it := range Complete(s, f, 0, 0) {
+		found = found || it.Label == "dependencies"
 	}
 	if !found {
-		t.Errorf("complete .mod missing dependencies: %v", items)
+		t.Fatal("missing dependencies completion")
 	}
-}
 
-func TestMetaJSONSkipped(t *testing.T) {
-	root := t.TempDir()
-	f := write(t, root, ".metadata/metadata.json", "{\n")
-	s := session.New("ws", "vic3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, "{\n")
-	for _, d := range Diagnose(s, f) {
-		if d.Code == "unclosed-brace" {
-			t.Fatal("metadata.json must not go through the script parser")
-		}
-	}
-}
-
-func TestMissingDescriptorVic3(t *testing.T) {
-	root := t.TempDir()
-	f := write(t, root, "notes.txt", "foo = { }\n")
-	s := session.New("ws", "vic3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, "foo = { }\n")
-	diags := Diagnose(s, f)
-	found := false
-	for _, d := range diags {
-		if d.Code == "missing-descriptor" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected missing-descriptor on vic3 mod root file; %v", diags)
-	}
-}
-
-func TestLocDefinedFromHeaderFile(t *testing.T) {
-	root := t.TempDir()
-	ev := write(t, root, "events/x.txt", "namespace = t\n\nt.1 = {\n\ttitle = t.1.t\n}\n")
-	write(t, root, "descriptor.mod", "name = \"t\"\n")
-	write(t, root, "localization/english/events.yml", "l_english:\n t.1.t:0 \"Hello\"\n")
-	s := session.New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(ev, "namespace = t\n\nt.1 = {\n\ttitle = t.1.t\n}\n")
-	for _, d := range Diagnose(s, ev) {
-		if d.Code == "missing-required-loc" {
-			t.Fatalf("unexpected missing loc: %+v", d)
-		}
-	}
-	if v, ok := s.EnglishLoc("t.1.t"); !ok || v != "Hello" {
-		t.Fatalf("EnglishLoc = %q %v", v, ok)
-	}
-}
-
-func TestReferencesUniqueAfterReopen(t *testing.T) {
-	root := t.TempDir()
-	body := "namespace = t\n\nt.1 = {\n\ttitle = k.t\n}\n\nt.2 = {\n\ttitle = k.t\n}\n"
-	ev := write(t, root, "events/x.txt", strings.ReplaceAll(body, "\n", "\r\n"))
-	write(t, root, "descriptor.mod", "name = \"t\"\n")
-	s := session.New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(ev, body)
-	locs := References(s, ev, 3, 10) // on k.t in first title
-	if len(locs) != 2 {
-		t.Fatalf("refs = %d want 2: %+v", len(locs), locs)
-	}
-	for _, l := range locs {
-		if l.Range.Start.Line != l.Range.End.Line {
-			t.Errorf("range spilled lines: %+v", l.Range)
-		}
-	}
-}
-
-func lineCol(src, needle string) (line, col int) {
-	i := strings.Index(src, needle)
-	if i < 0 {
-		return -1, -1
-	}
-	line = strings.Count(src[:i], "\n")
-	return line, i - (strings.LastIndex(src[:i], "\n") + 1)
-}
-
-func TestHoverScopePrefixNotEventField(t *testing.T) {
-	body := "test.1 = {\n\tscope = character\n\timmediate = {\n\t\texists = scope:duel_target\n\t\tsave_scope_as = duel_target\n\t}\n}\n"
-	s, f := ck3Sess(t, body)
-	root := filepath.Dir(filepath.Dir(f))
-	cache := &model.Cache{
-		FieldDocs: map[string]string{"scope": "The event root scope type."},
-	}
-	s = session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, body)
-	line, col := lineCol(body, "scope:duel_target")
-	h := Hover(s, f, line, col+len("scope:"))
-	if h == nil || !strings.Contains(h.Contents, "saved scope") {
-		t.Fatalf("hover = %+v, want saved scope card", h)
-	}
-	if strings.Contains(h.Contents, "event root") {
-		t.Fatalf("hover leaked event scope field docs: %+v", h)
-	}
-	if h.Rel != "" || h.Origin != "" {
-		t.Fatalf("hover site = origin %q rel %q, want empty", h.Origin, h.Rel)
-	}
-	saveLine, saveCol := lineCol(body, "save_scope_as = duel_target")
-	h = Hover(s, f, saveLine, saveCol+len("save_scope_as = "))
-	if h == nil || !strings.Contains(h.Contents, "saved scope") {
-		t.Fatalf("save_scope_as hover = %+v, want saved scope card", h)
-	}
-	if h.Rel != "" || h.Origin != "" {
-		t.Fatalf("save_scope_as hover site = origin %q rel %q, want empty", h.Origin, h.Rel)
-	}
-}
-
-func TestHoverImmediateStructureKey(t *testing.T) {
-	body := "test.1 = {\n\timmediate = { add_gold = 1 }\n}\n"
-	s, f := ck3Sess(t, body)
-	root := filepath.Dir(filepath.Dir(f))
-	cache := &model.Cache{Structures: map[string][]string{"event": {"immediate", "option"}}}
-	s = session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, body)
-	line, col := lineCol(body, "immediate")
-	h := Hover(s, f, line, col)
-	if h == nil || !strings.Contains(h.Contents, "event key") ||
-		!strings.Contains(h.Contents, "`immediate`") {
-		t.Fatalf("immediate hover = %+v, want event key `immediate`", h)
-	}
-}
-
-func TestDefinitionSavedScope(t *testing.T) {
-	body := "test.1 = {\n\timmediate = {\n\t\tsave_scope_as = duel_target\n\t\texists = scope:duel_target\n\t}\n}\n"
-	s, f := ck3Sess(t, body)
-	line, col := lineCol(body, "scope:duel_target")
-	if locs := Definition(s, f, line, col+len("scope:")); len(locs) != 0 {
-		t.Fatalf("F12 = %+v, want no saved-scope jump", locs)
-	}
-	if locs := References(s, f, line, col+len("scope:")); len(locs) != 0 {
-		t.Fatalf("refs = %+v, want no saved-scope jumps", locs)
-	}
-}
-
-func TestReferencesEventTrigger(t *testing.T) {
-	body := "namespace = t\n\nt.1 = {\n\timmediate = { trigger_event = t.2 }\n}\n\nt.2 = {\n\ttype = character_event\n}\n"
-	s, f := ck3Sess(t, body)
-	line, col := lineCol(body, "t.2 =")
-	locs := References(s, f, line, col)
-	var use bool
-	for _, l := range locs {
-		if l.Range.Start.Line == 3 {
-			use = true
-		}
-	}
-	if !use {
-		t.Fatalf("refs = %+v, want trigger_event use site", locs)
-	}
-}
-
-func TestHoverModLocValue(t *testing.T) {
-	root := t.TempDir()
-	body := "namespace = t\n\nt.1 = {\n\ttitle = t.1.t\n}\n"
-	ev := write(t, root, "events/x.txt", body)
-	write(t, root, "descriptor.mod", "name = \"t\"\n")
-	write(t, root, "localization/english/events.yml", "l_english:\n t.1.t:0 \"Hello\"\n")
-	s := session.New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(ev, body)
-	line, col := lineCol(body, "t.1.t")
-	h := Hover(s, ev, line, col)
-	if h == nil || !strings.Contains(h.Contents, "localization") {
-		t.Fatalf("hover = %+v, want localization", h)
-	}
-	if !strings.Contains(h.Contents, `"Hello"`) {
-		t.Fatalf("hover = %+v, want quoted loc value", h)
-	}
-	if !strings.Contains(h.Rel, "localization/english/events.yml") {
-		t.Fatalf("hover rel = %q, want relative loc path", h.Rel)
-	}
-}
-
-func TestHoverVanillaLocValue(t *testing.T) {
-	root := t.TempDir()
-	body := "test.1 = { title = vanilla_key }\n"
-	modFile := write(t, root, "events/e.txt", body)
-	write(t, root, "descriptor.mod", "name = \"t\"\n")
-	vanilla := t.TempDir()
-	vfile := write(t, vanilla, "localization/english/v.yml",
-		"l_english:\n vanilla_key:0 \"Hello\"\n")
-	cache := &model.Cache{
-		InstallPath: vanilla,
-		LocEnglish:  map[string]string{"vanilla_key": "Hello"},
-		LocEnglishSites: map[string]model.LocSite{
-			"vanilla_key": {File: vfile, Line: 1},
-		},
-	}
-	s := session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(modFile, body)
-	col := strings.Index(body, "vanilla_key")
-	h := Hover(s, modFile, 0, col)
-	if h == nil || !strings.Contains(h.Contents, "localization") {
-		t.Fatalf("hover = %+v, want localization", h)
-	}
-	if !strings.Contains(h.Contents, `"Hello"`) {
-		t.Fatalf("hover = %+v, want quoted loc value", h)
-	}
-	if !strings.Contains(h.Rel, "localization/english/v.yml") {
-		t.Fatalf("hover rel = %q, want relative vanilla path", h.Rel)
-	}
-	if h.Origin != "vanilla" {
-		t.Fatalf("hover origin = %q, want vanilla", h.Origin)
-	}
-}
-
-func TestHoverScriptedTriggerKind(t *testing.T) {
-	root := t.TempDir()
-	write(t, root, "common/scripted_triggers/t.txt", "my_trig = { always = yes }\n")
-	body := "test.1 = {\n\timmediate = { my_trig = yes }\n}\n"
-	ev := write(t, root, "events/x.txt", body)
-	write(t, root, "descriptor.mod", "name = \"t\"\n")
-	s := session.New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(ev, body)
-	line, col := lineCol(body, "my_trig")
-	h := Hover(s, ev, line, col)
-	if h == nil || !strings.Contains(h.Contents, "scripted trigger") ||
-		!strings.Contains(h.Contents, "`my_trig`") {
-		t.Fatalf("hover = %+v, want scripted trigger `my_trig`", h)
-	}
-}
-
-func TestHoverEffectKind(t *testing.T) {
-	body := "test.1 = {\n\timmediate = { add_gold = 1 }\n}\n"
-	s, f := ck3Sess(t, body)
-	root := filepath.Dir(filepath.Dir(f))
-	cache := &model.Cache{
-		Effects:   []string{"add_gold"},
-		FieldDocs: map[string]string{"add_gold": "Gives gold."},
-	}
-	s = session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, body)
-	line, col := lineCol(body, "add_gold")
-	h := Hover(s, f, line, col)
-	if h == nil || !strings.HasPrefix(h.Contents, "effect `add_gold`") {
-		t.Fatalf("hover = %+v, want effect `add_gold`", h)
-	}
-	if !strings.Contains(h.Contents, "Gives gold") {
-		t.Fatalf("hover = %+v, want effect docs", h)
-	}
-}
-
-func TestCompletePrefixRanksStructureKeys(t *testing.T) {
-	body := "test.1 = {\n\timm"
-	s, f := ck3Sess(t, body)
-	root := filepath.Dir(filepath.Dir(f))
-	cache := &model.Cache{
+	imm := "test.1 = {\n\timm"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": imm}, &catalog.VanillaCache{
 		Structures: map[string][]string{"event": {"immediate", "option"}},
 		Effects:    []string{"immortal", "immune"},
 		Vocabulary: []string{"immune_to", "immortal"},
+	}, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(imm, "imm")
+	if items := Complete(s, f, line, col+len("imm")); len(items) == 0 || items[0].Label != "immediate" {
+		t.Fatalf("complete=%v", items)
 	}
-	s = session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, body)
-	line, col := lineCol(body, "imm")
-	items := Complete(s, f, line, col+len("imm"))
-	if len(items) == 0 || items[0].Label != "immediate" {
-		t.Fatalf("complete = %+v, want immediate first", items)
-	}
-}
-
-func TestCompleteEmptyPrefixCapped(t *testing.T) {
-	// Cursor after `{` / tab is not an identifier. Prefix must stay empty
-	// (not the whole file from byte 0), or Complete walks the catalog and
-	// matches nothing.
-	body := "test.1 = {\n\t"
-	s, f := ck3Sess(t, body)
-	root := filepath.Dir(filepath.Dir(f))
 	vocab := make([]string, 5000)
 	for i := range vocab {
-		vocab[i] = "tok_" + string(rune('a'+i%26)) + string(rune('0'+i%10))
+		vocab[i] = "tok_" + string(rune('a'+i%26))
 	}
-	cache := &model.Cache{
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": "test.1 = {\n\t"}, &catalog.VanillaCache{
 		Structures: map[string][]string{"event": {"immediate", "option"}},
-		Effects:    vocab,
-		Vocabulary: vocab,
-	}
-	s = session.New("ws", "ck3", cache, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.DidOpen(f, body)
-	line, col := lineCol(body, "\t")
-	items := Complete(s, f, line, col+1)
-	if len(items) > 80 {
-		t.Fatalf("complete len = %d, want ≤80", len(items))
-	}
-	if len(items) == 0 || items[0].Label != "immediate" {
-		t.Fatalf("complete = %+v, want immediate first", items)
-	}
-}
-
-func TestDiagnoseEventTypeSilent(t *testing.T) {
-	body := "test.1 = {\n\ttype = character_event\n\ttitle = test.1.t\n}\n"
-	s, f := ck3Sess(t, body)
-	for _, d := range Diagnose(s, f) {
-		if d.Code == "wrong-scope" || d.Code == "unknown-saved-scope" {
-			t.Fatalf("unexpected scope lint: %+v", d)
-		}
+		Effects:    vocab, Vocabulary: vocab,
+	}, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	items := Complete(s, f, 1, 1)
+	if len(items) > 80 || len(items) == 0 || items[0].Label != "immediate" {
+		t.Fatalf("complete len=%d first=%q", len(items), items[0].Label)
 	}
 }

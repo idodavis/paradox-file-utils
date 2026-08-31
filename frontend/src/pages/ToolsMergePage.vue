@@ -2,61 +2,61 @@
 /**
  * Ad-hoc two-file/dir merge using MergeService + workbench diffs for manual review.
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { useMutation, useQuery } from "@pinia/colada";
 import FileSelector from "../components/FileSelector.vue";
 import { MergePreview, Merge } from "@services/mergeservice";
-import { PreviewItem, FileMergeResult, MergerOptions } from "@services/models";
+import { PreviewItem, MergerOptions } from "@services/models";
 import { GetUserDownloadsDir } from "@services/fileservice";
 import { reviewDiffInWorkbench } from "../composables/workbenchMerge";
 import { useRouter } from "vue-router";
+
+defineOptions({ name: "ToolsMergePage" });
 
 const router = useRouter();
 const pathA = ref("");
 const pathB = ref("");
 const outputDir = ref("");
-const loading = ref(false);
-const error = ref("");
-const previewItems = ref<PreviewItem[]>([]);
-const mergeResults = ref<FileMergeResult[]>([]);
 const manualMode = ref(false);
+
+const { data: downloadsDir } = useQuery({
+  key: () => ["downloads-dir"],
+  query: async () => (await GetUserDownloadsDir()) ?? "",
+});
+watch(downloadsDir, (d) => {
+  if (d && !outputDir.value) outputDir.value = d;
+}, { immediate: true });
 
 const mergeOptions = computed<MergerOptions>(() => ({
   addAdditionalEntries: true,
-  manualConflictResolution: manualMode.value,
-  keyList: [],
-  matchByFilenameOnly: false,
-  includePathPattern: "",
-  excludePathPattern: "",
-  outputFileSuffix: "",
-  outputDir: outputDir.value,
 }));
 
-/** Load default output directory. */
-async function loadDefaults(): Promise<void> {
-  outputDir.value = (await GetUserDownloadsDir()) ?? "";
-}
+const {
+  mutateAsync: previewMut,
+  isLoading: previewing,
+  error: previewError,
+  data: previewItems,
+} = useMutation({
+  mutation: () => MergePreview(pathA.value, pathB.value, outputDir.value),
+});
+
+const {
+  mutateAsync: mergeMut,
+  isLoading: merging,
+  error: mergeError,
+  data: mergeResults,
+} = useMutation({
+  mutation: () => Merge(previewItems.value ?? [], mergeOptions.value),
+});
+
+const error = computed(
+  () => previewError.value?.message ?? mergeError.value?.message ?? "",
+);
 
 /** Run preview to find matching files. */
-async function runPreview(): Promise<void> {
+function runPreview(): void {
   if (!pathA.value || !pathB.value || !outputDir.value) return;
-  loading.value = true;
-  error.value = "";
-  try {
-    previewItems.value =
-      (await MergePreview(
-        pathA.value,
-        pathB.value,
-        outputDir.value,
-        mergeOptions.value,
-      )) ?? [];
-    if (!previewItems.value.length) {
-      error.value = "No matching files found.";
-    }
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
-  }
+  void previewMut();
 }
 
 /** Review one preview pair in the workbench. */
@@ -73,25 +73,15 @@ async function reviewItem(item: PreviewItem): Promise<void> {
 
 /** Run merge on previewed items (auto) or open first diff (manual). */
 async function runMerge(): Promise<void> {
-  if (!previewItems.value.length) return;
+  const items = previewItems.value ?? [];
+  if (!items.length) return;
   if (manualMode.value) {
-    const first = previewItems.value[0];
+    const first = items[0];
     if (first) await reviewItem(first);
     return;
   }
-  loading.value = true;
-  error.value = "";
-  try {
-    mergeResults.value =
-      (await Merge(previewItems.value, mergeOptions.value)) ?? [];
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading.value = false;
-  }
+  void mergeMut();
 }
-
-onMounted(loadDefaults);
 </script>
 
 <template>
@@ -140,29 +130,29 @@ onMounted(loadDefaults);
             <UButton
               label="Preview"
               variant="outline"
-              :loading="loading"
+              :loading="previewing"
               :disabled="!pathA || !pathB || !outputDir"
               @click="runPreview"
             />
             <UButton
               label="Merge"
-              :loading="loading"
-              :disabled="!previewItems.length"
+              :loading="merging"
+              :disabled="!(previewItems ?? []).length"
               @click="runMerge"
             />
           </div>
         </div>
       </UCard>
 
-      <UCard v-if="previewItems.length" :ui="{ body: 'max-h-48 overflow-auto' }">
+      <UCard v-if="(previewItems ?? []).length" :ui="{ body: 'max-h-48 overflow-auto' }">
         <template #header>
           <span class="font-semibold">
-            {{ previewItems.length }} file(s) to merge
+            {{ (previewItems ?? []).length }} file(s) to merge
           </span>
         </template>
         <div class="space-y-1 text-sm">
           <div
-            v-for="item in previewItems"
+            v-for="item in previewItems ?? []"
             :key="item.relPath"
             class="flex items-center justify-between gap-2"
           >
@@ -188,12 +178,12 @@ onMounted(loadDefaults);
         </div>
       </UCard>
 
-      <UCard v-if="mergeResults.length" :ui="{ body: 'max-h-64 overflow-auto' }">
+      <UCard v-if="(mergeResults ?? []).length" :ui="{ body: 'max-h-64 overflow-auto' }">
         <template #header>
           <span class="font-semibold">Merge Results</span>
         </template>
         <UTable
-          :data="mergeResults"
+          :data="mergeResults ?? []"
           :columns="[
             { accessorKey: 'filePath', header: 'File' },
             { accessorKey: 'changed', header: 'Changed' },

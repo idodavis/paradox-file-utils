@@ -46,7 +46,25 @@ func MatchExtract(gameID, relPath string) ExtractRule {
 	case parent == "gui" || strings.HasSuffix(strings.ToLower(relPath), ".gui"):
 		return ExtractRule{Kind: "gui_type", Mode: ModeGUIType}
 	default:
-		return ExtractRule{Kind: parent, Mode: ModeTopLevelKey}
+		return ExtractRule{Kind: CanonicalKind(parent), Mode: ModeTopLevelKey}
+	}
+}
+
+// CanonicalKind maps folder plurals to singular def types used everywhere else.
+func CanonicalKind(kind string) string {
+	switch kind {
+	case "scripted_effects":
+		return "scripted_effect"
+	case "scripted_triggers":
+		return "scripted_trigger"
+	case "scripted_modifiers":
+		return "scripted_modifier"
+	case "on_actions":
+		return "on_action"
+	case "decisions":
+		return "decision"
+	default:
+		return kind
 	}
 }
 
@@ -75,7 +93,7 @@ var callKinds = map[string]bool{
 }
 
 // IsCallKind reports whether kind's keys are called directly as effects/triggers.
-func IsCallKind(kind string) bool { return callKinds[kind] }
+func IsCallKind(kind string) bool { return callKinds[CanonicalKind(kind)] }
 
 // fiosKinds use first-in-order-selection (first mod to define wins); everything
 // else uses last-in-order-selection.
@@ -105,6 +123,21 @@ func IsSaveScopeKey(key string) bool { return saveScopeKeys[key] }
 
 // IsSaveScopeValueKey reports a block `save_*_scope_value_as = { name = X }`.
 func IsSaveScopeValueKey(key string) bool { return saveScopeValueKeys[key] }
+
+// eventGateKeys are event-body blocks that gate whether the event runs.
+var eventGateKeys = map[string]bool{
+	"trigger":              true,
+	"cancellation_trigger": true,
+	"on_trigger_fail":      true,
+}
+
+// EventSectionRole is "gate" for run-conditions, else "effect".
+func EventSectionRole(name string) string {
+	if eventGateKeys[strings.ToLower(name)] {
+		return "gate"
+	}
+	return "effect"
+}
 
 // FireKind reports whether key is an event or on_action fire site.
 func FireKind(key string) string {

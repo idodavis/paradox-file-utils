@@ -1,0 +1,246 @@
+// eventgraph.go builds an event/on_action/decision graph from a root:
+// outgoing depth 3 plus inbound 1-hop, fan-out 12, via-effect hops ≤3, no coordinates.
+
+package views
+
+import (
+	"cmp"
+	"slices"
+	"strconv"
+	"strings"
+
+	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/session"
+)
+
+const (
+	defaultMaxNodes = 40
+	outDepth        = 3
+	maxFanout       = 12
+	maxSuggestions  = 2000
+	morePrefix      = "more:"
+)
+
+// Graph returns the event graph for the live session. Layout is not computed.
+func Graph(s *session.Session, params EventGraphParams) EventGraph {
+	picker, kinds, effectSet := s.GraphCatalog(params.Origins)
+	sugg := suggestionsOf(picker, params.Namespace)
+	if params.Root == "" {
+		return EventGraph{Suggestions: sugg, EmptyReason: "Pick a root event."}
+	}
+
+	maxNodes := params.MaxNodes
+	if maxNodes <= 0 {
+		maxNodes = defaultMaxNodes
+	}
+
+	edges := storedEdges(s, effectSet)
+	selected, inboundOnly, truncated, hidden := neighborhood(
+		edges, params.Root, kinds, maxNodes, params.Expand,
+	)
+
+	outEdges := make([]EventGraphEdge, 0)
+	seen := map[string]bool{}
+	for _, e := range edges {
+		if !selected[e.From] || !selected[e.To] {
+			continue
+		}
+		key := e.From + "→" + e.To + ":" + e.Via + ":" + e.Label + ":" + e.Kind
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		outEdges = append(outEdges, e)
+	}
+
+	for parent, n := range hidden {
+		if n <= 0 || !selected[parent] {
+			continue
+		}
+		id := morePrefix + parent
+		selected[id] = true
+		outEdges = append(outEdges, EventGraphEdge{
+			From: parent, To: id, Via: "more", Kind: "events",
+		})
+	}
+
+	firesCount := map[string]int{}
+	for _, e := range outEdges {
+		firesCount[e.From]++
+	}
+
+	nodes := make([]EventGraphNode, 0, len(selected))
+	for id := range selected {
+		if strings.HasPrefix(id, morePrefix) {
+			parent := strings.TrimPrefix(id, morePrefix)
+			nodes = append(nodes, EventGraphNode{
+				ID: id, Kind: "more",
+				Title: "+" + strconv.Itoa(hidden[parent]) + " more",
+			})
+			continue
+		}
+		d := s.Resolve(id)
+		n := EventGraphNode{ID: id, Kind: "unknown"}
+		if d != nil {
+			n.Kind = game.CanonicalKind(d.Type)
+			n.Origin = d.Origin
+			n.OriginName = s.OriginName(d.Origin)
+		}
+		n.Title = titleOf(s, id)
+		if c := firesCount[id]; c > 0 {
+			n.Fires = c
+		}
+		switch {
+		case id == params.Root:
+			n.Role = "root"
+		case inboundOnly[id]:
+			n.Role = "caller"
+		}
+		nodes = append(nodes, n)
+	}
+	slices.SortFunc(nodes, func(a, b EventGraphNode) int { return cmp.Compare(a.ID, b.ID) })
+
+	return EventGraph{
+		Nodes: nodes, Edges: outEdges, Truncated: truncated,
+		Suggestions: sugg,
+	}
+}
+
+func storedEdges(s *session.Session, effectSet map[string]bool) []EventGraphEdge {
+	var out []EventGraphEdge
+	for _, e := range s.EdgesFrom("") {
+		if e.Kind == catalog.EdgeKindCall {
+			continue
+		}
+		if e.Kind != "via" && effectSet[e.From] {
+			continue
+		}
+		out = append(out, labeledEdge(s, e))
+	}
+	return out
+}
+
+func neighborhood(
+	edges []EventGraphEdge, root string, kinds map[string]string, maxNodes int, expand []string,
+) (selected, inboundOnly map[string]bool, truncated bool, hidden map[string]int) {
+	selected = map[string]bool{root: true}
+	inboundOnly = map[string]bool{}
+	hidden = map[string]int{}
+	lift := map[string]bool{}
+	for _, id := range expand {
+		lift[id] = true
+	}
+	take := func(id string) bool {
+		if selected[id] {
+			return false
+		}
+		if maxNodes > 0 && len(selected) >= maxNodes {
+			truncated = true
+			return false
+		}
+		selected[id] = true
+		return true
+	}
+	out := map[string][]string{}
+	seenChild := map[string]bool{}
+	for _, e := range edges {
+		k := e.From + "\x00" + e.To
+		if seenChild[k] {
+			continue
+		}
+		seenChild[k] = true
+		out[e.From] = append(out[e.From], e.To)
+	}
+	for from := range out {
+		slices.Sort(out[from])
+	}
+	type item struct {
+		id    string
+		depth int
+	}
+	q := []item{{root, 0}}
+	for len(q) > 0 {
+		cur := q[0]
+		q = q[1:]
+		if cur.depth >= outDepth {
+			continue
+		}
+		children := out[cur.id]
+		if !lift[cur.id] && len(children) > maxFanout {
+			hidden[cur.id] = len(children) - maxFanout
+			truncated = true
+			children = children[:maxFanout]
+		}
+		for _, to := range children {
+			if !take(to) {
+				if truncated {
+					return selected, inboundOnly, true, hidden
+				}
+				continue
+			}
+			if kinds[to] != "event" && to != root {
+				continue
+			}
+			q = append(q, item{to, cur.depth + 1})
+		}
+	}
+	for _, e := range edges {
+		if e.To != root {
+			continue
+		}
+		if selected[e.From] {
+			continue
+		}
+		if take(e.From) {
+			inboundOnly[e.From] = true
+		} else if truncated {
+			break
+		}
+	}
+	return selected, inboundOnly, truncated, hidden
+}
+
+func suggestionsOf(vocab map[string]string, namespace string) EventGraphSuggestions {
+	ids := make([]SuggestionItem, 0, len(vocab))
+	for id, origin := range vocab {
+		if namespace != "" && !strings.HasPrefix(id, namespace+".") {
+			continue
+		}
+		ids = append(ids, SuggestionItem{ID: id, Origin: origin})
+	}
+	slices.SortFunc(ids, func(a, b SuggestionItem) int {
+		if n := cmp.Compare(a.ID, b.ID); n != 0 {
+			return n
+		}
+		return cmp.Compare(a.Origin, b.Origin)
+	})
+	nsSeen := map[string]map[string]bool{}
+	for id, origin := range vocab {
+		dot := strings.IndexByte(id, '.')
+		if dot <= 0 {
+			continue
+		}
+		n := id[:dot]
+		if nsSeen[n] == nil {
+			nsSeen[n] = map[string]bool{}
+		}
+		nsSeen[n][origin] = true
+	}
+	namespaces := make([]SuggestionItem, 0)
+	for n, origins := range nsSeen {
+		for origin := range origins {
+			namespaces = append(namespaces, SuggestionItem{ID: n, Origin: origin})
+		}
+	}
+	slices.SortFunc(namespaces, func(a, b SuggestionItem) int {
+		if n := cmp.Compare(a.ID, b.ID); n != 0 {
+			return n
+		}
+		return cmp.Compare(a.Origin, b.Origin)
+	})
+	if len(ids) > maxSuggestions {
+		ids = ids[:maxSuggestions]
+	}
+	return EventGraphSuggestions{IDs: ids, Namespaces: namespaces}
+}

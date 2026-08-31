@@ -1,14 +1,11 @@
 /**
- * Sync the monaco-vscode workbench color/icon theme with the Nuxt theme name.
+ * Sync the monaco-vscode workbench color/icon theme with `{family}-{dark|light}`.
  *
  * Colors come from contributed theme JSON (hex). This module only writes
  * `workbench.colorTheme` and related settings — no CSS variable painting.
  */
 import { updateUserConfiguration } from "@codingame/monaco-vscode-configuration-service-override";
 import * as vscode from "vscode";
-import { isDarkTheme } from "./appThemes";
-
-export { isDarkTheme };
 
 /** User-settings fragment: named theme + icon theme + tree indent. */
 export function workbenchSettingsForTheme(

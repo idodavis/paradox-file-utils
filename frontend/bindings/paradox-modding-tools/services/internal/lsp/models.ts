@@ -6,16 +6,14 @@
  */
 export interface CodeAction {
     "title": string;
-    "kind"?: string;
     "edit"?: WorkspaceEdit | null;
 }
 
 /**
- * CompletionItem is one completion suggestion. Kind uses LSP CompletionItemKind.
+ * CompletionItem is one completion suggestion.
  */
 export interface CompletionItem {
     "label": string;
-    "kind"?: number;
     "detail"?: string;
 }
 
@@ -30,7 +28,6 @@ export interface Diagnostic {
      */
     "severity": number;
     "message": string;
-    "source"?: string;
     "code"?: string;
 }
 
@@ -43,15 +40,13 @@ export interface FoldingRange {
 }
 
 /**
- * HoverResult is hover card text. Origin/rel/line/rootPath describe the def site.
+ * HoverResult is hover card text. Origin/rel/line describe the def site.
  */
 export interface HoverResult {
     "contents": string;
-    "range"?: Range | null;
     "origin"?: string;
     "rel"?: string;
     "line"?: number;
-    "rootPath"?: string;
 }
 
 /**
@@ -79,19 +74,10 @@ export interface Range {
 }
 
 /**
- * SignatureHelp is a call-signature tooltip.
- */
-export interface SignatureHelp {
-    "label": string;
-    "documentation"?: string;
-}
-
-/**
  * SymbolInformation describes a document or workspace symbol.
  */
 export interface SymbolInformation {
     "name": string;
-    "kind": number;
     "location": Location;
     "containerName"?: string;
 }

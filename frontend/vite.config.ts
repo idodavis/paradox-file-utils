@@ -11,7 +11,7 @@ import path from "path";
 export default defineConfig({
   plugins: [
     vue(),
-    ui({ colorMode: false }),
+    ui({ colorMode: true }),
     wails("./bindings"),
     tailwindcss(),
     {

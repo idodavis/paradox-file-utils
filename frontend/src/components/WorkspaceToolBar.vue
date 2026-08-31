@@ -37,27 +37,26 @@ const toolItems = computed<NavigationMenuItem[]>(() =>
 </script>
 
 <template>
-  <div
-    class="flex shrink-0 flex-wrap items-center gap-2 border-b border-default
-      bg-muted/50 px-2 py-1.5"
-  >
-    <UButton
-      icon="i-lucide-arrow-left"
-      label="Library"
-      color="neutral"
-      variant="ghost"
-      size="sm"
-      @click="router.push({ name: 'library' })"
-    />
-    <span class="font-semibold text-default">{{ title }}</span>
-    <UNavigationMenu
-      :items="toolItems"
-      variant="pill"
-      highlight
-      class="flex-wrap"
-    />
-    <div class="ml-auto flex items-center gap-2">
+  <UDashboardToolbar class="px-2 sm:px-2">
+    <template #left>
+      <UButton
+        icon="i-lucide-arrow-left"
+        label="Library"
+        color="neutral"
+        variant="ghost"
+        size="sm"
+        @click="router.push({ name: 'library' })"
+      />
+      <span class="font-semibold text-default">{{ title }}</span>
+      <UNavigationMenu
+        :items="toolItems"
+        variant="pill"
+        highlight
+        class="flex-wrap"
+      />
+    </template>
+    <template #right>
       <slot name="trailing" />
-    </div>
-  </div>
+    </template>
+  </UDashboardToolbar>
 </template>

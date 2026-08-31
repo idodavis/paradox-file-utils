@@ -5,7 +5,7 @@
 import type {
   EventScriptLine,
   EventStepTarget,
-} from "@services/internal/graph/models";
+} from "@services/internal/views/models";
 
 const props = defineProps<{
   lines?: EventScriptLine[] | null;

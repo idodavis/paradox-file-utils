@@ -39,7 +39,7 @@ const routes = [
   {
     path: "/workspace/:id",
     name: "workspace-ide",
-    component: WorkspaceIdePage,
+    components: { ide: WorkspaceIdePage },
     meta: {
       title: "Workspace",
       description: "View and edit files in your workspace.",

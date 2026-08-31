@@ -1,3 +1,5 @@
+// settingsservice.go persists app settings via the JSON store.
+
 package services
 
 import (
@@ -6,28 +8,23 @@ import (
 	"os"
 	"strings"
 
-	"paradox-modding-tools/services/internal/model"
-	"paradox-modding-tools/services/internal/repos"
+	"paradox-modding-tools/services/internal/catalog"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// ############
-// SettingsService
-// ############
-
 // SettingsService provides persisted app settings.
 type SettingsService struct {
-	DB      *sqlx.DB
-	repo    *repos.SettingsRepository
+	Store   *Store
 	Version string
 }
 
+// GetVersion returns the app version string.
 func (s *SettingsService) GetVersion() string {
 	return s.Version
 }
 
+// CheckForUpdates triggers the Wails updater.
 func (s *SettingsService) CheckForUpdates() {
 	app := application.Get()
 	if app == nil {
@@ -38,56 +35,45 @@ func (s *SettingsService) CheckForUpdates() {
 	}
 }
 
-func (s *SettingsService) getRepo() *repos.SettingsRepository {
-	if s.repo == nil {
-		s.repo = repos.NewSettingsRepository(s.DB)
-	}
-	return s.repo
-}
-
 // GetSettings loads settings as a map "game.key" -> value.
 func (s *SettingsService) GetSettings() (map[string]string, error) {
-	settings, err := s.getRepo().GetAllSettings()
-	if err != nil {
-		return nil, fmt.Errorf("read settings: %w", err)
-	}
-
-	out := make(map[string]string)
-	for _, setting := range settings {
-		out[setting.Game+"."+setting.Key] = setting.Value
-	}
+	out := map[string]string{}
+	s.Store.Read(func(c *Config) {
+		for game, kv := range c.Settings {
+			for k, v := range kv {
+				out[game+"."+k] = v
+			}
+		}
+	})
 	return out, nil
 }
 
-// SaveSettings writes user settings to app_settings table.
+// SaveSettings writes user settings keyed as "game.key".
 func (s *SettingsService) SaveSettings(settings map[string]string) error {
-	repo := s.getRepo()
-	for k, v := range settings {
-		parts := strings.SplitN(k, ".", 2)
-		if len(parts) == 2 {
-			if err := repo.UpsertSetting(parts[0], parts[1], v); err != nil {
-				return err
+	return s.Store.Mutate(func(c *Config) error {
+		for k, v := range settings {
+			parts := strings.SplitN(k, ".", 2)
+			if len(parts) != 2 {
+				continue
 			}
+			if c.Settings[parts[0]] == nil {
+				c.Settings[parts[0]] = map[string]string{}
+			}
+			c.Settings[parts[0]][parts[1]] = v
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // ResetData wipes workspaces, mods, installs, patch runs, and the semantic cache.
 func (s *SettingsService) ResetData() error {
-	if s.DB == nil {
-		return fmt.Errorf("database not initialized")
+	if err := s.Store.Mutate(func(c *Config) error {
+		c.Installs, c.Workspaces, c.PatchRuns = nil, nil, nil
+		return nil
+	}); err != nil {
+		return err
 	}
-	tables := []string{
-		"patch_run_files", "patch_runs", "workspace_mods", "workspaces",
-		"game_installs",
-	}
-	for _, t := range tables {
-		if _, err := s.DB.Exec(`DELETE FROM ` + t); err != nil {
-			return fmt.Errorf("delete %s: %w", t, err)
-		}
-	}
-	dir, err := model.CacheDir()
+	dir, err := catalog.CacheDir()
 	if err != nil {
 		return fmt.Errorf("cache dir: %w", err)
 	}

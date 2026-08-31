@@ -2,62 +2,39 @@
 /**
  * Workspace IDE toolbar; workbench fills App.vue host below this strip.
  */
-import { computed, onMounted, ref, watch } from "vue";
+import { computed } from "vue";
 import { useRoute } from "vue-router";
+import { useQuery } from "@pinia/colada";
 import { useWorkspaceStore } from "../stores/workspace";
-import { useSettingsStore } from "../stores/settings";
 import { setWorkbenchRoots } from "../ide/workbenchHost";
+import { currentWorkbenchTheme } from "../ide/colorThemes";
 import { buildIdeRoots } from "../ide/workspaceFolders";
-import { EnsureSession } from "@services/languagemodelservice";
+import { EnsureSession } from "@services/sessionservice";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 
+defineOptions({ name: "WorkspaceIdePage" });
+
 const route = useRoute();
 const ws = useWorkspaceStore();
-const settings = useSettingsStore();
 
 const workspaceId = computed(() => String(route.params.id ?? ""));
-const error = ref("");
-const loading = ref(false);
 
-/** Load workspace; folder I/O must not hold the loading banner. */
-async function boot(): Promise<void> {
-  loading.value = true;
-  error.value = "";
-  try {
-    if (workspaceId.value) {
-      ws.setActiveWorkspace(workspaceId.value);
-      await ws.loadActiveWorkspace();
-      void EnsureSession(workspaceId.value);
-    }
-    const roots = await buildIdeRoots(ws.activeWorkspace, ws.workspaceMods);
+const { error, isPending } = useQuery({
+  key: () => ["ide-boot", workspaceId.value],
+  query: async () => {
+    await ws.loadActiveWorkspace();
+    if (workspaceId.value) await EnsureSession(workspaceId.value);
+    const roots = await buildIdeRoots(workspaceId.value);
     if (!roots.length) {
-      error.value =
-        "No game, mod, or staging paths available for this workspace.";
-      return;
+      throw new Error(
+        "No game, mod, or staging paths available for this workspace.",
+      );
     }
-    const theme =
-      settings.values["_global.theme"] ||
-      document.documentElement.dataset.theme ||
-      "PMT";
-    loading.value = false;
-    await setWorkbenchRoots(roots, theme);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (!msg.includes("already initialized")) {
-      error.value = msg;
-    }
-  } finally {
-    loading.value = false;
-  }
-}
-
-onMounted(() => {
-  void boot();
-});
-
-watch(workspaceId, () => {
-  void boot();
+    await setWorkbenchRoots(roots, currentWorkbenchTheme());
+    return true;
+  },
+  enabled: () => !!workspaceId.value,
 });
 </script>
 
@@ -68,8 +45,8 @@ watch(workspaceId, () => {
     active="workspace-ide"
   >
     <template #trailing>
-      <span v-if="loading" class="text-xs text-muted">Loading workbench…</span>
-      <span v-if="error" class="text-xs text-error">{{ error }}</span>
+      <span v-if="isPending" class="text-xs text-muted">Loading workbench…</span>
+      <span v-if="error" class="text-xs text-error">{{ error.message }}</span>
       <LanguageHealthStrip
         v-if="workspaceId"
         :workspace-id="workspaceId"

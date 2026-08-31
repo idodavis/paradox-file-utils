@@ -1,47 +1,41 @@
 <script setup lang="ts">
 /**
- * Collapsed-by-default accordion of event refs, grouped by kind.
+ * Collapsed-by-default accordion of event refs, grouped by kind from Go.
  */
 import { computed } from "vue";
 import type { AccordionItem } from "@nuxt/ui";
-import type { EventRefInfo } from "@services/internal/graph/models";
+import type { EventRefInfo, RefKindGroup } from "@services/internal/views/models";
 
 const props = defineProps<{
-  refs: EventRefInfo[];
+  refGroups?: RefKindGroup[] | null;
 }>();
 
 const emit = defineEmits<{
   open: [file: string, line: number];
+  reroot: [id: string];
 }>();
 
-interface KindGroup {
-  kind: string;
-  refs: EventRefInfo[];
-}
-
-const groups = computed((): KindGroup[] => {
-  const by = new Map<string, EventRefInfo[]>();
-  for (const r of props.refs) {
-    const list = by.get(r.kind) ?? [];
-    list.push(r);
-    by.set(r.kind, list);
-  }
-  return [...by.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([kind, refs]) => ({ kind, refs }));
-});
+const GRAPH_KINDS = new Set(["event", "on_action", "decision"]);
 
 const items = computed((): AccordionItem[] =>
-  groups.value.map((g) => ({
-    label: `${g.kind} (${g.refs.length})`,
-    value: g.kind,
-    refs: g.refs,
+  (props.refGroups ?? []).map((group) => ({
+    label: `${group.kind} (${group.refs?.length ?? 0})`,
+    value: group.kind,
+    refs: group.refs ?? [],
   })),
 );
 
 /** Refs payload from an accordion item. */
 function asRefs(item: AccordionItem): EventRefInfo[] {
   return (item as AccordionItem & { refs?: EventRefInfo[] }).refs ?? [];
+}
+
+function onRef(r: EventRefInfo): void {
+  if (GRAPH_KINDS.has(r.kind)) {
+    emit("reroot", r.name);
+    return;
+  }
+  if (r.defFile) emit("open", r.defFile, r.defLine ?? 0);
 }
 </script>
 
@@ -59,8 +53,8 @@ function asRefs(item: AccordionItem): EventRefInfo[] {
         type="button"
         class="block w-full truncate text-left text-xs text-default
           hover:underline disabled:text-muted disabled:no-underline"
-        :disabled="!r.defFile"
-        @click="r.defFile && emit('open', r.defFile, r.defLine ?? 0)"
+        :disabled="!GRAPH_KINDS.has(r.kind) && !r.defFile"
+        @click="onRef(r)"
       >
         {{ r.name }}
       </button>

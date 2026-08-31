@@ -1,13 +1,12 @@
-// codeactions.go offers create-loc-key (UTF-8 BOM) and add-BOM quick fixes.
-
+// codeactions.go offers create-loc-key and add-BOM quick fixes.
 package lsp
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
-	"paradox-modding-tools/services/internal/loc"
+	"paradox-modding-tools/services/internal/parser/jomini"
+	"paradox-modding-tools/services/internal/parser/loc"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -16,32 +15,26 @@ const bom = "\uFEFF"
 // CodeActions returns quick-fixes for path.
 func CodeActions(s *session.Session, path string) []CodeAction {
 	var out []CodeAction
-	if isLocPath(path) {
-		if raw, err := os.ReadFile(path); err == nil && len(raw) > 0 &&
-			!(len(raw) >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) {
+	if s.KindFor(path) == "loc" {
+		src := s.FileText(path)
+		if src != "" && !jomini.HasUTF8BOM([]byte(src)) {
 			out = append(out, CodeAction{
 				Title: "Add UTF-8 BOM",
-				Kind:  "quickfix",
 				Edit: &WorkspaceEdit{Changes: map[string][]TextEdit{
 					path: {{Range: Range{}, NewText: bom}},
 				}},
 			})
 		}
 	}
-	idx := s.Index()
-	if idx == nil {
-		return out
-	}
 	seen := map[string]bool{}
-	for _, r := range idx.Refs {
-		if !session.SamePath(r.Path, path) || r.Kind != "loc" || locDefined(s, r.Key) || seen[r.Key] {
+	for _, r := range s.RefsInFile(path) {
+		if r.Kind != "loc" || locDefined(s, r.Key) || seen[r.Key] {
 			continue
 		}
 		seen[r.Key] = true
 		if edit := locCreateEdit(s, path, r.Key); edit != nil {
 			out = append(out, CodeAction{
 				Title: "Create localization key \"" + r.Key + "\"",
-				Kind:  "quickfix",
 				Edit:  edit,
 			})
 		}
@@ -56,16 +49,12 @@ func locCreateEdit(s *session.Session, fromPath, key string) *WorkspaceEdit {
 	}
 	lang := loc.LanguageFromFilename(fromPath)
 	if lang == "" {
-		lang = "english"
+		lang = s.DefaultLang()
 	}
 	target, exists := locTarget(s, root, lang)
 	entry := " " + key + ":0 \"\"\n"
 	if exists {
-		raw, err := os.ReadFile(target)
-		if err != nil {
-			return nil
-		}
-		text, _ := strings.CutPrefix(string(raw), bom)
+		text, _ := strings.CutPrefix(s.FileText(target), bom)
 		lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 		line := len(lines)
 		if line > 0 && lines[line-1] == "" {
@@ -92,22 +81,15 @@ func locTarget(s *session.Session, root, lang string) (path string, exists bool)
 	if fileExists(preferred) {
 		return preferred, true
 	}
-	if idx := s.Index(); idx != nil {
-		origin := ""
-		for _, m := range s.Mods() {
-			if m.Root == root {
-				origin = m.Origin
-			}
+	origin := ""
+	for _, m := range s.Mods() {
+		if m.Root == root {
+			origin = m.Origin
+			break
 		}
-		marker := "_l_" + lang
-		for _, d := range idx.Defs {
-			if d.Type != "loc_key" || d.Origin != origin {
-				continue
-			}
-			if strings.Contains(strings.ToLower(d.Path), marker) {
-				return d.Path, true
-			}
-		}
+	}
+	if path, ok := s.LocFile(origin, lang); ok {
+		return path, true
 	}
 	return preferred, false
 }

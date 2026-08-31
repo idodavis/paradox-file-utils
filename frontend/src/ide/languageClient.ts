@@ -1,7 +1,9 @@
 /**
- * Register workbench language providers that call Go LanguageModelService.
+ * Register workbench language providers that call Go IdeService.
  */
 import * as vscode from "vscode";
+import { useDebounceFn } from "@vueuse/core";
+import { Events } from "@wailsio/runtime";
 import {
   Diagnose,
   Hover,
@@ -17,9 +19,8 @@ import {
   Rename,
   FormatDocument,
   FoldingRanges,
-  SignatureHelp,
   CodeActions,
-} from "@services/languagemodelservice";
+} from "@services/ideservice";
 import type { WorkspaceEdit as LspWorkspaceEdit, Location as LspLocation, HoverResult } from "@services/internal/lsp/models";
 
 const LANGS = ["paradox", "paradox-gui", "paradox-loc", "paradox-info", "paradox-mod"];
@@ -128,19 +129,11 @@ function applyWorkspaceEdit(
   return we;
 }
 
-async function openDoc(uri: string): Promise<vscode.TextDocument | undefined> {
-  try {
-    return await vscode.workspace.openTextDocument(uriToVsCode(uri));
-  } catch {
-    return undefined;
-  }
-}
-
-/** Map Go locations onto VS Code docs; skip sites whose file cannot be opened. */
-async function locationsFromGo(
+/** Map Go locations onto VS Code URIs without opening every target file. */
+function locationsFromGo(
   locs: LspLocation[],
   fallback?: vscode.TextDocument,
-): Promise<vscode.Location[]> {
+): vscode.Location[] {
   const out: vscode.Location[] = [];
   for (const l of locs) {
     const uri = uriToVsCode(l.uri);
@@ -148,9 +141,19 @@ async function locationsFromGo(
       fallback &&
       uri.fsPath.replace(/\\/g, "/").toLowerCase() ===
         fallback.uri.fsPath.replace(/\\/g, "/").toLowerCase();
-    const target = (await openDoc(l.uri)) ?? (same ? fallback : undefined);
-    if (!target) continue;
-    out.push(new vscode.Location(uri, rangeToVsCode(target, l.range)));
+    out.push(
+      new vscode.Location(
+        uri,
+        same && fallback
+          ? rangeToVsCode(fallback, l.range)
+          : new vscode.Range(
+              l.range.start.line,
+              l.range.start.character,
+              l.range.end.line,
+              l.range.end.character,
+            ),
+      ),
+    );
   }
   return out;
 }
@@ -171,11 +174,20 @@ export function registerLanguageClient(
   const diag = vscode.languages.createDiagnosticCollection("pmt");
   subs.push(diag);
 
-  const changeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const dirty = new Map<string, vscode.TextDocument>();
+  const flushChanges = useDebounceFn(() => {
+    const id = getWorkspaceId();
+    const docs = [...dirty.values()];
+    dirty.clear();
+    if (!id) return;
+    for (const doc of docs) {
+      void DidChange(id, pathOf(doc), doc.getText()).then(() => refreshDiags(doc));
+    }
+  }, 200);
   const syncOpen = (doc: vscode.TextDocument) => {
     const id = getWorkspaceId();
     if (!id || !LANGS.includes(doc.languageId)) return;
-    void DidOpen(id, pathOf(doc), doc.getText(), doc.languageId, doc.version);
+    void DidOpen(id, pathOf(doc), doc.getText());
   };
 
   const refreshDiags = async (doc: vscode.TextDocument) => {
@@ -201,22 +213,8 @@ export function registerLanguageClient(
   const onChange = (doc: vscode.TextDocument) => {
     const id = getWorkspaceId();
     if (!id || !LANGS.includes(doc.languageId)) return;
-    const key = doc.uri.toString();
-    const prev = changeTimers.get(key);
-    if (prev) clearTimeout(prev);
-    changeTimers.set(
-      key,
-      setTimeout(() => {
-        changeTimers.delete(key);
-        void DidChange(
-          id,
-          pathOf(doc),
-          doc.getText(),
-          doc.languageId,
-          doc.version,
-        ).then(() => refreshDiags(doc));
-      }, 200),
-    );
+    dirty.set(doc.uri.toString(), doc);
+    void flushChanges();
   };
 
   registerLangProviders(subs, (lang) =>
@@ -321,36 +319,6 @@ export function registerLanguageClient(
     }),
   );
   registerLangProviders(subs, (lang) =>
-    vscode.languages.registerSignatureHelpProvider(
-      lang,
-      {
-        async provideSignatureHelp(doc, pos) {
-          const id = getWorkspaceId();
-          if (!id) return null;
-          const p = positionUtf8(doc, pos);
-          const h = await SignatureHelp(
-            id,
-            pathOf(doc),
-            p.line,
-            p.character,
-          );
-          if (!h?.label) return null;
-          const info = new vscode.SignatureInformation(
-            h.label,
-            h.documentation,
-          );
-          const help = new vscode.SignatureHelp();
-          help.signatures = [info];
-          help.activeSignature = 0;
-          help.activeParameter = 0;
-          return help;
-        },
-      },
-      " ",
-      "=",
-    ),
-  );
-  registerLangProviders(subs, (lang) =>
     vscode.languages.registerDocumentFormattingEditProvider(lang, {
       async provideDocumentFormattingEdits(doc) {
         const id = getWorkspaceId();
@@ -405,21 +373,21 @@ export function registerLanguageClient(
         const syms = (await WorkspaceSymbols(id, query)) ?? [];
         const out: vscode.SymbolInformation[] = [];
         for (const s of syms) {
-          const target = await openDoc(s.location.uri);
-          const range = target
-            ? rangeToVsCode(target, s.location.range)
-            : new vscode.Range(
-                s.location.range.start.line,
-                s.location.range.start.character,
-                s.location.range.end.line,
-                s.location.range.end.character,
-              );
+          const r = s.location.range;
           out.push(
             new vscode.SymbolInformation(
               s.name,
               vscode.SymbolKind.Object,
               s.containerName ?? "",
-              new vscode.Location(uriToVsCode(s.location.uri), range),
+              new vscode.Location(
+                uriToVsCode(s.location.uri),
+                new vscode.Range(
+                  r.start.line,
+                  r.start.character,
+                  r.end.line,
+                  r.end.character,
+                ),
+              ),
             ),
           );
         }
@@ -462,9 +430,14 @@ export function registerLanguageClient(
     void refreshDiags(doc);
   }
 
+  Events.On("lang:cache-updated", () => {
+    for (const doc of vscode.workspace.textDocuments) {
+      void refreshDiags(doc);
+    }
+  });
+
   return {
     dispose() {
-      for (const t of changeTimers.values()) clearTimeout(t);
       for (const s of subs) s.dispose();
     },
   };

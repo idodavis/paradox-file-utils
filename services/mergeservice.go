@@ -2,17 +2,16 @@ package services
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"paradox-modding-tools/services/internal/game"
-	parser "paradox-modding-tools/services/internal/parser"
+	jomini "paradox-modding-tools/services/internal/parser/jomini"
 )
 
 const (
@@ -28,14 +27,7 @@ type MergeService struct {
 
 // MergerOptions configures how files are merged.
 type MergerOptions struct {
-	AddAdditionalEntries     bool     `json:"addAdditionalEntries"`
-	ManualConflictResolution bool     `json:"manualConflictResolution"`
-	KeyList                  []string `json:"keyList"`
-	MatchByFilenameOnly      bool     `json:"matchByFilenameOnly"`
-	IncludePathPattern       string   `json:"includePathPattern"`
-	ExcludePathPattern       string   `json:"excludePathPattern"`
-	OutputFileSuffix         string   `json:"outputFileSuffix"` // e.g. "_merged" meaning: events/foo.txt -> events/foo_merged.txt
-	OutputDir                string   `json:"outputDir"`
+	AddAdditionalEntries bool `json:"addAdditionalEntries"`
 }
 
 // PreviewItem is a single file match for the merge preview.
@@ -102,21 +94,17 @@ type mergeResult struct {
 }
 
 // MergePreview collects matching files from pathA/pathB and returns preview items with output paths.
-func (m *MergeService) MergePreview(ctx context.Context, pathA, pathB, outputDir string, opts MergerOptions) ([]PreviewItem, error) {
+func (m *MergeService) MergePreview(ctx context.Context, pathA, pathB, outputDir string) ([]PreviewItem, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	matches, err := m.FileService.CollectAndMatchPaths(pathA, pathB, FileCollectorFilter{
-		Extensions:  []string{".txt"},
-		IncludePath: opts.IncludePathPattern,
-		ExcludePath: opts.ExcludePathPattern,
-	}, opts.MatchByFilenameOnly)
+	matches, err := m.FileService.collectAndMatchPaths(pathA, pathB, []string{".txt"})
 	if err != nil {
 		return nil, err
 	}
 	var items []PreviewItem
 	for relPath, match := range matches {
-		outPath := outputPathWithSuffix(outputDir, relPath, opts.OutputFileSuffix)
+		outPath := filepath.Join(outputDir, relPath)
 		_, overwrite := os.Stat(outPath)
 		items = append(items, PreviewItem{
 			RelPath:        relPath,
@@ -141,14 +129,6 @@ func (m *MergeService) Merge(ctx context.Context, tasks []PreviewItem, opts Merg
 	return results, nil
 }
 
-func outputPathWithSuffix(outputDir, relPath, suffix string) string {
-	if suffix == "" {
-		return filepath.Join(outputDir, relPath)
-	}
-	ext := filepath.Ext(relPath)
-	return filepath.Join(outputDir, strings.TrimSuffix(relPath, ext)+suffix+".txt")
-}
-
 func parsePrecedenceFromComment(comment string) string {
 	comment = strings.TrimSpace(strings.TrimPrefix(comment, "#"))
 	if m := precedenceRe.FindStringSubmatch(comment); len(m) > 0 {
@@ -170,21 +150,15 @@ func normalizeMergeKey(key string) string {
 // parseFileObjects uses the shared Paradox parser for top-level object keys.
 // Semantic typing (install cache / session) can later refine matching when keys
 // collide across types; for now matching is by normalized top-level key only.
-func parseFileObjects(path string) ([]scriptObject, string, error) {
-	t, err := parser.ParseFile(path)
+func parseFileObjects(path string) ([]scriptObject, error) {
+	t, err := jomini.ParseFile(path)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	src := t.Src
-	bom := ""
-	start := 0
-	if len(src) >= 3 && src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF {
-		bom = utf8BOM
-		start = 3
-	}
 	var objects []scriptObject
-	prev := start
-	for _, a := range parser.TopAssignments(t) {
+	prev := 0
+	for _, a := range jomini.TopAssignments(t) {
 		raw := string(src[prev:a.EndByte])
 		val := string(src[a.StartByte:a.EndByte])
 		comments := commentLines(raw)
@@ -218,10 +192,7 @@ func parseFileObjects(path string) ([]scriptObject, string, error) {
 			objects[len(objects)-1].RawText += tail
 		}
 	}
-	if bom == "" {
-		bom = utf8BOM
-	}
-	return objects, bom, nil
+	return objects, nil
 }
 
 func commentLines(raw string) []string {
@@ -235,10 +206,7 @@ func commentLines(raw string) []string {
 	return out
 }
 
-func determinePrecedence(key string, a, b scriptObject, opts MergerOptions) (string, string) {
-	if slices.Contains(opts.KeyList, key) {
-		return "B", "keyList"
-	}
+func determinePrecedence(a, b scriptObject) (string, string) {
 	for _, obj := range []scriptObject{a, b} {
 		if obj.PreferSide != "" {
 			return obj.PreferSide, "directive"
@@ -248,14 +216,14 @@ func determinePrecedence(key string, a, b scriptObject, opts MergerOptions) (str
 }
 
 // mergeFileItems builds conflict chunks by comparing parsed objects from fileA and fileB.
-func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOptions) ([]MergeConflictChunk, string, error) {
-	objectsA, bom, err := parseFileObjects(fileAPath)
+func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOptions) ([]MergeConflictChunk, error) {
+	objectsA, err := parseFileObjects(fileAPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("parsing file A: %w", err)
+		return nil, fmt.Errorf("parsing file A: %w", err)
 	}
-	objectsB, _, err := parseFileObjects(fileBPath)
+	objectsB, err := parseFileObjects(fileBPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("parsing file B: %w", err)
+		return nil, fmt.Errorf("parsing file B: %w", err)
 	}
 	mapB := make(map[string]scriptObject, len(objectsB))
 	for _, e := range objectsB {
@@ -295,17 +263,17 @@ func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOp
 			}
 		}
 	}
-	return items, bom, nil
+	return items, nil
 }
 
 // performMerge resolves conflicts using precedence rules and produces final content.
 func (m *MergeService) performMerge(fileAPath, fileBPath string, opts MergerOptions) (*mergeResult, error) {
-	items, bom, err := m.mergeFileItems(fileAPath, fileBPath, opts)
+	items, err := m.mergeFileItems(fileAPath, fileBPath, opts)
 	if err != nil {
 		return nil, err
 	}
 	var out strings.Builder
-	out.WriteString(bom)
+	out.WriteString(utf8BOM)
 	r := &mergeResult{}
 	addHeader := false
 
@@ -324,7 +292,7 @@ func (m *MergeService) performMerge(fileAPath, fileBPath string, opts MergerOpti
 			continue
 		}
 		// conflict
-		decision, reason := determinePrecedence(it.ObjA.Key, *it.ObjA, *it.ObjB, opts)
+		decision, reason := determinePrecedence(*it.ObjA, *it.ObjB)
 		if decision == "B" {
 			out.WriteString(it.TextB)
 			r.EntriesChanged = append(r.EntriesChanged, it.ObjA.Key)
@@ -339,32 +307,13 @@ func (m *MergeService) performMerge(fileAPath, fileBPath string, opts MergerOpti
 	return r, nil
 }
 
-// consolidateChunks merges consecutive same-type non-conflict chunks into single chunks.
-func consolidateChunks(chunks []MergeConflictChunk) []MergeConflictChunk {
-	result := make([]MergeConflictChunk, 0, len(chunks))
-	for _, c := range chunks {
-		if len(result) > 0 {
-			last := &result[len(result)-1]
-			if last.Type == c.Type && c.Type == "unchanged" {
-				last.TextA += c.TextA
-				last.TextB += c.TextB
-				last.EndLineA = c.EndLineA
-				last.EndLineB = c.EndLineB
-				continue
-			}
-		}
-		result = append(result, c)
-	}
-	return result
-}
-
 // mergeAndWrite performs merge and writes the result to outputPath.
 func (m *MergeService) mergeAndWrite(pathA, pathB, outputPath, filePath string, opts MergerOptions) FileMergeResult {
 	mr, err := m.performMerge(pathA, pathB, opts)
 	if err != nil {
 		return FileMergeResult{FilePath: filePath, Error: err.Error()}
 	}
-	if err := m.FileService.WriteWithBOM(outputPath, mr.Content); err != nil {
+	if err := m.FileService.writeWithBOM(outputPath, mr.Content); err != nil {
 		return FileMergeResult{FilePath: filePath, Error: err.Error()}
 	}
 	return FileMergeResult{
@@ -385,14 +334,81 @@ func canonicalScriptValue(s string) string {
 	return strings.Join(parts, "")
 }
 
-func scriptValueHash(text string) string {
-	h := sha256.Sum256([]byte(canonicalScriptValue(text)))
-	return hex.EncodeToString(h[:])
+func scriptValuesEqual(a, b string) bool {
+	return a == b || canonicalScriptValue(a) == canonicalScriptValue(b)
 }
 
-func scriptValuesEqual(a, b string) bool {
-	if a == b {
-		return true
+func (p *PatcherService) previewOne(
+	staging, rel, modP, tgt string, prev *PatchRunPreview,
+) (PatchRunFile, error) {
+	f := PatchRunFile{ID: uuid.New().String(), RelPath: rel}
+	if tgt == "" {
+		f.Status = "mod_only"
+		prev.SkippedCount++
+		return f, nil
 	}
-	return scriptValueHash(a) == scriptValueHash(b)
+	out := filepath.Join(staging, rel)
+	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		return f, fmt.Errorf("create preview dir: %w", err)
+	}
+	r := p.MergeService.mergeAndWrite(
+		modP, tgt, out, rel, MergerOptions{AddAdditionalEntries: true})
+	if r.Error != "" {
+		f.Status, f.Stats = "error", PatchRunFileStats{Error: r.Error}
+		return f, nil
+	}
+	f.PreviewPath, f.Stats = r.OutputPath, PatchRunFileStats{
+		Changed: r.Changed, Added: r.Added, Conflicts: len(r.ResolvedConflicts)}
+	if f.Stats.Conflicts > 0 || f.Stats.Changed > 3 {
+		f.Status = "review"
+		prev.ReviewCount++
+	} else {
+		f.Status = "safe"
+		prev.SafeCount++
+	}
+	return f, nil
+}
+
+func (p *PatcherService) runAndMod(runID string) (*PatchRun, string, error) {
+	var run *PatchRun
+	var modPath string
+	p.Store.Read(func(c *Config) {
+		if r := findRun(c, runID); r != nil {
+			cp := *r
+			run = &cp
+			if m := findMod(c, r.ModID); m != nil {
+				modPath = m.Path
+			}
+		}
+	})
+	if run == nil {
+		return nil, "", fmt.Errorf("patch run not found")
+	}
+	if modPath == "" {
+		return nil, "", fmt.Errorf("mod not found")
+	}
+	return run, modPath, nil
+}
+
+func (p *PatcherService) resolveTargetPath(run *PatchRun) (string, error) {
+	installID := run.TargetInstallID
+	var instPath, gameID string
+	p.Store.Read(func(c *Config) {
+		if installID == "" {
+			if ws := findWorkspace(c, run.WorkspaceID); ws != nil {
+				installID = ws.InstallID
+			}
+		}
+		if inst := findInstall(c, installID); inst != nil {
+			instPath, gameID = inst.Path, inst.GameID
+		}
+	})
+	if instPath == "" {
+		return "", nil
+	}
+	info := game.Get(gameID)
+	if info == nil {
+		return "", fmt.Errorf("unknown game %s", gameID)
+	}
+	return filepath.Join(instPath, info.ScriptRoot), nil
 }

@@ -3,6 +3,7 @@
  */
 import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
+import { clamp } from "es-toolkit";
 import { GetSettings, SaveSettings } from "@services/settingsservice";
 
 /** Drop undefined values from a settings map. */
@@ -18,11 +19,6 @@ function normalizeSettings(
 
 const FONT_SCALE_MIN = 85;
 const FONT_SCALE_MAX = 130;
-
-/** Clamp a number into an inclusive range. */
-function clamp(n: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, n));
-}
 
 /** Apply UI font scale to the document (workbench owns its own editor font). */
 export function applyFontCss(fontScale: number): void {
@@ -46,7 +42,6 @@ export const useSettingsStore = defineStore("settings", () => {
     loading.value = true;
     try {
       values.value = normalizeSettings(await GetSettings());
-      applyFontCss(fontScale.value);
     } finally {
       loading.value = false;
     }
@@ -65,9 +60,6 @@ export const useSettingsStore = defineStore("settings", () => {
   /** Set one key and optionally persist immediately. */
   async function set(key: string, value: string, persist = true): Promise<void> {
     values.value = { ...values.value, [key]: value };
-    if (key === "ui.fontScale") {
-      applyFontCss(fontScale.value);
-    }
     if (persist) await save();
   }
 
@@ -79,9 +71,7 @@ export const useSettingsStore = defineStore("settings", () => {
     );
   }
 
-  watch(fontScale, (scale) => {
-    applyFontCss(scale);
-  });
+  watch(fontScale, (scale) => applyFontCss(scale), { immediate: true });
 
   return {
     values,

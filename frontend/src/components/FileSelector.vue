@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * File/folder selector used by pages that need Wails dialogs.
+ * File/folder selector used by pages that need native Wails dialogs.
  */
-import { SelectDirectory, SelectSingleFile } from "@services/fileservice";
+import { pickDirectory, pickFile } from "../composables/nativeDialog";
 
 const selectedPath = defineModel<string>({ required: true });
 
@@ -26,8 +26,8 @@ const props = withDefaults(
 async function browse(): Promise<void> {
   const path =
     props.mode === "folder"
-      ? await SelectDirectory(props.dialogTitle)
-      : await SelectSingleFile(props.dialogTitle, props.fileFilter);
+      ? await pickDirectory(props.dialogTitle)
+      : await pickFile(props.dialogTitle, props.fileFilter);
   selectedPath.value = path;
 }
 </script>

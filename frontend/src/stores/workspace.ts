@@ -1,20 +1,20 @@
 /**
  * Pinia store for active game, workspace list, and selection.
  */
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { defineStore } from "pinia";
+import { useLocalStorage } from "@vueuse/core";
 import {
   ListWorkspaces,
   GetWorkspace,
   ListWorkspaceMods,
   MarkBrokenPaths,
-  SetActiveWorkspace,
 } from "@services/workspaceservice";
 import {
   EnsureSession,
   GetModelStatus,
-} from "@services/languagemodelservice";
-import { Workspace, WorkspaceMod } from "@services/internal/repos/models";
+} from "@services/sessionservice";
+import { Workspace, WorkspaceMod } from "@services/models";
 
 /** Supported game identifiers. */
 export type GameId = "ck3" | "eu5" | "vic3";
@@ -26,23 +26,45 @@ export const GAME_OPTIONS: { label: string; value: GameId }[] = [
   { label: "Vic3", value: "vic3" },
 ];
 
+/** Workspace default loc language choices (empty/english is the inherit lang). */
+export const LOC_LANG_ITEMS: { label: string; value: string }[] = [
+  { label: "English", value: "english" },
+  { label: "French", value: "french" },
+  { label: "German", value: "german" },
+  { label: "Spanish", value: "spanish" },
+  { label: "Russian", value: "russian" },
+  { label: "Korean", value: "korean" },
+  { label: "Simplified Chinese", value: "simp_chinese" },
+  { label: "Polish", value: "polish" },
+  { label: "Turkish", value: "turkish" },
+  { label: "Brazilian Portuguese", value: "braz_por" },
+  { label: "Japanese", value: "japanese" },
+];
+
 /** Shared workspace library and active-workspace selection. */
 export const useWorkspaceStore = defineStore("workspace", () => {
-  const currentGameId = ref<GameId>(
-    (localStorage.getItem("workspace.gameId") as GameId) || "ck3",
-  );
-  const activeWorkspaceId = ref<string | null>(
-    localStorage.getItem("workspace.activeId") || null,
-  );
+  const currentGameId = useLocalStorage<GameId>("workspace.gameId", "ck3");
+  const activeWorkspaceId = useLocalStorage("workspace.activeId", "");
   const workspaces = ref<Workspace[]>([]);
   const activeWorkspace = ref<Workspace | null>(null);
   const workspaceMods = ref<WorkspaceMod[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
+  let loadToken = 0;
+  let inflight: Promise<void> | null = null;
+  let inflightId = "";
+
   const hasWorkspaces = computed(() => workspaces.value.length > 0);
   const activeWorkspaceName = computed(
     () => activeWorkspace.value?.name ?? "No workspace",
+  );
+  const workspacesByGame = computed(() =>
+    GAME_OPTIONS.map((g) => ({
+      gameId: g.value,
+      label: g.label,
+      workspaces: workspaces.value.filter((w) => w.gameId === g.value),
+    })).filter((s) => s.workspaces.length > 0),
   );
 
   /** Refresh all workspaces (every game). */
@@ -67,54 +89,51 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     }
   }
 
-  /** Load active workspace details and mods. */
+  /** Load active workspace details and mods (in-flight deduped per id). */
   async function loadActiveWorkspace(): Promise<void> {
-    if (!activeWorkspaceId.value) {
+    const id = activeWorkspaceId.value;
+    if (!id) {
       activeWorkspace.value = null;
       workspaceMods.value = [];
       return;
     }
-    try {
-      activeWorkspace.value = await GetWorkspace(activeWorkspaceId.value);
-      workspaceMods.value =
-        (await ListWorkspaceMods(activeWorkspaceId.value)) ?? [];
-    } catch {
-      activeWorkspace.value = null;
-      workspaceMods.value = [];
-    }
+    if (inflight && inflightId === id) return inflight;
+    const token = ++loadToken;
+    inflightId = id;
+    inflight = (async () => {
+      try {
+        const [ws, mods] = await Promise.all([
+          GetWorkspace(id),
+          ListWorkspaceMods(id),
+        ]);
+        if (token !== loadToken) return;
+        activeWorkspace.value = ws;
+        workspaceMods.value = mods ?? [];
+      } catch {
+        if (token !== loadToken) return;
+        activeWorkspace.value = null;
+        workspaceMods.value = [];
+      }
+    })().finally(() => {
+      if (token === loadToken) inflight = null;
+    });
+    return inflight;
   }
 
-  /** Switch to a different workspace by ID. */
+  /** Switch to a different workspace by ID. No-op when already selected. */
   function setActiveWorkspace(id: string | null): void {
-    activeWorkspaceId.value = id;
-    if (id) {
-      localStorage.setItem("workspace.activeId", id);
-      const found = workspaces.value.find((w) => w.id === id);
-      if (found?.gameId) {
-        currentGameId.value = found.gameId as GameId;
-        localStorage.setItem("workspace.gameId", found.gameId);
-      }
-    } else {
-      localStorage.removeItem("workspace.activeId");
+    const next = id ?? "";
+    if (next === activeWorkspaceId.value) {
+      if (next && !activeWorkspace.value) void loadActiveWorkspace();
+      return;
     }
-    // Mirror the selection into SQLite so is_active matches the UI.
-    if (id) void SetActiveWorkspace(id);
+    activeWorkspaceId.value = next;
+    if (next) {
+      const found = workspaces.value.find((w) => w.id === next);
+      if (found?.gameId) currentGameId.value = found.gameId as GameId;
+    }
     void loadActiveWorkspace();
   }
-
-  /** Switch to a different game. */
-  function setGame(gameId: GameId): void {
-    currentGameId.value = gameId;
-    localStorage.setItem("workspace.gameId", gameId);
-    activeWorkspaceId.value = null;
-    activeWorkspace.value = null;
-    workspaceMods.value = [];
-    void refresh();
-  }
-
-  watch(currentGameId, () => {
-    localStorage.setItem("workspace.gameId", currentGameId.value);
-  });
 
   /** True when this workspace has a live language session (not merely defs on disk). */
   async function ensureReady(): Promise<boolean> {
@@ -139,10 +158,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     error,
     hasWorkspaces,
     activeWorkspaceName,
+    workspacesByGame,
     refresh,
     loadActiveWorkspace,
     setActiveWorkspace,
-    setGame,
     ensureReady,
   };
 });

@@ -18,17 +18,19 @@ var assets embed.FS
 var version = "dev"
 
 func main() {
-	dbSvc := &services.DbService{}
-	if err := dbSvc.ServiceStartup(); err != nil {
-		log.Fatalf("db startup: %v", err)
+	store, err := services.OpenStore()
+	if err != nil {
+		log.Fatalf("store: %v", err)
 	}
 
 	fileSvc := &services.FileService{}
 	mergeSvc := &services.MergeService{FileService: fileSvc}
-	settingsSvc := &services.SettingsService{DB: dbSvc.DB, Version: version}
-	workspaceSvc := &services.WorkspaceService{DB: dbSvc.DB}
-	patcherSvc := &services.PatcherService{DB: dbSvc.DB, FileService: fileSvc, MergeService: mergeSvc}
-	langModelSvc := &services.LanguageModelService{DB: dbSvc.DB}
+	settingsSvc := &services.SettingsService{Store: store, Version: version}
+	sessSvc := &services.SessionService{Store: store}
+	workspaceSvc := &services.WorkspaceService{Store: store, Session: sessSvc}
+	patcherSvc := &services.PatcherService{Store: store, FileService: fileSvc, MergeService: mergeSvc}
+	ideSvc := &services.IdeService{Session: sessSvc}
+	viewsSvc := &services.ViewsService{Session: sessSvc}
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
@@ -37,7 +39,9 @@ func main() {
 			application.NewService(settingsSvc),
 			application.NewService(fileSvc),
 			application.NewService(workspaceSvc),
-			application.NewService(langModelSvc),
+			application.NewService(sessSvc),
+			application.NewService(ideSvc),
+			application.NewService(viewsSvc),
 			application.NewService(patcherSvc),
 			application.NewService(mergeSvc),
 		},
@@ -49,15 +53,8 @@ func main() {
 		},
 	})
 
-	// DbService is internal (no RPC bindings), so wire its shutdown here.
-	app.OnShutdown(func() {
-		if err := dbSvc.ServiceShutdown(); err != nil {
-			log.Printf("db shutdown: %v", err)
-		}
-	})
-
 	gh, err := github.New(github.Config{
-		Repository:   "idodavis/paradox-modding-tools",
+		Repository:    "idodavis/paradox-modding-tools",
 		ChecksumAsset: "SHA256SUMS",
 	})
 	if err != nil {

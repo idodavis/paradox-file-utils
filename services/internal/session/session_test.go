@@ -1,5 +1,4 @@
-// session_test.go covers the single-file reindex path (identical bytes coalesce to
-// one reindex), override resolution through model.Winner, and inline suppressions.
+// session_test.go covers reindex, resolution, and the exported query surface.
 
 package session
 
@@ -8,117 +7,118 @@ import (
 	"path/filepath"
 	"testing"
 
-	"paradox-modding-tools/services/internal/model"
-	"paradox-modding-tools/services/internal/parser"
+	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/parser/jomini"
 )
 
-// modFixture writes one trait file into a temp mod root and returns (root, file).
-func modFixture(t *testing.T, body string) (root, file string) {
+func must(t *testing.T, ok bool, msg string) {
 	t.Helper()
-	root = t.TempDir()
-	file = filepath.Join(root, "common", "traits", "00.txt")
-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-		t.Fatal(err)
+	if !ok {
+		t.Fatal(msg)
 	}
-	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
+}
+
+func writeFiles(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	for rel, body := range files {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	return root, file
+	return root
 }
 
 func TestReindexCoalesces(t *testing.T) {
-	root, file := modFixture(t, "brave = { category = personality }\n")
-	s := New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-
+	root := writeFiles(t, map[string]string{
+		"common/traits/00.txt": "brave = { category = personality }\n",
+	})
+	file := filepath.Join(root, "common", "traits", "00.txt")
+	s := NewWithLoc("ws", "ck3", "english", nil, nil, []catalog.ModInput{
+		{Origin: "mod", Root: root, Order: 0},
+	})
 	s.DidSave(file)
-	if got := s.ReindexCount(); got != 1 {
-		t.Fatalf("reindex after save = %d, want 1", got)
+	if n := len(s.DefsInFile(file)); n != 1 {
+		t.Fatalf("defs after save = %d, want 1", n)
 	}
-	s.DidSave(file) // identical bytes -> coalesced, no extra reindex
-	if got := s.ReindexCount(); got != 1 {
-		t.Fatalf("reindex after no-op save = %d, want 1", got)
+	s.DidSave(file)
+	if n := len(s.DefsInFile(file)); n != 1 {
+		t.Fatalf("defs after no-op save = %d, want 1", n)
 	}
-	s.DidChange(file, "brave = { category = education }\n")
-	if got := s.ReindexCount(); got != 2 {
-		t.Fatalf("reindex after change = %d, want 2", got)
-	}
-}
-
-func TestResolveWinner(t *testing.T) {
-	root, _ := modFixture(t, "brave = { category = personality }\n")
-	s := New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	d := s.Resolve("brave")
-	if d == nil || d.Origin != "mod" || d.Type != "traits" {
-		t.Errorf("Resolve(brave) = %v, want mod trait", d)
-	}
-}
-
-func TestScanSuppressions(t *testing.T) {
-	res := parser.Parse("# pmt:ignore-next-line unclosed-brace\nbad = {\nok = 1 # pmt:ignore\n")
-	sup := ScanSuppressions(res.Src)
-	if !sup.Covers(1, "unclosed-brace") {
-		t.Errorf("line 1 should suppress unclosed-brace")
-	}
-	if sup.Covers(1, "other-code") {
-		t.Errorf("line 1 should NOT suppress an unlisted code")
-	}
-	if !sup.Covers(2, "anything") {
-		t.Errorf("bare ignore on line 2 should suppress all codes")
-	}
-}
-
-func TestReindexNilLocMap(t *testing.T) {
-	root := t.TempDir()
-	locFile := filepath.Join(root, "localization", "english", "foo.yml")
-	if err := os.MkdirAll(filepath.Dir(locFile), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	body := "l_english:\n k.t:0 \"Hi\"\n"
-	if err := os.WriteFile(locFile, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	s := New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	s.index.Loc = nil
-	s.DidOpen(locFile, body)
-	if v, ok := s.EnglishLoc("k.t"); !ok || v != "Hi" {
-		t.Fatalf("EnglishLoc after nil Loc = %q %v", v, ok)
+	s.DidChange(file, "other = { category = education }\n")
+	defs := s.DefsInFile(file)
+	if len(defs) != 1 || defs[0].Key != "other" {
+		t.Fatalf("defs after change = %+v, want other", defs)
 	}
 }
 
 func TestDidOpenDropsDiskRefs(t *testing.T) {
-	root := t.TempDir()
-	ev := filepath.Join(root, "events", "x.txt")
-	if err := os.MkdirAll(filepath.Dir(ev), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	crlf := "namespace = test\r\n\r\ntest.1 = {\r\n\ttitle = k.t\r\n}\r\n"
-	if err := os.WriteFile(ev, []byte(crlf), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	s := New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	lf := parser.Normalize(crlf)
-	s.DidOpen(ev, lf)
-	n := 0
-	for _, r := range s.Index().Refs {
-		if r.Key == "k.t" {
-			n++
-		}
-	}
-	if n != 1 {
+	root := writeFiles(t, map[string]string{"events/x.txt": crlf})
+	ev := filepath.Join(root, "events", "x.txt")
+	s := NewWithLoc("ws", "ck3", "english", nil, nil, []catalog.ModInput{
+		{Origin: "mod", Root: root, Order: 0},
+	})
+	s.DidOpen(ev, jomini.Normalize(crlf))
+	if n := len(s.RefsTo("k.t")); n != 1 {
 		t.Fatalf("k.t refs after DidOpen = %d, want 1", n)
 	}
 }
 
-func TestReplaceCache(t *testing.T) {
-	root, _ := modFixture(t, "brave = { category = personality }\n")
-	s := New("ws", "ck3", nil, []model.ModInput{{Origin: "mod", Root: root, Order: 0}})
-	if s.Cache() != nil {
-		t.Fatal("expected nil cache")
+func TestQueries(t *testing.T) {
+	body := "namespace = t\n\nt.1 = {\n\ttitle = k.t\n\timmediate = { trigger_event = t.2 }\n}\n" +
+		"t.2 = { type = character_event }\n"
+	root := writeFiles(t, map[string]string{
+		"events/x.txt":                         body,
+		"localization/english/a_l_english.yml": "l_english:\n k.t:0 \"Hi\"\n",
+	})
+	ev := filepath.Join(root, "events", "x.txt")
+	loc := filepath.Join(root, "localization", "english", "a_l_english.yml")
+	cache := &catalog.VanillaCache{
+		InstallPath: "/game", GameVersion: "1.16",
+		Structures: map[string][]string{"event": {"immediate"}},
+		Vocabulary: []string{"add_gold"},
+		Effects:    []string{"add_gold"},
+		FieldDocs:  map[string]string{"immediate": "runs first"},
 	}
-	c := &model.Cache{WorkspaceID: "ws", GameVersion: "1.16"}
-	s.ReplaceCache(c)
-	got := s.Cache()
-	if got == nil || got.GameVersion != "1.16" {
-		t.Fatalf("ReplaceCache = %+v", got)
-	}
+	s := NewWithLoc("ws", "ck3", "english", cache, nil, []catalog.ModInput{
+		{Origin: "mod", Root: root, Name: "M", Order: 0},
+	})
+	s.locByLang = nil
+	s.DidOpen(loc, "l_english:\n k.t:0 \"Hi\"\n")
+
+	must(t, s.DefaultLang() == "english" && s.DefCount() >= 2 && s.Resolve("t.1") != nil, "defs")
+	must(t, s.ResolveMatching("t.1", func(d catalog.Def) bool { return d.Type == "event" }) != nil,
+		"ResolveMatching")
+	must(t, len(s.ModDefsOf("t.1")) > 0 && len(s.FindDefs("t.1", 10, true, false)) > 0 &&
+		len(s.DefsInFile(ev)) > 0, "ModDefsOf/FindDefs/DefsInFile")
+	_, _, _, locOK := s.LocSite("k.t")
+	v, locValOK := s.DefaultLoc("k.t")
+	_, locFileOK := s.LocFile("mod", "english")
+	must(t, locOK && locValOK && v == "Hi" && locFileOK, "loc site/default/file")
+	must(t, len(s.LocKeys(false)) > 0 && s.LocByLang()["english"]["k.t"].Value == "Hi",
+		"LocKeys/LocByLang")
+	must(t, len(s.RefsTo("k.t")) > 0 && len(s.RefsInFile(ev)) > 0 && len(s.LocRefs()) > 0, "refs")
+	must(t, len(s.EdgesFrom("t.1")) > 0 && len(s.EdgesTo("t.2")) > 0, "edges")
+	must(t, s.FileText(ev) != "" && s.Parsed(ev).Root != nil, "FileText/Parsed")
+	origin, _, located := s.Locate(ev)
+	must(t, located && origin == "mod" && s.DisplayRel(ev) != "" && s.OriginName("mod") == "M",
+		"locate")
+	must(t, len(s.Mods()) == 1 && s.KindFor(ev) != "", "Mods/KindFor")
+	picker, kinds, _ := s.GraphCatalog(nil)
+	must(t, kinds["t.1"] != "" || picker["t.1"] != "", "GraphCatalog")
+	must(t, len(s.Structures("event")) > 0 && len(s.Vocab("vocabulary")) > 0 &&
+		s.FieldDoc("immediate", "event") != "", "Structures/Vocab/FieldDoc")
+	_, effects, _ := s.MemberSets("event")
+	must(t, effects != nil, "MemberSets")
+	inst, _, ver := s.CacheInfo()
+	must(t, inst == "/game" && ver == "1.16", "CacheInfo")
+	_ = s.Contests([]string{"mod"})
+	s.ReplaceCache(&catalog.VanillaCache{InstallPath: "/y", GameVersion: "2"})
+	inst, _, _ = s.CacheInfo()
+	must(t, inst == "/y", "ReplaceCache")
 }

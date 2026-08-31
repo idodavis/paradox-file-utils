@@ -13,62 +13,48 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as game$0 from "./internal/game/models.js";
+
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as repos$0 from "./internal/repos/models.js";
+import * as $models from "./models.js";
 
 /**
- * AddGameInstall adds a new game installation record. Detects version if possible.
+ * AddGameInstall adds a new game installation. version empty → detected or latest.
  */
-export function AddGameInstall(gameID: string, name: string, path: string): $CancellablePromise<repos$0.GameInstall | null> {
-    return $Call.ByID(1554142306, gameID, name, path);
+export function AddGameInstall(gameID: string, name: string, path: string, version: string): $CancellablePromise<$models.GameInstall | null> {
+    return $Call.ByID(1554142306, gameID, name, path, version);
 }
 
 /**
  * AddWorkspaceMod adds a mod to a workspace.
  */
-export function AddWorkspaceMod(workspaceID: string, name: string, path: string): $CancellablePromise<repos$0.WorkspaceMod | null> {
+export function AddWorkspaceMod(workspaceID: string, name: string, path: string): $CancellablePromise<$models.WorkspaceMod | null> {
     return $Call.ByID(123649806, workspaceID, name, path);
 }
 
 /**
- * CreateWorkspace creates a new workspace. Sets default staging dir if not provided.
+ * CreateWorkspace creates a new workspace and default staging dir.
  */
-export function CreateWorkspace(gameID: string, name: string, installID: string, tagsJSON: string, thumbnailPath: string): $CancellablePromise<repos$0.Workspace | null> {
-    return $Call.ByID(2742011767, gameID, name, installID, tagsJSON, thumbnailPath);
+export function CreateWorkspace(gameID: string, name: string, installID: string, tags: string[] | null): $CancellablePromise<$models.Workspace | null> {
+    return $Call.ByID(2742011767, gameID, name, installID, tags);
 }
 
 /**
- * DefaultStagingDir returns the default staging directory path for a workspace.
+ * DeleteGameInstall removes an install if no workspace uses it.
  */
-export function DefaultStagingDir(workspaceID: string): $CancellablePromise<string> {
-    return $Call.ByID(3731287923, workspaceID);
+export function DeleteGameInstall(id: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3448659062, id);
 }
 
 /**
- * DeleteWorkspace removes a workspace and cascades deletes to mods and runs.
- */
-export function DeleteWorkspace(id: string): $CancellablePromise<void> {
-    return $Call.ByID(1615435582, id);
-}
-
-/**
- * DetectGameVersion attempts to read version from launcher-settings.json.
+ * DetectGameVersion reads version from launcher-settings.json.
  */
 export function DetectGameVersion(path: string): $CancellablePromise<string> {
     return $Call.ByID(4095463977, path);
 }
 
 /**
- * DetectModRoot reports whether path is a valid mod root for gameID.
- */
-export function DetectModRoot(gameID: string, path: string): $CancellablePromise<boolean> {
-    return $Call.ByID(850337951, gameID, path);
-}
-
-/**
  * EnsureStagingDir creates the staging directory if it doesn't exist.
- * When staging_dir is empty, assigns the default path and persists it.
  */
 export function EnsureStagingDir(workspaceID: string): $CancellablePromise<string> {
     return $Call.ByID(1205241180, workspaceID);
@@ -82,44 +68,44 @@ export function FindGameInstalls(gameID: string): $CancellablePromise<game$0.Det
 }
 
 /**
- * GetScriptRoot returns the script root path for a game install.
+ * GetIdeRoots returns game / mod / staging folders for the workspace IDE.
  */
-export function GetScriptRoot(installID: string): $CancellablePromise<string> {
-    return $Call.ByID(4012809053, installID);
+export function GetIdeRoots(workspaceID: string): $CancellablePromise<$models.IdeRoot[] | null> {
+    return $Call.ByID(720395743, workspaceID);
+}
+
+/**
+ * GetInstallCacheInfo returns scannedAt for the install's VanillaCache, or empty.
+ */
+export function GetInstallCacheInfo(installID: string): $CancellablePromise<$models.InstallCacheInfo | null> {
+    return $Call.ByID(1009986005, installID);
 }
 
 /**
  * GetWorkspace returns a workspace by ID.
  */
-export function GetWorkspace(id: string): $CancellablePromise<repos$0.Workspace | null> {
+export function GetWorkspace(id: string): $CancellablePromise<$models.Workspace | null> {
     return $Call.ByID(2164363903, id);
 }
 
 /**
  * ListGameInstalls returns all installs for a game.
  */
-export function ListGameInstalls(gameID: string): $CancellablePromise<repos$0.GameInstall[] | null> {
+export function ListGameInstalls(gameID: string): $CancellablePromise<$models.GameInstall[] | null> {
     return $Call.ByID(3468235284, gameID);
-}
-
-/**
- * ListGames returns supported games from the Go registry.
- */
-export function ListGames(): $CancellablePromise<repos$0.Game[] | null> {
-    return $Call.ByID(1635414117);
 }
 
 /**
  * ListWorkspaceMods returns all mods for a workspace.
  */
-export function ListWorkspaceMods(workspaceID: string): $CancellablePromise<repos$0.WorkspaceMod[] | null> {
+export function ListWorkspaceMods(workspaceID: string): $CancellablePromise<$models.WorkspaceMod[] | null> {
     return $Call.ByID(1179220170, workspaceID);
 }
 
 /**
  * ListWorkspaces returns workspaces, optionally filtered by game. Pass "" for all.
  */
-export function ListWorkspaces(gameID: string): $CancellablePromise<repos$0.Workspace[] | null> {
+export function ListWorkspaces(gameID: string): $CancellablePromise<$models.Workspace[] | null> {
     return $Call.ByID(1786820820, gameID);
 }
 
@@ -131,29 +117,29 @@ export function MarkBrokenPaths(): $CancellablePromise<void> {
 }
 
 /**
- * RemoveWorkspaceMod deletes a mod from a workspace.
+ * SetInstallVersion pins the cache-key version (user override; empty → latest).
  */
-export function RemoveWorkspaceMod(modID: string): $CancellablePromise<void> {
-    return $Call.ByID(1041246117, modID);
+export function SetInstallVersion(id: string, version: string): $CancellablePromise<void> {
+    return $Call.ByID(2135672107, id, version);
 }
 
 /**
- * SetActiveWorkspace sets a workspace as active (clears others for that game).
+ * SetWorkspaceLocLang sets default loc language and loc-harvests if a session is live.
  */
-export function SetActiveWorkspace(workspaceID: string): $CancellablePromise<void> {
-    return $Call.ByID(1281878305, workspaceID);
+export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromise<void> {
+    return $Call.ByID(3609504639, id, lang);
 }
 
 /**
  * UpdateGameInstall updates path and docs_path, then refreshes version.
  */
-export function UpdateGameInstall(id: string, path: string, docsPath: string): $CancellablePromise<repos$0.GameInstall | null> {
+export function UpdateGameInstall(id: string, path: string, docsPath: string): $CancellablePromise<$models.GameInstall | null> {
     return $Call.ByID(1401884060, id, path, docsPath);
 }
 
 /**
  * UpdateWorkspace updates workspace fields.
  */
-export function UpdateWorkspace(id: string, name: string, installID: string, stagingDir: string, tagsJSON: string, thumbnailPath: string): $CancellablePromise<void> {
-    return $Call.ByID(2311242704, id, name, installID, stagingDir, tagsJSON, thumbnailPath);
+export function UpdateWorkspace(id: string, name: string, installID: string, stagingDir: string, tags: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2311242704, id, name, installID, stagingDir, tags);
 }

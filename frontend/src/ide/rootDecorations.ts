@@ -1,7 +1,7 @@
 /**
  * Explorer color tags for Game / Mod / Staging workspace roots.
  *
- * Uses FileDecorationProvider badges + contributed theme colors (subtle).
+ * Uses FileDecoration color dots + contributed theme colors (subtle).
  */
 import * as vscode from "vscode";
 import { registerExtension, ExtensionHostKind } from "@codingame/monaco-vscode-api/extensions";
@@ -78,25 +78,7 @@ function colorIdFor(root: { kind: IdeRootKind; path: string }): string {
   }
 }
 
-/** One-letter badge: G / S / first letter of mod name. */
-function badgeFor(root: IdeRoot): string {
-  switch (root.kind) {
-    case "game":
-      return "G";
-    case "staging":
-      return "S";
-    case "mod": {
-      const ch = root.label.trim().charAt(0).toUpperCase();
-      return /[A-Z0-9]/.test(ch) ? ch : "M";
-    }
-    default: {
-      const _exhaustive: never = root.kind;
-      return _exhaustive;
-    }
-  }
-}
-
-/** Tooltip for the decoration badge. */
+/** Tooltip for the decoration color tag. */
 function tooltipFor(root: IdeRoot): string {
   switch (root.kind) {
     case "game":
@@ -143,7 +125,7 @@ class RootDecorationProvider implements vscode.FileDecorationProvider {
     const root = roots.find((r) => normPath(r.path) === path);
     if (!root) return undefined;
     const deco = new vscode.FileDecoration(
-      badgeFor(root),
+      undefined,
       tooltipFor(root),
       new vscode.ThemeColor(colorIdFor(root)),
     );

@@ -1,27 +1,30 @@
-// diagnostics.go publishes CST/loc structural errors, STRICT missing-loc, loc BOM
-// and header issues, and a missing-descriptor warning for a mod root.
-
+// diagnostics.go publishes parse/loc/descriptor diagnostics and pmt:ignore.
 package lsp
 
 import (
-	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
-	"paradox-modding-tools/services/internal/loc"
-	"paradox-modding-tools/services/internal/parser"
+	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/parser/jomini"
+	"paradox-modding-tools/services/internal/parser/loc"
 	"paradox-modding-tools/services/internal/session"
 )
 
+func diag(rg Range, sev int, msg, code string) Diagnostic {
+	return Diagnostic{Range: rg, Severity: sev, Message: msg, Code: code}
+}
+
 // Diagnose returns diagnostics for path. Suppressions (# pmt:ignore) are honored.
 func Diagnose(s *session.Session, path string) []Diagnostic {
-	src := fileText(s, path)
-	sup := session.ScanSuppressions(src)
+	src := s.FileText(path)
+	sup := scanSuppressions(src)
 	var out []Diagnostic
-	if isLocPath(path) {
+	if s.KindFor(path) == "loc" {
 		out = append(out, locDiags(path, src)...)
-	} else if !isMetaJSON(path) {
-		out = append(out, scriptDiags(s, path, src)...)
+	} else if !isMetaFile(s, path) {
+		out = append(out, scriptDiags(s, path)...)
 	}
 	out = append(out, missingLocDiags(s, path)...)
 	out = append(out, descriptorDiags(s, path)...)
@@ -35,66 +38,44 @@ func Diagnose(s *session.Session, path string) []Diagnostic {
 	return filtered
 }
 
-func scriptDiags(s *session.Session, path, src string) []Diagnostic {
-	res := parseOf(s, path, src)
-	srcLabel := sourceFor(path)
+func scriptDiags(s *session.Session, path string) []Diagnostic {
+	res := s.Parsed(path)
+	li := res.Lines()
 	out := make([]Diagnostic, 0, len(res.Errors))
 	for _, e := range res.Errors {
-		out = append(out, Diagnostic{
-			Range:    byteRange(src, e.Range.Start, e.Range.End),
-			Severity: sevError,
-			Message:  e.Message,
-			Source:   srcLabel,
-			Code:     string(e.Code),
-		})
+		out = append(out, diag(byteRange(li, e.Range.Start, e.Range.End),
+			sevError, e.Message, string(e.Code)))
 	}
 	return out
 }
 
 func locDiags(path, src string) []Diagnostic {
-	r := parseLoc(src)
+	r := loc.Parse(src)
+	li := jomini.NewLineIndex(src)
 	out := make([]Diagnostic, 0, len(r.Errors)+2)
 	for _, e := range r.Errors {
-		out = append(out, Diagnostic{
-			Range:    byteRange(src, e.Range.Start, e.Range.End),
-			Severity: locSeverity(e.Code),
-			Message:  e.Message,
-			Source:   srcLoc,
-			Code:     "loc-" + string(e.Code),
-		})
+		out = append(out, diag(byteRange(li, e.Range.Start, e.Range.End),
+			locSeverity(e.Code), e.Message, "loc-"+string(e.Code)))
 	}
-	if raw, err := os.ReadFile(path); err == nil && !parser.HasUTF8BOM(raw) {
-		out = append(out, Diagnostic{
-			Range:    Range{},
-			Severity: sevError,
-			Message:  "This localization file has no UTF-8 BOM; the game ignores it. Save as UTF-8 with BOM.",
-			Source:   srcLoc,
-			Code:     "missing-bom",
-		})
+	if !jomini.HasUTF8BOM([]byte(src)) {
+		out = append(out, diag(Range{}, sevError,
+			"This localization file has no UTF-8 BOM; the game ignores it. Save as UTF-8 with BOM.",
+			"missing-bom"))
 	}
 	fileLang := loc.LanguageFromFilename(path)
 	if r.Language != "" && fileLang != "" && !strings.EqualFold(r.Language, fileLang) {
 		rg := Range{}
 		if r.HeaderRange != nil {
-			rg = byteRange(src, r.HeaderRange.Start, r.HeaderRange.End)
+			rg = byteRange(li, r.HeaderRange.Start, r.HeaderRange.End)
 		}
-		out = append(out, Diagnostic{
-			Range:    rg,
-			Severity: sevError,
-			Message:  "Header l_" + r.Language + ": does not match filename _l_" + fileLang + ".yml.",
-			Source:   srcLoc,
-			Code:     "loc-header-mismatch",
-		})
+		out = append(out, diag(rg, sevError,
+			"Header l_"+r.Language+": does not match filename _l_"+fileLang+".yml.",
+			"loc-header-mismatch"))
 	}
-	rel := strings.ReplaceAll(path, "\\", "/")
-	if strings.Contains(rel, "/localisation/") {
-		out = append(out, Diagnostic{
-			Range:    Range{},
-			Severity: sevError,
-			Message:  "Folder is localisation/ — the game reads localization/.",
-			Source:   srcLoc,
-			Code:     "wrong-localization-folder",
-		})
+	if strings.Contains(strings.ReplaceAll(path, "\\", "/"), "/localisation/") {
+		out = append(out, diag(Range{}, sevError,
+			"Folder is localisation/ — the game reads localization/.",
+			"wrong-localization-folder"))
 	}
 	return out
 }
@@ -109,26 +90,20 @@ func locSeverity(code loc.ErrorCode) int {
 }
 
 func missingLocDiags(s *session.Session, path string) []Diagnostic {
-	idx := s.Index()
-	if idx == nil {
-		return nil
-	}
 	var out []Diagnostic
-	src := fileText(s, path)
-	for _, r := range idx.Refs {
-		if !session.SamePath(r.Path, path) || r.Kind != "loc" {
+	src := s.FileText(path)
+	var li *jomini.LineIndex
+	if s.KindFor(path) == "loc" {
+		li = jomini.NewLineIndex(src)
+	} else {
+		li = s.Parsed(path).Lines()
+	}
+	for _, r := range s.RefsInFile(path) {
+		if r.Kind != "loc" || locDefined(s, r.Key) {
 			continue
 		}
-		if locDefined(s, r.Key) {
-			continue
-		}
-		out = append(out, Diagnostic{
-			Range:    byteRange(src, r.Start, r.End),
-			Severity: sevWarning,
-			Message:  "Missing localization key \"" + r.Key + "\".",
-			Source:   sourceFor(path),
-			Code:     "missing-required-loc",
-		})
+		out = append(out, diag(byteRange(li, r.Start, r.End), sevWarning,
+			"Missing localization key \""+r.Key+"\".", "missing-required-loc"))
 	}
 	return out
 }
@@ -138,12 +113,10 @@ func descriptorDiags(s *session.Session, path string) []Diagnostic {
 	if root == "" {
 		return nil
 	}
-	want := descriptorPath(s.GameID, root)
+	want := game.DescriptorPath(s.GameID, root)
 	if fileExists(want) {
 		return nil
 	}
-	// Only attach to a file at the mod root (descriptor or any direct child)
-	// so every nested script file is not spammed.
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
 		return nil
@@ -155,11 +128,77 @@ func descriptorDiags(s *session.Session, path string) []Diagnostic {
 	if s.GameID == "vic3" || s.GameID == "eu5" {
 		msg = "Mod is missing .metadata/metadata.json."
 	}
-	return []Diagnostic{{
-		Range:    Range{},
-		Severity: sevWarning,
-		Message:  msg,
-		Source:   srcMod,
-		Code:     "missing-descriptor",
-	}}
+	return []Diagnostic{diag(Range{}, sevWarning, msg, "missing-descriptor")}
+}
+
+var ignoreRe = regexp.MustCompile(`(?i)#\s*pmt:ignore(-next-line)?\b(.*)`)
+
+type lineSuppression struct {
+	all   bool
+	codes map[string]bool
+}
+
+// Suppressions maps a 0-based line to what diagnostics are suppressed on it.
+type Suppressions map[int]lineSuppression
+
+func scanSuppressions(text string) Suppressions {
+	sup := Suppressions{}
+	if !strings.Contains(text, "pmt:ignore") {
+		return sup
+	}
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	for line, lineText := range strings.Split(text, "\n") {
+		sup.scanLine(lineText, line)
+	}
+	return sup
+}
+
+func (s Suppressions) scanLine(lineText string, line int) {
+	hash := strings.IndexByte(lineText, '#')
+	if hash < 0 {
+		return
+	}
+	m := ignoreRe.FindStringSubmatch(lineText[hash:])
+	if m == nil {
+		return
+	}
+	target := line
+	if m[1] != "" {
+		target = line + 1
+	}
+	s.merge(target, parseCodes(m[2]))
+}
+
+func (s Suppressions) Covers(line int, code string) bool {
+	ls, ok := s[line]
+	if !ok {
+		return false
+	}
+	return ls.all || (code != "" && ls.codes[code])
+}
+
+func (s Suppressions) merge(line int, codes []string) {
+	ls := s[line]
+	if len(codes) == 0 {
+		ls.all = true
+	} else if !ls.all {
+		if ls.codes == nil {
+			ls.codes = map[string]bool{}
+		}
+		for _, c := range codes {
+			ls.codes[c] = true
+		}
+	}
+	s[line] = ls
+}
+
+func parseCodes(rest string) []string {
+	var out []string
+	for _, tok := range strings.Fields(rest) {
+		if strings.HasPrefix(tok, "-") {
+			break
+		}
+		out = append(out, tok)
+	}
+	return out
 }

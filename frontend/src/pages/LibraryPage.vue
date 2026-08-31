@@ -2,12 +2,14 @@
 /**
  * Library page: all workspaces grouped by game, hero for active workspace.
  */
-import { computed, onMounted } from "vue";
+import { computed, onActivated } from "vue";
 import { useRouter } from "vue-router";
-import { useWorkspaceStore, GAME_OPTIONS } from "../stores/workspace";
-import { Workspace } from "@services/internal/repos/models";
+import { useWorkspaceStore } from "../stores/workspace";
+import { Workspace } from "@services/models";
 import GameIcon from "../components/GameIcon.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
+
+defineOptions({ name: "LibraryPage" });
 
 const router = useRouter();
 const ctx = useWorkspaceStore();
@@ -15,22 +17,7 @@ const ctx = useWorkspaceStore();
 const showWizardPrompt = computed(() => !ctx.loading && !ctx.hasWorkspaces);
 
 /** Workspaces grouped by game for sectioned library browsing. */
-const sections = computed(() =>
-  GAME_OPTIONS.map((g) => ({
-    gameId: g.value,
-    label: g.label,
-    workspaces: ctx.workspaces.filter((ws) => ws.gameId === g.value),
-  })).filter((s) => s.workspaces.length > 0),
-);
-
-/** Parse tags JSON safely. */
-function parseTags(ws: Workspace): string[] {
-  try {
-    return JSON.parse(ws.tags || "[]") as string[];
-  } catch {
-    return [];
-  }
-}
+const sections = computed(() => ctx.workspacesByGame);
 
 /** Open a workspace in the IDE view. */
 function openWorkspace(ws: Workspace): void {
@@ -43,7 +30,7 @@ function createWorkspace(): void {
   void router.push({ name: "wizard" });
 }
 
-onMounted(() => {
+onActivated(() => {
   void ctx.refresh();
 });
 </script>
@@ -110,9 +97,9 @@ onMounted(() => {
               class="mt-2"
               :workspace-id="ctx.activeWorkspace.id"
             />
-            <div v-if="parseTags(ctx.activeWorkspace).length" class="mt-1 flex flex-wrap gap-1">
+            <div v-if="ctx.activeWorkspace.tags?.length" class="mt-1 flex flex-wrap gap-1">
               <UBadge
-                v-for="tag in parseTags(ctx.activeWorkspace)"
+                v-for="tag in ctx.activeWorkspace.tags"
                 :key="tag"
                 color="secondary"
                 variant="subtle"
@@ -127,7 +114,8 @@ onMounted(() => {
 
       <div v-for="section in sections" :key="section.gameId" class="mb-6">
         <h2
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold tracking-wide text-muted uppercase"
+          class="mb-2 flex items-center gap-1.5 text-sm font-semibold
+            tracking-wide text-muted uppercase"
         >
           <GameIcon :game-id="section.gameId" size="md" />
           {{ section.label }}
@@ -160,9 +148,9 @@ onMounted(() => {
               <div class="space-y-1 text-xs text-muted">
                 <p v-if="ws.installId">Install configured</p>
                 <p v-else class="text-warning">No install set</p>
-                <div v-if="parseTags(ws).length" class="flex flex-wrap gap-1">
+                <div v-if="ws.tags?.length" class="flex flex-wrap gap-1">
                   <UBadge
-                    v-for="tag in parseTags(ws)"
+                    v-for="tag in ws.tags"
                     :key="tag"
                     color="secondary"
                     variant="subtle"
