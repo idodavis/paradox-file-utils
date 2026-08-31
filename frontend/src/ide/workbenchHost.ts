@@ -30,7 +30,9 @@ import getQuickAccessServiceOverride from "@codingame/monaco-vscode-quickaccess-
 import getConfigurationServiceOverride, {
   initUserConfiguration,
 } from "@codingame/monaco-vscode-configuration-service-override";
-import getKeybindingsServiceOverride from "@codingame/monaco-vscode-keybindings-service-override";
+import getKeybindingsServiceOverride, {
+  initUserKeybindings,
+} from "@codingame/monaco-vscode-keybindings-service-override";
 import getModelServiceOverride from "@codingame/monaco-vscode-model-service-override";
 import getNotificationServiceOverride from "@codingame/monaco-vscode-notifications-service-override";
 import getDialogsServiceOverride from "@codingame/monaco-vscode-dialogs-service-override";
@@ -97,6 +99,15 @@ export type IdePartRefs = {
 
 const WS_ID = "pmt-app-workspace";
 const WS_FILE = monaco.Uri.file("/pmt.code-workspace");
+
+/**
+ * Space is bound to list.toggleExpand when listFocus (default true). The
+ * editor textarea still gets letters, but Space is swallowed. Unbind it.
+ */
+const EDITOR_SPACE_KEYBINDINGS = JSON.stringify([
+  { key: "space", command: "-list.toggleExpand" },
+  { key: "space", command: "-list.stickyScrolltoggleExpand" },
+]);
 
 /** Command palette entries owned by Nuxt / the app workspace, not the workbench. */
 const HIDDEN_PALETTE_COMMANDS = [
@@ -235,6 +246,7 @@ function constructOptions(): IWorkbenchConstructionOptions {
       "workbench.activity.showAccounts": false,
       "editor.semanticHighlighting.enabled": false,
       "editor.wordBasedSuggestions": "off",
+      "editor.acceptSuggestionOnCommitCharacter": false,
     },
   };
 }
@@ -386,11 +398,15 @@ async function runInitialize(theme: string): Promise<void> {
         "workbench.startupEditor": "none",
         "window.title": "PMT${separator}${activeEditorShort}",
         "files.autoSave": "off",
+        "editor.acceptSuggestionOnCommitCharacter": false,
       },
       null,
       2,
     ),
   );
+  if (!servicesInitialized) {
+    await initUserKeybindings(EDITOR_SPACE_KEYBINDINGS);
+  }
 
   const options = constructOptions();
   if (servicesInitialized) {

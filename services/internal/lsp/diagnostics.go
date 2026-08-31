@@ -2,6 +2,7 @@
 package lsp
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -57,7 +58,7 @@ func locDiags(path, src string) []Diagnostic {
 		out = append(out, diag(byteRange(li, e.Range.Start, e.Range.End),
 			locSeverity(e.Code), e.Message, "loc-"+string(e.Code)))
 	}
-	if !jomini.HasUTF8BOM([]byte(src)) {
+	if !locHasBOM(path, src) {
 		out = append(out, diag(Range{}, sevError,
 			"This localization file has no UTF-8 BOM; the game ignores it. Save as UTF-8 with BOM.",
 			"missing-bom"))
@@ -78,6 +79,16 @@ func locDiags(path, src string) []Diagnostic {
 			"wrong-localization-folder"))
 	}
 	return out
+}
+
+// locHasBOM reports a UTF-8 BOM in the buffer or on disk. FileText/Monaco
+// strip the BOM, so vanilla loc (all BOM on disk) would false-positive otherwise.
+func locHasBOM(path, src string) bool {
+	if strings.HasPrefix(src, "\uFEFF") {
+		return true
+	}
+	raw, err := os.ReadFile(path)
+	return err == nil && jomini.HasUTF8BOM(raw)
 }
 
 func locSeverity(code loc.ErrorCode) int {

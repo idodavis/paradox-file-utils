@@ -65,12 +65,10 @@ const selectedInstall = computed(() =>
 const canContinue = computed(() => {
   switch (step.value) {
     case 1: return !!selectedGame.value;
-    case 2:
-      return !!selectedInstallId.value
-        || (!!newInstallPath.value && !!newInstallName.value);
-    case 3:
-    case 5: return true;
+    case 2: return !!selectedInstallId.value;
+    case 3: return true;
     case 4: return !!workspaceName.value.trim();
+    case 5: return !!selectedInstallId.value;
     default: return false;
   }
 });
@@ -201,7 +199,17 @@ function removeModPath(index: number): void {
   modPaths.value.splice(index, 1);
 }
 
-function nextStep(): void { step.value++; }
+/** Move the stepper; later steps stay locked until an install is selected. */
+function onStep(v: number | string | undefined): void {
+  if (typeof v !== "number") return;
+  if (v > 2 && !selectedInstallId.value) {
+    step.value = 2;
+    return;
+  }
+  step.value = v;
+}
+
+function nextStep(): void { onStep(step.value + 1); }
 function prevStep(): void { step.value--; }
 
 const {
@@ -210,7 +218,13 @@ const {
   error: createError,
 } = useMutation({
   mutation: async () => {
-    if (!workspaceName.value.trim() || !selectedInstallId.value) return;
+    if (!workspaceName.value.trim()) {
+      throw new Error("Workspace name is required.");
+    }
+    if (!selectedInstallId.value) {
+      step.value = 2;
+      throw new Error("Select or add a game install before creating.");
+    }
     const tagsArray = tagsText.value
       .split(",")
       .map((t) => t.trim())
@@ -269,7 +283,7 @@ const error = computed(
         <h1 class="mb-6 text-center text-xl font-bold">Create Workspace</h1>
         <UAlert v-if="error" color="error" variant="subtle" :description="error" class="mb-4" />
         <UStepper :model-value="step" :items="stepItems" class="mb-6"
-          @update:model-value="(v) => { if (typeof v === 'number') step = v; }" />
+          @update:model-value="onStep" />
 
         <UCard>
           <template v-if="step === 1">
@@ -282,6 +296,9 @@ const error = computed(
           <template v-else-if="step === 2">
             <div class="space-y-4">
               <h2 class="font-semibold">Game Install</h2>
+              <p class="text-sm text-muted">
+                Select an existing install or click Add Install before continuing.
+              </p>
               <URadioGroup
                 v-if="installs.length"
                 v-model="selectedInstallId"
@@ -412,6 +429,13 @@ const error = computed(
           <template v-else-if="step === 5">
             <div class="space-y-4">
               <h2 class="font-semibold">Staging Directory</h2>
+              <UAlert
+                v-if="!selectedInstallId"
+                color="warning"
+                variant="subtle"
+                title="No game install selected"
+                description="Go back to Install and select or add an install before creating."
+              />
               <p class="text-sm text-muted">
                 Where merged/patched files are staged. Leave empty for the default location.
               </p>

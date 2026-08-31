@@ -74,13 +74,24 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     try {
       await MarkBrokenPaths();
       workspaces.value = (await ListWorkspaces("")) ?? [];
-      if (activeWorkspaceId.value) {
-        await loadActiveWorkspace();
-      } else if (workspaces.value.length) {
-        const match =
-          workspaces.value.find((w) => w.gameId === currentGameId.value) ??
-          workspaces.value[0];
-        if (match?.gameId) currentGameId.value = match.gameId as GameId;
+      const id = activeWorkspaceId.value;
+      const listed = id
+        ? workspaces.value.find((w) => w.id === id)
+        : undefined;
+      if (listed) {
+        activeWorkspace.value = listed;
+        workspaceMods.value = listed.mods ?? [];
+        if (listed.gameId) currentGameId.value = listed.gameId as GameId;
+      } else {
+        if (id) activeWorkspaceId.value = "";
+        activeWorkspace.value = null;
+        workspaceMods.value = [];
+        if (workspaces.value.length) {
+          const match =
+            workspaces.value.find((w) => w.gameId === currentGameId.value) ??
+            workspaces.value[0];
+          if (match?.gameId) currentGameId.value = match.gameId as GameId;
+        }
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
@@ -101,6 +112,13 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     const token = ++loadToken;
     inflightId = id;
     inflight = (async () => {
+      const listed = workspaces.value.find((w) => w.id === id);
+      if (listed) {
+        if (token !== loadToken) return;
+        activeWorkspace.value = listed;
+        workspaceMods.value = listed.mods ?? [];
+        return;
+      }
       try {
         const [ws, mods] = await Promise.all([
           GetWorkspace(id),
@@ -111,6 +129,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
         workspaceMods.value = mods ?? [];
       } catch {
         if (token !== loadToken) return;
+        if (activeWorkspaceId.value === id) activeWorkspaceId.value = "";
         activeWorkspace.value = null;
         workspaceMods.value = [];
       }

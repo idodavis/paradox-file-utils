@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/parser/loc"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -17,7 +16,7 @@ func CodeActions(s *session.Session, path string) []CodeAction {
 	var out []CodeAction
 	if s.KindFor(path) == "loc" {
 		src := s.FileText(path)
-		if src != "" && !jomini.HasUTF8BOM([]byte(src)) {
+		if src != "" && !locHasBOM(path, src) {
 			out = append(out, CodeAction{
 				Title: "Add UTF-8 BOM",
 				Edit: &WorkspaceEdit{Changes: map[string][]TextEdit{

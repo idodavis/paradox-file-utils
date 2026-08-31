@@ -129,6 +129,24 @@ func TestDiagnose(t *testing.T) {
 	}
 }
 
+func TestLocBOMDiag(t *testing.T) {
+	const body = "l_english:\n k:0 \"v\"\n"
+	rel := "localization/english/a_l_english.yml"
+	s, root := buildSession(t, "ck3", map[string]string{rel: body}, nil, nil)
+	f := filepath.Join(root, filepath.FromSlash(rel))
+	if !hasDiag(Diagnose(s, f), "missing-bom") {
+		t.Fatal("want missing-bom when disk has no BOM")
+	}
+	raw := append([]byte{0xEF, 0xBB, 0xBF}, []byte(body)...)
+	if err := os.WriteFile(f, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.DidOpen(f, body)
+	if hasDiag(Diagnose(s, f), "missing-bom") {
+		t.Fatal("disk BOM must not warn")
+	}
+}
+
 func TestHover(t *testing.T) {
 	vfile := write(t, t.TempDir(), "localization/english/inventory_l_english.yml",
 		"l_english:\n type:0 \"Type\"\n")
