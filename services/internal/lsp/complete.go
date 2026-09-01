@@ -4,6 +4,7 @@ package lsp
 import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
+	"paradox-modding-tools/services/internal/parser/loc"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -28,7 +29,7 @@ func Complete(s *session.Session, path string, line, col int) []CompletionItem {
 	if at.word != "" && at.start < at.off {
 		prefix = at.src[at.start:at.off]
 	}
-	items := scriptItems(s, path, at.kind, prefix)
+	items := scriptItems(s, path, at, prefix)
 	Rank(s, at.kind, items)
 	return capComplete(items)
 }
@@ -73,6 +74,13 @@ func item(label, detail string) CompletionItem {
 	return CompletionItem{Label: label, Detail: detail}
 }
 
+func documented(s *session.Session, label, detail, kind string) CompletionItem {
+	return CompletionItem{
+		Label: label, Detail: detail,
+		Documentation: s.FieldDoc(label, kind),
+	}
+}
+
 func modItems() []CompletionItem {
 	out := make([]CompletionItem, 0, len(game.DescriptorModKeys))
 	for _, k := range game.DescriptorModKeys {
@@ -104,7 +112,7 @@ func locItems(s *session.Session, prefix string) []CompletionItem {
 			return
 		}
 		seen[k] = true
-		out = append(out, item(k, "loc key"))
+		out = append(out, documented(s, k, "loc key", ""))
 	}
 	for _, k := range s.LocKeys(false) {
 		add(k)
@@ -115,7 +123,32 @@ func locItems(s *session.Session, prefix string) []CompletionItem {
 	return out
 }
 
-func scriptItems(s *session.Session, path, kind, prefix string) []CompletionItem {
+func scriptItems(s *session.Session, path string, at atPos, prefix string) []CompletionItem {
+	if !at.inKey {
+		return valueItems(s, at.slotKey, prefix)
+	}
+	slot := game.ScriptSlot(at.slotKey)
+	switch slot {
+	case "trigger":
+		return vocabAndDefs(s, prefix, "trigger", "scripted_trigger")
+	case "effect":
+		return vocabAndDefs(s, prefix, "effect", "scripted_effect")
+	default:
+		return structureItems(s, path, at.kind, prefix)
+	}
+}
+
+func valueItems(s *session.Session, parentKey, prefix string) []CompletionItem {
+	if fk := game.FireKind(parentKey); fk != "" {
+		return defsOfType(s, prefix, fk)
+	}
+	if loc.Classify(parentKey) != loc.PropNone {
+		return locItems(s, prefix)
+	}
+	return nil
+}
+
+func structureItems(s *session.Session, path, kind, prefix string) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
 	add := func(label, detail string) {
@@ -123,34 +156,68 @@ func scriptItems(s *session.Session, path, kind, prefix string) []CompletionItem
 			return
 		}
 		seen[label] = true
-		out = append(out, item(label, detail))
+		out = append(out, documented(s, label, detail, kind))
 	}
 	for _, k := range s.Structures(kind) {
 		add(k, kind)
 	}
-	for _, pair := range [][2]string{{"effect", "effect"}, {"trigger", "trigger"}, {"vocabulary", "script"}} {
-		for _, k := range s.Vocab(pair[0]) {
-			add(k, pair[1])
-			if len(out) >= maxComplete {
-				return out
-			}
+	if s.KindFor(path) != "gui" {
+		return out
+	}
+	for _, k := range s.Vocab("gui_type") {
+		add(k, "gui type")
+	}
+	for _, k := range s.Vocab("gui_prop") {
+		add(k, "gui")
+		if len(out) >= maxComplete {
+			break
 		}
 	}
-	if s.KindFor(path) == "gui" {
-		for _, k := range s.Vocab("gui_type") {
-			add(k, "gui type")
+	return out
+}
+
+func vocabAndDefs(s *session.Session, prefix, vocabKind, defType string) []CompletionItem {
+	seen := map[string]bool{}
+	var out []CompletionItem
+	add := func(label, detail string) {
+		if len(out) >= maxComplete || label == "" || seen[label] || !lowerPrefix(label, prefix) {
+			return
 		}
-		for _, k := range s.Vocab("gui_prop") {
-			add(k, "gui")
-			if len(out) >= maxComplete {
-				return out
-			}
-		}
+		seen[label] = true
+		out = append(out, documented(s, label, detail, ""))
 	}
-	for _, d := range s.FindDefs(prefix, maxComplete-len(out), true, true) {
-		add(d.Key, d.Type)
+	for _, k := range s.Vocab(vocabKind) {
+		add(k, vocabKind)
 		if len(out) >= maxComplete {
 			return out
+		}
+	}
+	for _, d := range s.FindDefs(prefix, maxComplete, true, true) {
+		if game.CanonicalKind(d.Type) != defType {
+			continue
+		}
+		add(d.Key, d.Type)
+		if len(out) >= maxComplete {
+			break
+		}
+	}
+	return out
+}
+
+func defsOfType(s *session.Session, prefix, defType string) []CompletionItem {
+	seen := map[string]bool{}
+	var out []CompletionItem
+	for _, d := range s.FindDefs(prefix, maxComplete, true, true) {
+		if game.CanonicalKind(d.Type) != defType || d.Key == "" || seen[d.Key] {
+			continue
+		}
+		if !lowerPrefix(d.Key, prefix) {
+			continue
+		}
+		seen[d.Key] = true
+		out = append(out, documented(s, d.Key, d.Type, d.Type))
+		if len(out) >= maxComplete {
+			break
 		}
 	}
 	return out

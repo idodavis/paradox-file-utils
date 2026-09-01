@@ -108,6 +108,8 @@ func TestQueries(t *testing.T) {
 	origin, _, located := s.Locate(ev)
 	must(t, located && origin == "mod" && s.DisplayRel(ev) != "" && s.OriginName("mod") == "M",
 		"locate")
+	must(t, s.OriginName("") == "Crusader Kings III" &&
+		s.OriginName("vanilla") == "Crusader Kings III", "OriginName vanilla")
 	must(t, len(s.Mods()) == 1 && s.KindFor(ev) != "", "Mods/KindFor")
 	picker, kinds, _ := s.GraphCatalog(nil)
 	must(t, kinds["t.1"] != "" || picker["t.1"] != "", "GraphCatalog")
@@ -115,10 +117,10 @@ func TestQueries(t *testing.T) {
 		s.FieldDoc("immediate", "event") != "", "Structures/Vocab/FieldDoc")
 	_, effects, _ := s.MemberSets("event")
 	must(t, effects != nil, "MemberSets")
-	inst, _, ver := s.CacheInfo()
+	inst, _, ver, _ := s.CacheInfo()
 	must(t, inst == "/game" && ver == "1.16", "CacheInfo")
 	_ = s.Contests([]string{"mod"})
 	s.ReplaceCache(&catalog.VanillaCache{InstallPath: "/y", GameVersion: "2"})
-	inst, _, _ = s.CacheInfo()
+	inst, _, _, _ = s.CacheInfo()
 	must(t, inst == "/y", "ReplaceCache")
 }

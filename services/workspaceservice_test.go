@@ -1,0 +1,218 @@
+// workspaceservice_test.go covers mod add/reorder/remove and workspace prefs.
+
+package services
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func testWorkspaceService(t *testing.T) *WorkspaceService {
+	t.Helper()
+	return &WorkspaceService{
+		Store: newStore(filepath.Join(t.TempDir(), "config.json")),
+	}
+}
+
+func seedWorkspace(t *testing.T, s *Store, id, installID string) {
+	t.Helper()
+	if err := s.Mutate(func(c *Config) error {
+		c.Workspaces = append(c.Workspaces, Workspace{
+			ID: id, GameID: "ck3", Name: "Test", InstallID: installID,
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
+	t.Parallel()
+	svc := testWorkspaceService(t)
+	seedWorkspace(t, svc.Store, "ws1", "inst1")
+	modDir := t.TempDir()
+
+	a, err := svc.AddWorkspaceMod("ws1", "Alpha", filepath.Join(modDir, "a"), []string{"x"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := svc.AddWorkspaceMod("ws1", "Beta", filepath.Join(modDir, "b"), nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := svc.ListWorkspaceMods("ws1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 2 || listed[0].ID != a.ID || listed[1].ID != b.ID {
+		t.Fatalf("initial order: %+v", listed)
+	}
+	if listed[0].SortOrder != 0 || listed[1].SortOrder != 1 {
+		t.Fatalf("sort orders: %d %d", listed[0].SortOrder, listed[1].SortOrder)
+	}
+
+	if err := svc.ReorderWorkspaceMods("ws1", []string{b.ID, a.ID}); err != nil {
+		t.Fatal(err)
+	}
+	listed, err = svc.ListWorkspaceMods("ws1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 2 || listed[0].ID != b.ID || listed[1].ID != a.ID {
+		t.Fatalf("reordered: %+v", listed)
+	}
+
+	if err := svc.RemoveWorkspaceMod("ws1", b.ID); err != nil {
+		t.Fatal(err)
+	}
+	listed, err = svc.ListWorkspaceMods("ws1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].ID != a.ID {
+		t.Fatalf("after remove: %+v", listed)
+	}
+}
+
+func TestWorkspaceService_ReorderIncomplete(t *testing.T) {
+	t.Parallel()
+	svc := testWorkspaceService(t)
+	seedWorkspace(t, svc.Store, "ws1", "")
+	a, err := svc.AddWorkspaceMod("ws1", "A", t.TempDir(), nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddWorkspaceMod("ws1", "B", t.TempDir(), nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ReorderWorkspaceMods("ws1", []string{a.ID}); err == nil {
+		t.Fatal("want incomplete-set error")
+	}
+}
+
+func TestWorkspaceService_PrefsAndIdeSession(t *testing.T) {
+	t.Parallel()
+	svc := testWorkspaceService(t)
+	seedWorkspace(t, svc.Store, "ws1", "inst1")
+
+	if err := svc.UpdateWorkspacePrefs("ws1", true, "event-graph"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdateWorkspacePrefs("ws1", false, "not-a-tool"); err == nil {
+		t.Fatal("want invalid default tool")
+	}
+	if err := svc.SaveIdeSession("ws1", []string{"/a.txt"}, "/a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := svc.GetWorkspace("ws1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ws.ResetIdeOnOpen || ws.DefaultTool != "event-graph" {
+		t.Fatalf("prefs: %+v", ws)
+	}
+	if len(ws.IdeOpenFiles) != 1 || ws.IdeActiveFile != "/a.txt" {
+		t.Fatalf("ide session: %+v", ws)
+	}
+}
+
+func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
+	t.Parallel()
+	svc := testWorkspaceService(t)
+	install := t.TempDir()
+	staging := t.TempDir()
+	modDir := t.TempDir()
+	if err := svc.Store.Mutate(func(c *Config) error {
+		c.Installs = append(c.Installs, GameInstall{
+			ID: "inst1", GameID: "ck3", Name: "My CK3 nickname", Path: install,
+		})
+		c.Workspaces = append(c.Workspaces, Workspace{
+			ID: "ws1", GameID: "ck3", Name: "Test",
+			InstallID: "inst1", StagingDir: staging,
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddWorkspaceMod("ws1", "Alpha", modDir, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	roots, err := svc.GetIdeRoots("ws1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roots) != 3 {
+		t.Fatalf("len %d %+v", len(roots), roots)
+	}
+	if roots[0].Kind != "mod" || roots[1].Kind != "staging" || roots[2].Kind != "game" {
+		t.Fatalf("kinds %+v", roots)
+	}
+	if roots[2].Label != "Crusader Kings III" || roots[2].OriginId != "vanilla" {
+		t.Fatalf("game root %+v", roots[2])
+	}
+}
+
+func TestGetIdeRoots_EmptyID(t *testing.T) {
+	t.Parallel()
+	svc := testWorkspaceService(t)
+	if _, err := svc.GetIdeRoots(""); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestWorkspaceService_DeleteWorkspace(t *testing.T) {
+	t.Parallel()
+	svc := testWorkspaceService(t)
+	if err := svc.DeleteWorkspace(""); err == nil {
+		t.Fatal("empty id")
+	}
+	seedWorkspace(t, svc.Store, "ws1", "inst1")
+	if _, err := svc.AddWorkspaceMod("ws1", "A", t.TempDir(), nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddWorkspaceMod("ws1", "B", t.TempDir(), nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteWorkspace("ws1"); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := svc.ListWorkspaces("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 0 {
+		t.Fatalf("listed: %+v", listed)
+	}
+	if err := svc.DeleteWorkspace("ws1"); err == nil {
+		t.Fatal("want not found")
+	}
+}
+
+func TestWorkspaceService_CreateMod(t *testing.T) {
+	t.Parallel()
+	svc := testWorkspaceService(t)
+	parent := t.TempDir()
+	root, err := svc.CreateMod("ck3", parent, "Hello Mod", "english", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "descriptor.mod")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateMod("ck3", parent, "Hello Mod", "english", "", "", ""); err == nil {
+		t.Fatal("want already-exists")
+	}
+}
+
+func TestWorkspaceService_CountWorkspacesUsingInstall(t *testing.T) {
+	t.Parallel()
+	svc := testWorkspaceService(t)
+	seedWorkspace(t, svc.Store, "ws1", "inst1")
+	seedWorkspace(t, svc.Store, "ws2", "inst1")
+	seedWorkspace(t, svc.Store, "ws3", "inst2")
+	got := svc.CountWorkspacesUsingInstall("inst1")
+	if len(got) != 2 {
+		t.Fatalf("got %v", got)
+	}
+}

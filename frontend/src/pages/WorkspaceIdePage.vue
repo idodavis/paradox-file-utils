@@ -8,8 +8,9 @@ import { useQuery } from "@pinia/colada";
 import { useWorkspaceStore } from "../stores/workspace";
 import { setWorkbenchRoots } from "../ide/workbenchHost";
 import { currentWorkbenchTheme } from "../ide/colorThemes";
-import { buildIdeRoots } from "../ide/workspaceFolders";
+import { GetIdeRoots, GetWorkspace } from "@services/workspaceservice";
 import { EnsureSession } from "@services/sessionservice";
+import type { IdeRoot } from "../ide/fsBridge";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 
@@ -23,15 +24,23 @@ const workspaceId = computed(() => String(route.params.id ?? ""));
 const { error, isPending } = useQuery({
   key: () => ["ide-boot", workspaceId.value],
   query: async () => {
+    const id = String(route.params.id ?? "");
+    if (!id) return true;
     await ws.loadActiveWorkspace();
-    if (workspaceId.value) await EnsureSession(workspaceId.value);
-    const roots = await buildIdeRoots(workspaceId.value);
+    await EnsureSession(id);
+    const rec = await GetWorkspace(id);
+    const roots = ((await GetIdeRoots(id)) ?? []) as IdeRoot[];
     if (!roots.length) {
       throw new Error(
         "No game, mod, or staging paths available for this workspace.",
       );
     }
-    await setWorkbenchRoots(roots, currentWorkbenchTheme());
+    await setWorkbenchRoots(roots, currentWorkbenchTheme(), {
+      workspaceId: id,
+      persistTabs: !rec?.resetIdeOnOpen,
+      openFiles: rec?.ideOpenFiles ?? [],
+      activeFile: rec?.ideActiveFile ?? "",
+    });
     return true;
   },
   enabled: () => !!workspaceId.value,

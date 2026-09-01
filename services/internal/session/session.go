@@ -348,7 +348,7 @@ func (s *Session) LocSite(key string) (file string, line int, origin string, ok 
 	}
 	if s.vanillaLoc != nil {
 		if site, hit := s.vanillaLoc.Sites[key]; hit {
-			return site.File, site.Line, "vanilla", true
+			return site.File, site.Line, game.OriginVanilla, true
 		}
 	}
 	return "", 0, "", false
@@ -522,7 +522,7 @@ func (s *Session) DisplayRel(path string) string {
 	if _, rel, ok := s.Locate(path); ok {
 		return filepath.ToSlash(rel)
 	}
-	if inst, _, _ := s.CacheInfo(); inst != "" {
+	if inst, _, _, _ := s.CacheInfo(); inst != "" {
 		if rel, err := filepath.Rel(inst, path); err == nil {
 			return filepath.ToSlash(rel)
 		}
@@ -530,10 +530,13 @@ func (s *Session) DisplayRel(path string) string {
 	return filepath.ToSlash(path)
 }
 
-// OriginName is the mod display name, "Vanilla" for vanilla, or the origin id.
+// OriginName is the mod display name, or the game title for vanilla.
 func (s *Session) OriginName(origin string) string {
-	if origin == "" {
-		return "Vanilla"
+	if origin == "" || origin == game.OriginVanilla {
+		if g := game.Get(s.GameID); g != nil && g.Name != "" {
+			return g.Name
+		}
+		return "Game"
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -618,7 +621,7 @@ func (s *Session) GraphCatalog(origins []string) (
 		kinds[d.Key] = ck
 		want := d.Origin
 		if want == "" {
-			want = "vanilla"
+			want = game.OriginVanilla
 		}
 		if len(origins) == 0 || slices.Contains(origins, want) {
 			if prev, ok := picker[d.Key]; !ok || prev == "" || d.Origin != "" {
@@ -770,14 +773,14 @@ func (s *Session) FieldDoc(key, kind string) string {
 	return s.cache.FieldDocs[lk]
 }
 
-// CacheInfo returns vanilla install path, scan timestamp, and game version.
-func (s *Session) CacheInfo() (installPath, scannedAt, gameVersion string) {
+// CacheInfo returns vanilla install path, scan timestamp, game version, and install id.
+func (s *Session) CacheInfo() (installPath, scannedAt, gameVersion, installID string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.cache == nil {
-		return "", "", ""
+		return "", "", "", ""
 	}
-	return s.cache.InstallPath, s.cache.ScannedAt, s.cache.GameVersion
+	return s.cache.InstallPath, s.cache.ScannedAt, s.cache.GameVersion, s.cache.InstallID
 }
 
 // Parsed returns the buffer Result if open, else parses FileText.

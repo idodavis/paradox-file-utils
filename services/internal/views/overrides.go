@@ -14,6 +14,7 @@ type OverrideSite struct {
 	Origin     string `json:"origin"`
 	OriginName string `json:"originName,omitempty"`
 	File       string `json:"file"`
+	Rel        string `json:"rel,omitempty"`
 	Line       int    `json:"line"`
 }
 
@@ -47,6 +48,7 @@ func OverrideRows(s *session.Session) []OverrideRow {
 				Origin:     d.Origin,
 				OriginName: s.OriginName(d.Origin),
 				File:       d.Path,
+				Rel:        s.DisplayRel(d.Path),
 				Line:       d.Line,
 			})
 		}

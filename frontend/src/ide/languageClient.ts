@@ -22,6 +22,7 @@ import {
   CodeActions,
 } from "@services/ideservice";
 import type { WorkspaceEdit as LspWorkspaceEdit, Location as LspLocation, HoverResult } from "@services/internal/lsp/models";
+import { originHexByOriginId } from "./rootDecorations";
 
 const LANGS = ["paradox", "paradox-gui", "paradox-loc", "paradox-info", "paradox-mod"];
 
@@ -86,21 +87,41 @@ function safeLine(doc: vscode.TextDocument, line: number): string {
   return doc.lineAt(line).text;
 }
 
-/** Plaintext hover card: Go contents plus origin · rel:line. */
-function hoverText(h: HoverResult): string {
-  const site = hoverSiteLine(h);
-  const body = h.contents ?? "";
-  return site ? `${body}\n\n${site}` : body;
-}
-
 /** Location line from Go origin + rel (1-based line). */
-function hoverSiteLine(h: HoverResult): string {
-  const origin = h.origin ?? "";
+function hoverSiteMarkdown(h: HoverResult): string {
+  const origin = h.origin || "vanilla";
   const rel = h.rel ?? "";
   if (!origin && !rel) return "";
-  const label = origin || "vanilla";
-  if (!rel) return label;
-  return `${label} · ${rel}:${(h.line ?? 0) + 1}`;
+  const raw = originHexByOriginId(origin);
+  const hex = /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : "#5B9A8B";
+  const icon = origin === "vanilla" || origin === "staging"
+    ? "$(root-folder)"
+    : "$(package)";
+  const label = escHtml(origin);
+  const site = `<span style="color:${hex};">${icon} ${label}</span>`;
+  const pathBit = hoverOpenLink(h, rel);
+  return pathBit ? `${site} · ${pathBit}` : site;
+}
+
+/** Markdown command link that opens the def file. */
+function hoverOpenLink(h: HoverResult, rel: string): string {
+  const text = escHtml(rel || h.path || "");
+  if (!text) return "";
+  if (!h.path) return text;
+  const target = vscode.Uri.file(h.path).toString();
+  const args: unknown[] = h.col
+    ? [target, {
+        selection: {
+          startLineNumber: (h.line ?? 0) + 1,
+          startColumn: (h.col ?? 0) + 1,
+        },
+      }]
+    : [target];
+  return `[${rel || text}](command:vscode.open?${encodeURIComponent(JSON.stringify(args))})`;
+}
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function applyWorkspaceEdit(
@@ -225,7 +246,14 @@ export function registerLanguageClient(
         const p = positionUtf8(doc, pos);
         const h = await Hover(id, pathOf(doc), p.line, p.character);
         if (!h?.contents) return null;
-        return new vscode.Hover(hoverText(h));
+        const md = new vscode.MarkdownString("", true);
+        md.supportHtml = true;
+        md.supportThemeIcons = true;
+        md.isTrusted = { enabledCommands: ["vscode.open"] };
+        md.appendMarkdown(h.contents);
+        const site = hoverSiteMarkdown(h);
+        if (site) md.appendMarkdown(`\n\n---\n\n${site}`);
+        return new vscode.Hover(md);
       },
     }),
   );
@@ -246,6 +274,9 @@ export function registerLanguageClient(
               vscode.CompletionItemKind.Value,
             );
             c.detail = it.detail;
+            if (it.documentation) {
+              c.documentation = it.documentation;
+            }
             return c;
           });
         },
@@ -253,6 +284,8 @@ export function registerLanguageClient(
       ".",
       "[",
       ":",
+      "=",
+      "{",
     ),
   );
   registerLangProviders(subs, (lang) =>

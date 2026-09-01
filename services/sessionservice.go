@@ -114,10 +114,16 @@ func (s *SessionService) buildSession(id string) (*session.Session, error) {
 			ver = "latest"
 		}
 		cache, _ = catalog.LoadCache(inst.ID, ver)
-		vloc, _ = catalog.LoadVanillaLoc(inst.ID, ver, lang)
+		loaded, locErr := catalog.LoadVanillaLoc(inst.ID, ver, lang)
+		if locErr != nil && !os.IsNotExist(locErr) {
+			return nil, locErr
+		}
+		vloc = loaded
 	}
 	inputs := make([]catalog.ModInput, 0, len(ws.Mods))
-	for i, m := range ws.Mods {
+	mods := append([]WorkspaceMod(nil), ws.Mods...)
+	sortWorkspaceMods(mods)
+	for i, m := range mods {
 		if m.IsBroken {
 			continue
 		}
@@ -140,6 +146,9 @@ func (s *SessionService) sess(id string) (*session.Session, error) {
 // EnsureSession builds or returns the live session for workspaceID.
 func (s *SessionService) EnsureSession(workspaceID string) (err error) {
 	defer recoverErr(&err)
+	if workspaceID == "" {
+		return fmt.Errorf("workspace id is required")
+	}
 	_, err = s.sess(workspaceID)
 	return err
 }
@@ -237,6 +246,9 @@ func (s *SessionService) GetModelStatus(workspaceID string) (_ *ModelStatus, err
 // GetLanguageHealth returns install/cache/session status for the workspace.
 func (s *SessionService) GetLanguageHealth(workspaceID string) (_ *LanguageHealth, err error) {
 	defer recoverErr(&err)
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace id is required")
+	}
 	h := &LanguageHealth{}
 	var ws Workspace
 	var inst *GameInstall
@@ -271,7 +283,7 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (_ *LanguageHealt
 	if live := s.pool().Get(workspaceID); live != nil {
 		h.IndexReady = true
 		h.DefCount = live.DefCount()
-		_, scanned, ver := live.CacheInfo()
+		_, scanned, ver, _ := live.CacheInfo()
 		if scanned != "" {
 			h.ScannedAt = scanned
 		}

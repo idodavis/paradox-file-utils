@@ -8,11 +8,14 @@
  * on the outer wrapper.
  */
 import { onMounted, ref } from "vue";
+import { useIdeShellStore } from "../stores/ideShell";
 
 defineProps<{
   visible: boolean;
   theme?: string;
 }>();
+
+const ideShell = useIdeShellStore();
 
 const root = ref<HTMLElement | null>(null);
 const activityBar = ref<HTMLElement | null>(null);
@@ -39,7 +42,10 @@ onMounted(async () => {
 <template>
   <div
     class="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-default"
-    :class="visible ? 'z-10' : 'z-0 pointer-events-none'"
+    :class="[
+      visible ? 'z-10' : 'z-0 pointer-events-none',
+      ideShell.mergeReview && 'ide-merge-review',
+    ]"
   >
     <slot name="toolbar" />
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -83,5 +89,15 @@ onMounted(async () => {
   height: 200px;
   min-height: 120px;
   max-height: 50%;
+}
+
+.ide-merge-review .ide-activity-bar,
+.ide-merge-review .ide-sidebar,
+.ide-merge-review .ide-panel {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
 }
 </style>

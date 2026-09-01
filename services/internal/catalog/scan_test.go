@@ -71,6 +71,7 @@ func findDef(defs []Def, kind, key string) bool {
 
 func scanCK3(t *testing.T, base, docs string) (*VanillaCache, *VanillaLoc) {
 	t.Helper()
+	t.Cleanup(func() { _ = DropVanillaFiles("inst") })
 	c, vloc, err := Scan(context.Background(), "inst", "ck3", base, "1.0", docs, "english", nil)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
@@ -110,7 +111,14 @@ func TestScanCorpusFixture(t *testing.T) {
 		t.Errorf("header_key = %+v", hk)
 	}
 	if _, ok := vloc.Sites["french_only"]; ok {
-		t.Errorf("french loc was harvested; want skip before open")
+		t.Errorf("french loc in default sidecar")
+	}
+	fr, err := LoadVanillaLoc("inst", "1.0", "french")
+	if err != nil {
+		t.Fatalf("french sidecar: %v", err)
+	}
+	if got := fr.Sites["french_only"].Value; got != "Bonjour" {
+		t.Errorf("french loc[french_only] = %q", got)
 	}
 	if got := c.FieldDocsByKind["event"]["type"]; !strings.Contains(got, "presentation") {
 		t.Errorf("fieldDocsByKind[event][type] = %q, want events.info prose", got)

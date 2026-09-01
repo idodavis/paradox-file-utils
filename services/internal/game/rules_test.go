@@ -65,3 +65,26 @@ func TestGetRegistry(t *testing.T) {
 		t.Error("Get(unknown) should be nil")
 	}
 }
+
+func TestScriptSlot(t *testing.T) {
+	cases := []struct {
+		key, want string
+	}{
+		{"trigger", "trigger"},
+		{"limit", "trigger"},
+		{"AND", "trigger"},
+		{"any_courtier", "trigger"},
+		{"immediate", "effect"},
+		{"after", "effect"},
+		{"every_child", "effect"},
+		{"effect", "effect"},
+		{"title", ""},
+		{"type", ""},
+		{"test.1", ""},
+	}
+	for _, c := range cases {
+		if got := ScriptSlot(c.key); got != c.want {
+			t.Errorf("ScriptSlot(%q) = %q want %q", c.key, got, c.want)
+		}
+	}
+}

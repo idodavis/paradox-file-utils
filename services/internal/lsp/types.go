@@ -31,18 +31,21 @@ type Diagnostic struct {
 	Code     string `json:"code,omitempty"`
 }
 
-// HoverResult is hover card text. Origin/rel/line describe the def site.
+// HoverResult is hover card markdown. Origin/rel/path/line describe the def site.
 type HoverResult struct {
 	Contents string `json:"contents"`
 	Origin   string `json:"origin,omitempty"`
 	Rel      string `json:"rel,omitempty"`
+	Path     string `json:"path,omitempty"`
 	Line     int    `json:"line,omitempty"`
+	Col      int    `json:"col,omitempty"`
 }
 
 // CompletionItem is one completion suggestion.
 type CompletionItem struct {
-	Label  string `json:"label"`
-	Detail string `json:"detail,omitempty"`
+	Label         string `json:"label"`
+	Detail        string `json:"detail,omitempty"`
+	Documentation string `json:"documentation,omitempty"`
 }
 
 // Location points at a definition or reference.
@@ -97,6 +100,8 @@ type atPos struct {
 	assign          *jomini.Assignment
 	saveName        string
 	saveOK          bool
+	inKey           bool
+	slotKey         string
 }
 
 // resolveAt parses path and returns the identifier covering (line, col).
@@ -127,19 +132,55 @@ func resolveAt(s *session.Session, path string, line, col int) (atPos, bool) {
 				at.kind = d.Type
 			}
 		}
-		for i := len(chain) - 1; i >= 0; i-- {
-			a, ok := chain[i].(*jomini.Assignment)
-			if !ok {
-				continue
-			}
-			if off >= a.Key.Range.Start && off < a.Key.Range.End {
-				at.assign = a
-			}
-			break
-		}
+		fillCompleteSlot(&at, chain, off)
 		at.saveName, at.saveOK = saveScopeIn(chain, off)
 	}
 	return at, true
+}
+
+// fillCompleteSlot sets inKey/slotKey for completion, and assign when the
+// cursor is on an assignment key (hover). chain is outermost-first.
+func fillCompleteSlot(at *atPos, chain []jomini.Statement, off int) {
+	var assigns []*jomini.Assignment
+	for _, st := range chain {
+		if a, ok := st.(*jomini.Assignment); ok && !a.Key.Quoted {
+			assigns = append(assigns, a)
+		}
+	}
+	if len(assigns) == 0 {
+		return
+	}
+	inner := assigns[len(assigns)-1]
+	if off >= inner.Key.Range.Start && off < inner.Key.Range.End {
+		at.assign = inner
+		at.inKey = true
+		if len(assigns) >= 2 {
+			at.slotKey = assigns[len(assigns)-2].Key.Text
+		}
+		return
+	}
+	innerSt := chain[len(chain)-1]
+	if vs, ok := innerSt.(*jomini.ValueStmt); ok {
+		at.slotKey = inner.Key.Text
+		if sc, ok := vs.Value.(*jomini.Scalar); ok && !sc.Quoted {
+			at.inKey = true
+		}
+		return
+	}
+	if sc, ok := inner.Value.(*jomini.Scalar); ok &&
+		off >= sc.Range.Start && off <= sc.Range.End {
+		at.slotKey = inner.Key.Text
+		return
+	}
+	if b := jomini.BlockOf(inner.Value); b != nil &&
+		off >= b.Range.Start && off <= b.Range.End {
+		at.inKey = true
+		at.slotKey = inner.Key.Text
+		return
+	}
+	if off >= inner.Key.Range.End {
+		at.slotKey = inner.Key.Text
+	}
 }
 
 func saveScopeIn(chain []jomini.Statement, off int) (name string, ok bool) {

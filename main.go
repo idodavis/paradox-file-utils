@@ -25,8 +25,8 @@ func main() {
 
 	fileSvc := &services.FileService{}
 	mergeSvc := &services.MergeService{FileService: fileSvc}
-	settingsSvc := &services.SettingsService{Store: store, Version: version}
 	sessSvc := &services.SessionService{Store: store}
+	settingsSvc := &services.SettingsService{Store: store, Session: sessSvc, Version: version}
 	workspaceSvc := &services.WorkspaceService{Store: store, Session: sessSvc}
 	patcherSvc := &services.PatcherService{Store: store, FileService: fileSvc, MergeService: mergeSvc}
 	ideSvc := &services.IdeService{Session: sessSvc}

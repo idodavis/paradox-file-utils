@@ -2,16 +2,16 @@
  * Explorer-only row spacing. Colors come from the workbench theme JSON.
  *
  * Material already supplies folder icons; keep CSS to row metrics
- * and origin color dots — do not paint custom folder art here.
+ * and origin color dots. Root thumbnails are injected from rootDecorations.ts.
  */
 
 .monaco-workbench .explorer-folders-view .monaco-list-row {
-  min-height: 22px;
-  font-size: 13px;
+  min-height: calc(var(--pmt-ide-ui-font, 13px) + 9px);
+  font-size: var(--pmt-ide-ui-font, 13px);
 }
 
 .monaco-workbench .explorer-folders-view .monaco-tl-row {
-  min-height: 22px;
+  min-height: calc(var(--pmt-ide-ui-font, 13px) + 9px);
   align-items: center;
 }
 
@@ -19,12 +19,18 @@
   align-items: center;
 }
 
+.monaco-workbench .part.sidebar,
+.monaco-workbench .part.panel,
+.monaco-workbench .monaco-menu {
+  font-size: var(--pmt-ide-ui-font, 13px);
+}
+
 .monaco-workbench .explorer-folders-view .monaco-icon-label::before {
   background-size: 16px;
   background-position: center;
   background-repeat: no-repeat;
   width: 16px;
-  height: 22px;
+  height: calc(var(--pmt-ide-ui-font, 13px) + 9px);
   padding-right: 6px;
   flex-shrink: 0;
   display: inline-block;
@@ -32,9 +38,31 @@
   vertical-align: top;
 }
 
-/* Hide VS Code account/sign-in control on the activity bar. */
-.monaco-workbench .activitybar .global-activity,
-.monaco-workbench .activitybar .monaco-action-bar .action-item.global-activity,
-.monaco-workbench .activitybar .monaco-action-bar .action-item[id*="accounts"] {
+.monaco-workbench .explorer-folders-view .monaco-list-row[aria-level="1"] {
+  min-height: calc(var(--pmt-ide-ui-font, 13px) + 17px);
+  font-size: calc(var(--pmt-ide-ui-font, 13px) + 2px);
+  font-weight: 600;
+}
+
+.monaco-workbench .explorer-folders-view
+  .monaco-list-row[aria-level="1"] .monaco-tl-row {
+  min-height: calc(var(--pmt-ide-ui-font, 13px) + 17px);
+}
+
+/* Hide Accounts and Manage. VS Code uses aria-label, not id, on these items. */
+.ide-activity-bar .action-item[aria-label="Accounts"],
+.ide-activity-bar .action-item[aria-label="Manage"],
+.ide-activity-bar .action-item:has(.codicon-accounts-view-bar-icon),
+.ide-activity-bar .action-item:has(.codicon-settings-view-bar-icon),
+.monaco-workbench .part.activitybar .action-item[aria-label="Accounts"],
+.monaco-workbench .part.activitybar .action-item[aria-label="Manage"],
+.monaco-workbench .part.activitybar .action-item:has(.codicon-accounts-view-bar-icon),
+.monaco-workbench .part.activitybar .action-item:has(.codicon-settings-view-bar-icon) {
+  display: none !important;
+}
+
+/* Activity-bar context only — do not hide explorer file context. */
+.monaco-workbench .part.activitybar .context-view,
+.monaco-workbench .part.activitybar .monaco-menu-container {
   display: none !important;
 }

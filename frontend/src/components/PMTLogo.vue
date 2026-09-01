@@ -19,30 +19,24 @@ withDefaults(
 
 <template>
   <div class="inline-flex items-center">
-    <span
-      class="inline-block"
-      :style="{
-        width: `${iconHeight * 2}px`,
-        height: `${iconHeight}px`,
-        backgroundColor: 'var(--p, #dec572)',
-        maskImage: `url(${logoIcon})`,
-        maskRepeat: 'no-repeat',
-        maskPosition: 'center',
-        maskSize: 'contain',
-      }"
-    />
-    <span
-      class="inline-block"
-      :style="{
-        width: `${textHeight * 3}px`,
-        height: `${textHeight}px`,
-        backgroundColor: 'var(--s, #5ad7b2)',
-        maskImage: `url(${logoText})`,
-        maskRepeat: 'no-repeat',
-        maskPosition: '0% center',
-        maskSize: 'contain',
-        marginLeft: `${-0.9 * iconHeight}px`,
-      }"
-    />
+    <span class="inline-block" :style="{
+      width: `${iconHeight * 2}px`,
+      height: `${iconHeight}px`,
+      backgroundColor: 'var(--pmt-primary, #dec572)',
+      maskImage: `url(${logoIcon})`,
+      maskRepeat: 'no-repeat',
+      maskPosition: 'center',
+      maskSize: 'contain',
+    }" />
+    <span class="inline-block" :style="{
+      width: `${textHeight * 3}px`,
+      height: `${textHeight}px`,
+      backgroundColor: 'var(--pmt-secondary, #5ad7b2)',
+      maskImage: `url(${logoText})`,
+      maskRepeat: 'no-repeat',
+      maskPosition: '0% center',
+      maskSize: 'contain',
+      marginLeft: `${-1.0 * iconHeight}px`,
+    }" />
   </div>
 </template>

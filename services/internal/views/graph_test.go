@@ -136,8 +136,8 @@ mod.1 = { type = character_event
 	immediate = { trigger_event = birth.1 }
 }
 `,
-		"events/fan.txt":                    fanoutBody(),
-		"common/scripted_effects/e.txt": "hop_effect = {\n\ttrigger_event = ns.2\n}\n",
+		"events/fan.txt":                       fanoutBody(),
+		"common/scripted_effects/e.txt":        "hop_effect = {\n\ttrigger_event = ns.2\n}\n",
 		"localization/english/a_l_english.yml": "l_english:\n ns.1.t:0 \"Hello\"\n ns.1.a:0 \"Go\"\n used_key:0 \"Hi\"\n orphan_key:0 \"Bye\"\n",
 		"localization/french/a_l_french.yml":   "l_french:\n used_key:0 \"Hi\"\n",
 	})})
@@ -205,7 +205,12 @@ mod.1 = { type = character_event
 	var missing, orphan, untr bool
 	for _, m := range en.Issues {
 		missing = missing || (m.Kind == "missing" && m.Key == "missing_key")
-		orphan = orphan || (m.Kind == "orphaned" && m.Key == "orphan_key")
+		if m.Kind == "orphaned" && m.Key == "orphan_key" {
+			orphan = true
+			if m.Value != "Bye" {
+				t.Fatalf("orphan value = %q", m.Value)
+			}
+		}
 	}
 	for _, u := range fr.Issues {
 		untr = untr || (u.Kind == "untranslated" && u.Key == "used_key")
@@ -245,6 +250,9 @@ mod.1 = { type = character_event
 		}
 	}
 	for _, row := range Coverage(s) {
+		if row.Language != "english" {
+			continue
+		}
 		for _, m := range row.Issues {
 			if m.Key == "vanilla_key" {
 				t.Fatalf("vanilla_key listed as %s: %+v", m.Kind, m)
@@ -352,6 +360,9 @@ func TestOverrideRows(t *testing.T) {
 					if site.Origin != "" {
 						n++
 					}
+					if site.File != "" && site.Rel == "" {
+						t.Fatalf("site missing rel: %+v", site)
+					}
 				}
 				if n != tt.sites {
 					t.Fatalf("mod sites = %d, want %d", n, tt.sites)
@@ -372,4 +383,63 @@ func fanoutBody() string {
 		fmt.Fprintf(&b, "r.%d = { type = character_event }\n", i)
 	}
 	return b.String()
+}
+
+func TestGraphVanillaFireEdge(t *testing.T) {
+	vanilla := t.TempDir()
+	vfile := write(t, vanilla, "events/v.txt",
+		"birth.1 = {\n\ttype = character_event\n\timmediate = { trigger_event = birth.2 }\n}\n"+
+			"birth.2 = { type = character_event }\n")
+	cache := &catalog.VanillaCache{
+		Defs: []catalog.Def{
+			{Type: "event", Key: "birth.1", Path: vfile, Line: 1},
+			{Type: "event", Key: "birth.2", Path: vfile, Line: 4},
+		},
+		Edges: []catalog.Edge{
+			{From: "birth.1", To: "birth.2", Via: "trigger_event", Kind: "immediate"},
+		},
+	}
+	assertEdge := func(s *session.Session) {
+		t.Helper()
+		g := Graph(s, EventGraphParams{Root: "birth.1"})
+		for _, e := range g.Edges {
+			if e.From == "birth.1" && e.To == "birth.2" {
+				return
+			}
+		}
+		t.Fatalf("missing vanilla fire; edges=%v nodes=%v", g.Edges, g.Nodes)
+	}
+	assertEdge(buildSession(t, "ck3", cache, nil, nil))
+	assertEdge(buildSession(t, "ck3", cache, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
+		"events/m.txt": "mod.1 = { type = character_event }\n",
+	})}))
+}
+
+func TestDetailNonEvent(t *testing.T) {
+	s := buildSession(t, "ck3", nil, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
+		"common/on_action/a.txt": "yearly_pulse = {\n\tevents = { ns.1 }\n}\n",
+		"events/e.txt":           "ns.1 = { type = character_event }\n",
+	})})
+	d := Detail(s, "yearly_pulse")
+	if d == nil || d.Kind != "on_action" || d.ID != "yearly_pulse" {
+		t.Fatalf("detail = %+v", d)
+	}
+	if len(d.Sections) == 0 {
+		t.Fatal("want pretty-script body")
+	}
+}
+
+func TestSuggestionsOfKeepsHighLetterIDs(t *testing.T) {
+	vocab := map[string]string{}
+	for i := 0; i < 3000; i++ {
+		vocab[fmt.Sprintf("a.%d", i)] = ""
+	}
+	vocab["secrets.1"] = ""
+	got := suggestionsOf(vocab, "")
+	for _, it := range got.IDs {
+		if it.ID == "secrets.1" {
+			return
+		}
+	}
+	t.Fatal("secrets.1 missing from uncapped suggestions")
 }

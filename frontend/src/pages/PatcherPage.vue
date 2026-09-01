@@ -15,13 +15,11 @@ import {
   SetFileDecision,
   ApplyPatchRun,
 } from "@services/patcherservice";
-import { openFile } from "../ide/commands";
-import { useIdeShellStore } from "../stores/ideShell";
+import { openMergeEditor, startMergeOverlay } from "../ide/commands";
 import { useWorkspaceStore } from "../stores/workspace";
 
 defineOptions({ name: "PatcherPage" });
 
-const ideShell = useIdeShellStore();
 const ws = useWorkspaceStore();
 const route = useRoute();
 const router = useRouter();
@@ -130,16 +128,24 @@ async function skipFile(file: PatchRunFile): Promise<void> {
   file.decision = "skip";
 }
 
-/** Open preview / conflict file in the workbench for review. */
-async function openMergeEditor(file: PatchRunFile): Promise<void> {
-  if (!file.previewPath) return;
-  ideShell.beginMergeReview(() => {
-    void router.push({
-      name: "patcher",
-      params: { id: workspaceId.value },
-    });
+/** Open the VS Code merge editor for a review file. */
+async function reviewFile(file: PatchRunFile): Promise<void> {
+  const modPath = file.modPath;
+  const targetPath = file.targetPath;
+  const previewPath = file.previewPath;
+  if (!modPath || !targetPath || !previewPath) return;
+  await startMergeOverlay({
+    files: [modPath, targetPath, previewPath],
+    label: "Back to Patcher",
+    back: () => {
+      void router.push({ name: "patcher", params: { id: workspaceId.value } });
+    },
+    open: () => openMergeEditor({
+      input1: modPath,
+      input2: targetPath,
+      result: previewPath,
+    }),
   });
-  await openFile(file.previewPath);
 }
 
 /** Apply accepted files to the mod. */
@@ -267,7 +273,7 @@ function applyPatch(): void {
                 label="Merge"
                 size="xs"
                 variant="outline"
-                @click="openMergeEditor(row.original)"
+                @click="reviewFile(row.original)"
               />
               <UButton label="Accept" size="xs" color="success" variant="ghost"
                 :disabled="row.original.decision === 'accept'" @click="acceptFile(row.original)" />

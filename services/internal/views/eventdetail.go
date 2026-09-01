@@ -1,4 +1,4 @@
-// eventdetail.go is the read-only inspector for one event.
+// eventdetail.go is the read-only inspector for one resolved graph def.
 
 package views
 
@@ -29,15 +29,23 @@ var (
 	}
 )
 
-// Detail returns inspector content for one event id, or nil if it is not an event.
+// Detail returns inspector content for one resolved def, or nil if it is unknown.
 func Detail(s *session.Session, id string) *EventDetail {
 	d := s.Resolve(id)
-	if d == nil || game.CanonicalKind(d.Type) != "event" {
+	if d == nil {
 		return nil
 	}
+	kind := game.CanonicalKind(d.Type)
 	res := s.Parsed(d.Path)
 	if res.Root == nil {
-		return nil
+		if kind == "event" {
+			return nil
+		}
+		return &EventDetail{
+			ID: id, Kind: kind, File: d.Path, Rel: s.DisplayRel(d.Path),
+			Origin: d.Origin, Line: d.Line, Title: locIfAny(s, id),
+			RefGroups: refGroups(s, d.Path), Incoming: incomingEdges(s, id),
+		}
 	}
 	li := res.Lines()
 	lineOf := func(off int) int { return li.PositionAt(off).Line }
@@ -50,14 +58,29 @@ func Detail(s *session.Session, id string) *EventDetail {
 		}
 	}
 	if stmt == nil {
-		return nil
+		if kind == "event" {
+			return nil
+		}
+		return &EventDetail{
+			ID: id, Kind: kind, File: d.Path, Rel: s.DisplayRel(d.Path),
+			Origin: d.Origin, Line: d.Line, Title: locIfAny(s, id),
+			RefGroups: refGroups(s, d.Path), Incoming: incomingEdges(s, id),
+		}
 	}
 	block := jomini.BlockOf(stmt.Value)
 	_, _, fields := inspectBlock(block, lineOf, nil)
 	detail := &EventDetail{
-		ID: id, File: d.Path, Rel: s.DisplayRel(d.Path), Origin: d.Origin,
+		ID: id, Kind: kind, File: d.Path, Rel: s.DisplayRel(d.Path), Origin: d.Origin,
 		Line: lineOf(stmt.Key.Range.Start), Fields: fields,
 		RefGroups: refGroups(s, d.Path), Incoming: incomingEdges(s, id),
+	}
+	if kind != "event" {
+		lines, targets, _ := inspectBlock(block, lineOf, nil)
+		detail.Title = locIfAny(s, id)
+		detail.Sections = []EventSectionInfo{{
+			Name: kind, Lines: lines, Targets: targets,
+		}}
+		return detail
 	}
 	for _, ch := range block.Statements {
 		a, ok := ch.(*jomini.Assignment)
@@ -129,11 +152,24 @@ func incomingEdges(s *session.Session, id string) []EventGraphEdge {
 	return out
 }
 
+func viaHopLabel(chain string) string {
+	parts := strings.Split(chain, " → ")
+	if len(parts) <= 2 {
+		return "via " + chain
+	}
+	return "via " + parts[0] + " … " + parts[len(parts)-1]
+}
+
 func labeledEdge(s *session.Session, e catalog.Edge) EventGraphEdge {
 	out := EventGraphEdge{From: e.From, To: e.To, Via: e.Via, Kind: e.Kind}
 	if e.Kind == "via" {
-		if e.NameKey != "" {
-			out.Label = "via " + e.NameKey
+		chain := e.NameKey
+		if chain == "" {
+			chain = e.Via
+		}
+		if chain != "" {
+			out.Via = chain
+			out.Label = viaHopLabel(chain)
 		}
 		return out
 	}
@@ -160,6 +196,19 @@ func labeledEdge(s *session.Session, e catalog.Edge) EventGraphEdge {
 		out.Label = e.Via
 	}
 	return out
+}
+
+func locIfAny(s *session.Session, id string) *EventLocField {
+	for _, key := range []string{id, id + ".t"} {
+		if t := locValue(s, key); t != "" {
+			f := &EventLocField{Key: key, Text: t}
+			if file, line, _, ok := s.LocSite(key); ok {
+				f.File, f.Line = file, line
+			}
+			return f
+		}
+	}
+	return nil
 }
 
 func locField(s *session.Session, a *jomini.Assignment) *EventLocField {

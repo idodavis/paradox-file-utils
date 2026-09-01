@@ -21,16 +21,26 @@ export function workbenchSettingsForTheme(
 }
 
 let applyingTheme = false;
+let lastThemeName = "";
+let editorFontSize = 14;
+
+/** Merge editor.fontSize into the next workbench settings write. */
+export function applyEditorFontSize(px: number): void {
+  editorFontSize = Math.min(24, Math.max(10, Math.round(px)));
+  if (lastThemeName) void applyWorkbenchTheme(lastThemeName);
+}
 
 /** Push workbench.colorTheme / iconTheme / tree indent from the Nuxt name. */
 export async function applyWorkbenchTheme(themeName: string): Promise<void> {
   if (applyingTheme) return;
   applyingTheme = true;
+  lastThemeName = themeName;
   try {
     await updateUserConfiguration(
       JSON.stringify(
         {
           ...workbenchSettingsForTheme(themeName),
+          "editor.fontSize": editorFontSize,
           "workbench.startupEditor": "none",
           "window.title": "PMT${separator}${activeEditorShort}",
           "files.autoSave": "off",

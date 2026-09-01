@@ -18,7 +18,6 @@ const (
 	defaultMaxNodes = 40
 	outDepth        = 3
 	maxFanout       = 12
-	maxSuggestions  = 2000
 	morePrefix      = "more:"
 )
 
@@ -239,8 +238,5 @@ func suggestionsOf(vocab map[string]string, namespace string) EventGraphSuggesti
 		}
 		return cmp.Compare(a.Origin, b.Origin)
 	})
-	if len(ids) > maxSuggestions {
-		ids = ids[:maxSuggestions]
-	}
 	return EventGraphSuggestions{IDs: ids, Namespaces: namespaces}
 }

@@ -15,6 +15,7 @@ export interface CodeAction {
 export interface CompletionItem {
     "label": string;
     "detail"?: string;
+    "documentation"?: string;
 }
 
 /**
@@ -40,13 +41,15 @@ export interface FoldingRange {
 }
 
 /**
- * HoverResult is hover card text. Origin/rel/line describe the def site.
+ * HoverResult is hover card markdown. Origin/rel/path/line describe the def site.
  */
 export interface HoverResult {
     "contents": string;
     "origin"?: string;
     "rel"?: string;
+    "path"?: string;
     "line"?: number;
+    "col"?: number;
 }
 
 /**

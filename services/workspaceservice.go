@@ -23,6 +23,11 @@ type WorkspaceService struct {
 	Session *SessionService
 }
 
+// ListGames returns the supported-game table and vanilla origin token.
+func (w *WorkspaceService) ListGames() game.GameList {
+	return game.GameList{OriginVanilla: game.OriginVanilla, Games: game.All()}
+}
+
 // ListGameInstalls returns all installs for a game.
 func (w *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error) {
 	var out []GameInstall
@@ -142,54 +147,277 @@ func (w *WorkspaceService) CreateWorkspace(
 	return &ws, nil
 }
 
+// DeleteWorkspace removes a workspace from PMT. Mod folders on disk stay.
+func (w *WorkspaceService) DeleteWorkspace(id string) error {
+	if id == "" {
+		return fmt.Errorf("workspace id is required")
+	}
+	err := w.Store.Mutate(func(c *Config) error {
+		for i, ws := range c.Workspaces {
+			if ws.ID == id {
+				c.Workspaces = append(c.Workspaces[:i], c.Workspaces[i+1:]...)
+				return nil
+			}
+		}
+		return fmt.Errorf("workspace not found")
+	})
+	if err != nil {
+		return err
+	}
+	if w.Session != nil {
+		w.Session.pool().Drop(id)
+	}
+	return nil
+}
+
 // UpdateWorkspace updates workspace fields.
 func (w *WorkspaceService) UpdateWorkspace(
 	id, name, installID, stagingDir string, tags []string,
 ) error {
-	return w.Store.Mutate(func(c *Config) error {
+	var rebuild bool
+	err := w.Store.Mutate(func(c *Config) error {
 		ws := findWorkspace(c, id)
 		if ws == nil {
 			return fmt.Errorf("workspace not found")
 		}
+		rebuild = ws.InstallID != installID || ws.StagingDir != stagingDir
 		ws.Name, ws.InstallID, ws.StagingDir, ws.Tags = name, installID, stagingDir, tags
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if rebuild {
+		return w.rebuildSession(id)
+	}
+	return nil
+}
+
+func (w *WorkspaceService) rebuildSession(id string) error {
+	if w.Session == nil {
+		return nil
+	}
+	w.Session.pool().Drop(id)
+	return w.Session.EnsureSession(id)
 }
 
 // AddWorkspaceMod adds a mod to a workspace.
-func (w *WorkspaceService) AddWorkspaceMod(workspaceID, name, path string) (*WorkspaceMod, error) {
+func (w *WorkspaceService) AddWorkspaceMod(
+	workspaceID, name, path string, tags []string, thumbnail string,
+) (*WorkspaceMod, error) {
 	_, statErr := os.Stat(path)
 	mod := WorkspaceMod{
-		ID: uuid.New().String(), Name: name, Path: path,
-		IsBroken: statErr != nil, CreatedAt: nowUTC(),
+		ID: uuid.New().String(), Name: name, Path: path, Tags: tags,
+		Thumbnail: thumbnail, IsBroken: statErr != nil, CreatedAt: nowUTC(),
 	}
 	err := w.Store.Mutate(func(c *Config) error {
 		ws := findWorkspace(c, workspaceID)
 		if ws == nil {
 			return fmt.Errorf("workspace not found")
 		}
+		mod.SortOrder = len(ws.Mods)
 		ws.Mods = append(ws.Mods, mod)
 		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("insert mod: %w", err)
 	}
+	if err := w.rebuildSession(workspaceID); err != nil {
+		return &mod, err
+	}
 	return &mod, nil
 }
 
-// ListWorkspaceMods returns all mods for a workspace.
+// DefaultModParent is Documents/Paradox Interactive/<game>/mod, or "".
+func (w *WorkspaceService) DefaultModParent(gameID string) string {
+	return game.DefaultModParent(gameID)
+}
+
+// CreateMod writes a new mod skeleton under parentDir and returns its path.
+func (w *WorkspaceService) CreateMod(
+	gameID, parentDir, name, locLang, supportedVersion, description, thumbnailSrc string,
+) (string, error) {
+	if game.Get(gameID) == nil {
+		return "", fmt.Errorf("unknown game %s", gameID)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("name is required")
+	}
+	if parentDir == "" {
+		parentDir = game.DefaultModParent(gameID)
+	}
+	if parentDir == "" {
+		return "", fmt.Errorf("parent folder is required")
+	}
+	root := filepath.Join(parentDir, game.ModSlug(name))
+	if err := game.WriteNewMod(
+		gameID, root, name, supportedVersion, locLang, description, thumbnailSrc,
+	); err != nil {
+		return "", err
+	}
+	return root, nil
+}
+
+// ListWorkspaceMods returns all mods for a workspace, sorted by SortOrder then Name.
 func (w *WorkspaceService) ListWorkspaceMods(workspaceID string) ([]WorkspaceMod, error) {
 	var mods []WorkspaceMod
 	var ok bool
 	w.Store.Read(func(c *Config) {
 		if ws := findWorkspace(c, workspaceID); ws != nil {
-			ok, mods = true, append([]WorkspaceMod(nil), ws.Mods...)
+			ok = true
+			mods = append([]WorkspaceMod(nil), ws.Mods...)
+			sortWorkspaceMods(mods)
 		}
 	})
 	if !ok {
 		return nil, fmt.Errorf("workspace not found")
 	}
 	return mods, nil
+}
+
+// RemoveWorkspaceMod detaches a mod from a workspace.
+func (w *WorkspaceService) RemoveWorkspaceMod(workspaceID, modID string) error {
+	err := w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, workspaceID)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		kept := ws.Mods[:0]
+		found := false
+		for _, m := range ws.Mods {
+			if m.ID == modID {
+				found = true
+				continue
+			}
+			kept = append(kept, m)
+		}
+		if !found {
+			return fmt.Errorf("mod not found")
+		}
+		ws.Mods = kept
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return w.rebuildSession(workspaceID)
+}
+
+// ReorderWorkspaceMods writes SortOrder from the given id list.
+func (w *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []string) error {
+	err := w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, workspaceID)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		if len(modIDs) != len(ws.Mods) {
+			return fmt.Errorf("mod id set incomplete")
+		}
+		byID := make(map[string]*WorkspaceMod, len(ws.Mods))
+		for i := range ws.Mods {
+			byID[ws.Mods[i].ID] = &ws.Mods[i]
+		}
+		for i, id := range modIDs {
+			m, ok := byID[id]
+			if !ok {
+				return fmt.Errorf("mod not found")
+			}
+			m.SortOrder = i
+			delete(byID, id)
+		}
+		if len(byID) != 0 {
+			return fmt.Errorf("mod id set incomplete")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return w.rebuildSession(workspaceID)
+}
+
+// UpdateWorkspaceMod updates a mod's name, tags, and optional color override.
+func (w *WorkspaceService) UpdateWorkspaceMod(
+	workspaceID, modID, name string, tags []string, color, thumbnail string,
+) error {
+	return w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, workspaceID)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		for i := range ws.Mods {
+			if ws.Mods[i].ID == modID {
+				if name != "" {
+					ws.Mods[i].Name = name
+				}
+				ws.Mods[i].Tags = tags
+				ws.Mods[i].Color = color
+				ws.Mods[i].Thumbnail = thumbnail
+				return nil
+			}
+		}
+		return fmt.Errorf("mod not found")
+	})
+}
+
+// SaveIdeSession stores open editor paths for a workspace.
+func (w *WorkspaceService) SaveIdeSession(workspaceID string, files []string, active string) error {
+	return w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, workspaceID)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		ws.IdeOpenFiles = append([]string(nil), files...)
+		ws.IdeActiveFile = active
+		return nil
+	})
+}
+
+var legalDefaultTools = map[string]bool{
+	"":              true,
+	"workspace-ide": true,
+	"event-graph":   true,
+	"conflicts":     true,
+	"loc-coverage":  true,
+	"patcher":       true,
+}
+
+// UpdateWorkspacePrefs sets IDE persist and default landing page.
+func (w *WorkspaceService) UpdateWorkspacePrefs(
+	workspaceID string, resetIdeOnOpen bool, defaultTool string,
+) error {
+	if !legalDefaultTools[defaultTool] {
+		return fmt.Errorf("invalid default tool")
+	}
+	return w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, workspaceID)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		ws.ResetIdeOnOpen = resetIdeOnOpen
+		ws.DefaultTool = defaultTool
+		return nil
+	})
+}
+
+// CountWorkspacesUsingInstall returns names of workspaces on this install.
+func (w *WorkspaceService) CountWorkspacesUsingInstall(installID string) []string {
+	var names []string
+	w.Store.Read(func(c *Config) {
+		names = workspacesUsingInstall(c, installID)
+	})
+	return names
+}
+
+func workspacesUsingInstall(c *Config, installID string) []string {
+	var names []string
+	for _, ws := range c.Workspaces {
+		if ws.InstallID == installID {
+			names = append(names, ws.Name)
+		}
+	}
+	return names
 }
 
 // DetectGameVersion reads version from launcher-settings.json.
@@ -289,11 +517,7 @@ func (w *WorkspaceService) GetInstallCacheInfo(installID string) (*InstallCacheI
 // DeleteGameInstall removes an install if no workspace uses it.
 func (w *WorkspaceService) DeleteGameInstall(id string) (inUse []string, err error) {
 	w.Store.Read(func(c *Config) {
-		for _, ws := range c.Workspaces {
-			if ws.InstallID == id {
-				inUse = append(inUse, ws.Name)
-			}
-		}
+		inUse = workspacesUsingInstall(c, id)
 	})
 	if len(inUse) > 0 {
 		return inUse, fmt.Errorf("install in use by: %s", strings.Join(inUse, ", "))

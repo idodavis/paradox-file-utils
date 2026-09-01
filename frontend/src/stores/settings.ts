@@ -5,6 +5,11 @@ import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { clamp } from "es-toolkit";
 import { GetSettings, SaveSettings } from "@services/settingsservice";
+import { applyEditorFontSize } from "../ide/themeBridge";
+import {
+  WORKSPACE_TOOL_NAMES,
+  type WorkspaceToolName,
+} from "../workspaceTools";
 
 /** Drop undefined values from a settings map. */
 function normalizeSettings(
@@ -19,11 +24,31 @@ function normalizeSettings(
 
 const FONT_SCALE_MIN = 85;
 const FONT_SCALE_MAX = 130;
+const EDITOR_FONT_MIN = 10;
+const EDITOR_FONT_MAX = 24;
+const IDE_UI_FONT_MIN = 10;
+const IDE_UI_FONT_MAX = 20;
 
-/** Apply UI font scale to the document (workbench owns its own editor font). */
-export function applyFontCss(fontScale: number): void {
+/** Parse ui.visibleTools JSON; missing or invalid means all tools. */
+function parseVisibleTools(raw: string | undefined): WorkspaceToolName[] {
+  if (raw === undefined || raw === "") return [...WORKSPACE_TOOL_NAMES];
+  try {
+    const arr: unknown = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [...WORKSPACE_TOOL_NAMES];
+    return arr.filter((n): n is WorkspaceToolName =>
+      typeof n === "string" &&
+      (WORKSPACE_TOOL_NAMES as readonly string[]).includes(n),
+    );
+  } catch {
+    return [...WORKSPACE_TOOL_NAMES];
+  }
+}
+
+/** Apply UI font scale and workbench chrome font to the document. */
+export function applyFontCss(fontScale: number, ideUiFontSize = 13): void {
   const root = document.documentElement;
   root.style.setProperty("--pmt-font-scale", String(fontScale / 100));
+  root.style.setProperty("--pmt-ide-ui-font", `${ideUiFontSize}px`);
   root.style.fontSize = `${(16 * fontScale) / 100}px`;
 }
 
@@ -35,6 +60,24 @@ export const useSettingsStore = defineStore("settings", () => {
 
   const fontScale = computed(() =>
     clamp(Number(values.value["ui.fontScale"]) || 100, FONT_SCALE_MIN, FONT_SCALE_MAX),
+  );
+
+  const editorFontSize = computed(() =>
+    clamp(
+      Number(values.value["ui.editorFontSize"]) || 14,
+      EDITOR_FONT_MIN,
+      EDITOR_FONT_MAX,
+    ),
+  );
+
+  const visibleTools = computed(() => parseVisibleTools(values.value["ui.visibleTools"]));
+
+  const ideUiFontSize = computed(() =>
+    clamp(
+      Number(values.value["ui.ideUiFontSize"]) || 13,
+      IDE_UI_FONT_MIN,
+      IDE_UI_FONT_MAX,
+    ),
   );
 
   /** Load settings from the backend and apply fonts. */
@@ -71,18 +114,57 @@ export const useSettingsStore = defineStore("settings", () => {
     );
   }
 
-  watch(fontScale, (scale) => applyFontCss(scale), { immediate: true });
+  /** Persist editor font size (px). */
+  async function setEditorFontSize(px: number): Promise<void> {
+    await set(
+      "ui.editorFontSize",
+      String(clamp(px, EDITOR_FONT_MIN, EDITOR_FONT_MAX)),
+    );
+  }
+
+  /** Persist workbench UI font size (px). */
+  async function setIdeUiFontSize(px: number): Promise<void> {
+    await set(
+      "ui.ideUiFontSize",
+      String(clamp(px, IDE_UI_FONT_MIN, IDE_UI_FONT_MAX)),
+    );
+  }
+
+  /** Persist which workspace tool pills are shown. Empty means IDE-only in the toolbar. */
+  async function setVisibleTools(names: string[]): Promise<void> {
+    const next = names.filter((n): n is WorkspaceToolName =>
+      (WORKSPACE_TOOL_NAMES as readonly string[]).includes(n),
+    );
+    await set("ui.visibleTools", JSON.stringify(next));
+  }
+
+  watch(
+    [fontScale, ideUiFontSize],
+    ([scale, ui]) => applyFontCss(scale, ui),
+    { immediate: true },
+  );
+  watch(editorFontSize, (px) => applyEditorFontSize(px), { immediate: true });
 
   return {
     values,
     loading,
     saving,
     fontScale,
+    editorFontSize,
+    ideUiFontSize,
+    visibleTools,
     load,
     save,
     set,
     setFontScale,
+    setEditorFontSize,
+    setIdeUiFontSize,
+    setVisibleTools,
     FONT_SCALE_MIN,
     FONT_SCALE_MAX,
+    EDITOR_FONT_MIN,
+    EDITOR_FONT_MAX,
+    IDE_UI_FONT_MIN,
+    IDE_UI_FONT_MAX,
   };
 });

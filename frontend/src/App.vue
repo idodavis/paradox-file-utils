@@ -25,8 +25,11 @@ import {
 import { CheckForUpdates, GetVersion } from "@services/settingsservice";
 import { isWorkbenchReady } from "./ide/workbenchHost";
 import IdeWorkbenchLayout from "./components/IdeWorkbenchLayout.vue";
-import { applyWorkbenchTheme } from "./ide/themeBridge";
+import { applyEditorFontSize, applyWorkbenchTheme } from "./ide/themeBridge";
 import { useIdeShellStore } from "./stores/ideShell";
+import DisplayPopover from "./components/DisplayPopover.vue";
+import { HELP_COPY } from "./help/content";
+import { workspaceHomeRoute } from "./workspaceTools";
 
 const route = useRoute();
 const router = useRouter();
@@ -51,12 +54,15 @@ const helpOpen = ref(false);
 
 const KEEP_ALIVE_PAGES = [
   "LibraryPage", "EventGraphPage", "ConflictPage", "LocCoveragePage",
-  "PatcherPage", "ToolsMergePage", "SettingsPage",
+  "PatcherPage", "ToolsMergePage",
 ];
 
 const currentTitle = computed(() => String(route.meta.title ?? "Tools"));
 const currentDescription = computed(
   () => String(route.meta.description ?? ""),
+);
+const helpParagraphs = computed(
+  () => HELP_COPY[String(route.name)]?.paragraphs ?? [],
 );
 const isLibrary = computed(() => route.name === "library");
 const showWorkbench = computed(
@@ -86,11 +92,11 @@ const workspaceDropdownItems = computed<DropdownMenuItem[][]>(() => {
     icon: workspace.id === activeId ? "i-lucide-check" : "i-lucide-folder",
     onSelect: () => {
       ws.setActiveWorkspace(workspace.id);
-      void router.push({ name: "workspace-ide", params: { id: workspace.id } });
+      void router.push(workspaceHomeRoute(workspace, settings.visibleTools));
     },
   });
   const gameLabel = (gameId: string): DropdownMenuItem => ({
-    label: gameId.toUpperCase(), type: "label" as const, disabled: true,
+    label: ws.shortName(gameId), type: "label" as const, disabled: true,
     slot: "game-group", gameId,
   });
 
@@ -106,12 +112,25 @@ const workspaceDropdownItems = computed<DropdownMenuItem[][]>(() => {
     ]);
   }
   items.push([
-    { label: "New Workspace", icon: "i-lucide-plus",
-      onSelect: () => router.push({ name: "wizard" }) },
-    { label: "Library", icon: "i-lucide-library",
-      onSelect: () => router.push({ name: "library" }) },
-    { label: "Ad-hoc Merge", icon: "i-lucide-git-merge",
-      onSelect: () => router.push({ name: "tools-merge" }) },
+    ...(activeId && ws.hasWorkspaces
+      ? [{
+        label: "Configure workspace…",
+        icon: "i-lucide-settings",
+        onSelect: () => openWorkspaceSettings(),
+      } satisfies DropdownMenuItem]
+      : []),
+    {
+      label: "New Workspace", icon: "i-lucide-plus",
+      onSelect: () => router.push({ name: "wizard" })
+    },
+    {
+      label: "Library", icon: "i-lucide-library",
+      onSelect: () => router.push({ name: "library" })
+    },
+    {
+      label: "Ad-hoc Merge", icon: "i-lucide-git-merge",
+      onSelect: () => router.push({ name: "tools-merge" })
+    },
   ]);
   return items;
 });
@@ -162,6 +181,16 @@ function itemSwatches(
   return item.swatches;
 }
 
+/** Open workspace settings for the active workspace, or Library if none. */
+function openWorkspaceSettings(): void {
+  const id = ws.activeWorkspaceId;
+  if (id) {
+    void router.push({ name: "workspace-settings", params: { id } });
+    return;
+  }
+  void router.push({ name: "library" });
+}
+
 /** Check for app updates. */
 async function checkForUpdates(): Promise<void> {
   await CheckForUpdates();
@@ -180,6 +209,7 @@ watch(
 
 onMounted(async () => {
   await Promise.all([settings.load(), loadVersion(), ws.refresh()]);
+  applyEditorFontSize(settings.editorFontSize);
   const stored = settings.values["_global.theme"];
   const family = normalizeThemeFamily(stored);
   if (colorMode.store.value === "auto") {
@@ -194,143 +224,103 @@ onMounted(async () => {
 <template>
   <UApp>
     <div class="pmt-root flex h-screen min-h-0 flex-col overflow-hidden">
-      <header
-        class="z-10 shrink-0 border-b border-default bg-default px-2 py-2 shadow-sm"
-      >
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div class="flex min-w-0 flex-1 items-center gap-2">
-            <PMTLogo v-if="isLibrary" :icon-height="36" :text-height="44" />
-            <UBreadcrumb v-else :items="headerItems" />
+      <header class="z-10 shrink-0 border-b border-default bg-default px-2 py-1 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex min-w-0 flex-1 items-center gap-3">
+            <PMTLogo :icon-height="40" :text-height="48" class="-ml-4.5" />
+            <UBreadcrumb v-if="!isLibrary" :items="headerItems" />
           </div>
           <div class="flex items-center gap-2">
             <UDropdownMenu :items="workspaceDropdownItems">
               <template #game-group-leading="{ item }">
                 <GameIcon :game-id="menuGameId(item)" />
               </template>
-              <UButton :label="ws.activeWorkspaceName" trailing-icon="i-lucide-chevron-down"
-                color="neutral" variant="outline" class="max-w-48 truncate">
+              <UButton :label="ws.activeWorkspaceName" trailing-icon="i-lucide-chevron-down" color="neutral"
+                variant="outline" class="max-w-48 truncate">
                 <template v-if="ws.activeWorkspace?.gameId" #leading>
                   <GameIcon :game-id="ws.activeWorkspace.gameId" />
                 </template>
               </UButton>
             </UDropdownMenu>
-            <USelectMenu
-              :model-value="currentFamily"
-              :items="themeItems"
-              value-key="value"
-              :ui="{
-                content: 'min-w-44',
-                base: 'w-auto gap-1.5 ps-2 pe-2',
-                leading: 'static inset-auto',
-                trailing: 'static inset-auto',
-              }"
-              @update:model-value="onThemeChange"
-            >
+            <USelectMenu :model-value="currentFamily" :items="themeItems" value-key="value" :ui="{
+              content: 'min-w-44',
+              base: 'w-auto gap-1.5 ps-2 pe-2',
+              leading: 'static inset-auto',
+              trailing: 'static inset-auto',
+            }" @update:model-value="onThemeChange">
               <template #leading>
-                <span
-                  class="inline-flex shrink-0 overflow-hidden rounded-sm border border-default"
-                  aria-hidden="true"
-                >
-                  <span
-                    v-for="(color, i) in currentThemeSwatches"
-                    :key="i"
-                    class="size-3.5"
-                    :style="{ backgroundColor: color }"
-                  />
+                <span class="inline-flex shrink-0 overflow-hidden rounded-sm border border-default" aria-hidden="true">
+                  <span v-for="(color, i) in currentThemeSwatches" :key="i" class="size-3.5"
+                    :style="{ backgroundColor: color }" />
                 </span>
               </template>
               <template #default>
                 <span class="text-sm">{{ currentFamilyLabel }}</span>
               </template>
               <template #item-leading="{ item }">
-                <span
-                  class="inline-flex shrink-0 overflow-hidden rounded-sm border border-default"
-                  aria-hidden="true"
-                >
-                  <span
-                    v-for="(color, i) in itemSwatches(item as ThemeMenuItem)"
-                    :key="i"
-                    class="size-3.5"
-                    :style="{ backgroundColor: color }"
-                  />
+                <span class="inline-flex shrink-0 overflow-hidden rounded-sm border border-default" aria-hidden="true">
+                  <span v-for="(color, i) in itemSwatches(item as ThemeMenuItem)" :key="i" class="size-3.5"
+                    :style="{ backgroundColor: color }" />
                 </span>
               </template>
             </USelectMenu>
             <UColorModeButton />
-            <UButton icon="i-lucide-settings" color="neutral" variant="ghost"
-              @click="router.push({ name: 'settings' })" />
+            <DisplayPopover />
+            <UTooltip v-if="ws.hasWorkspaces" text="Workspace settings">
+              <UButton icon="i-lucide-settings" color="neutral" variant="ghost" @click="openWorkspaceSettings" />
+            </UTooltip>
           </div>
         </div>
       </header>
 
       <main class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <IdeWorkbenchLayout
-          :visible="showWorkbench"
-          :theme="currentFamily"
-        >
+        <IdeWorkbenchLayout :visible="showWorkbench" :theme="currentFamily">
           <template #toolbar>
-            <div
-              class="shrink-0 border-b border-default"
-              :class="{ hidden: route.name !== 'workspace-ide' }"
-            >
+            <div class="shrink-0 border-b border-default" :class="{ hidden: route.name !== 'workspace-ide' }">
               <router-view name="ide" v-slot="{ Component }">
-                <KeepAlive :max="2" include="WorkspaceIdePage">
-                  <component
-                    :is="Component"
-                    v-if="Component"
-                  />
-                </KeepAlive>
+                <component :is="Component" v-if="Component" />
               </router-view>
             </div>
-            <div
-              v-if="ideShell.mergeReview"
-              class="flex shrink-0 items-center gap-2 border-b border-default px-2 py-1"
-            >
-              <UButton label="Back to Patcher" icon="i-lucide-arrow-left" size="sm"
-                color="neutral" variant="ghost" @click="ideShell.endMergeReview()" />
+            <div v-if="ideShell.mergeReview" class="flex shrink-0 items-center gap-2 border-b border-default px-2 py-1">
+              <UButton :label="ideShell.bannerLabel" icon="i-lucide-arrow-left" size="sm" color="neutral"
+                variant="ghost" @click="ideShell.endMergeReview()" />
               <span class="text-xs text-muted">Reviewing diffs in workbench</span>
             </div>
           </template>
         </IdeWorkbenchLayout>
-        <div
-          class="absolute inset-0 overflow-hidden bg-default"
-          :class="showWorkbench ? 'z-0 pointer-events-none' : 'z-20'"
-        >
+        <div class="absolute inset-0 overflow-hidden bg-default"
+          :class="showWorkbench ? 'z-0 pointer-events-none' : 'z-20'">
           <router-view v-slot="{ Component }">
             <KeepAlive :max="10" :include="KEEP_ALIVE_PAGES">
-              <component
-                :is="Component"
-                v-if="Component"
-                :key="String(route.name)"
-              />
+              <component :is="Component" v-if="Component" :key="String(route.name)" />
             </KeepAlive>
           </router-view>
         </div>
       </main>
 
-      <footer
-        class="z-10 flex shrink-0 items-center justify-between
-          border-t border-default bg-default px-2 text-sm text-default"
-        :class="{ hidden: showWorkbench }"
-      >
-        <PMTLogo :icon-height="25" :text-height="30" />
-        <div class="flex items-center gap-2">
-          <UButton :label="`Help for ${currentTitle}`" icon="i-lucide-circle-help"
-            color="neutral" variant="ghost" size="sm" @click="helpOpen = true" />
-          <UButton :label="version" icon="i-lucide-refresh-cw"
-            color="neutral" variant="ghost" size="sm" @click="checkForUpdates" />
+      <footer class="relative z-10 flex shrink-0 items-center justify-end
+          border-t border-default bg-default px-2 text-sm text-default">
+        <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <PMTLogo :icon-height="25" :text-height="30" />
+        </div>
+        <div class="relative flex items-center gap-2">
+          <UButton :label="`Help for ${currentTitle}`" icon="i-lucide-circle-help" color="neutral" variant="ghost"
+            size="sm" @click="helpOpen = true" />
+          <UButton :label="version" icon="i-lucide-refresh-cw" color="neutral" variant="ghost" size="sm"
+            @click="checkForUpdates" />
         </div>
       </footer>
 
-      <UModal
-        v-model:open="helpOpen"
-        :title="currentTitle"
-        :description="currentDescription"
-        :ui="{ content: 'sm:max-w-2xl' }"
-      >
+      <UModal v-model:open="helpOpen" :title="currentTitle" :description="currentDescription"
+        :ui="{ content: 'sm:max-w-2xl' }">
+        <template #body>
+          <div class="space-y-3 text-sm text-muted">
+            <p v-for="(para, i) in helpParagraphs" :key="i">{{ para }}</p>
+            <p v-if="!helpParagraphs.length">{{ currentDescription }}</p>
+          </div>
+        </template>
         <template #footer="{ close }">
-          <UButton label="Close" color="neutral" variant="outline" icon="i-lucide-x"
-            @click="close" />
+          <UButton label="Close" color="neutral" variant="outline" icon="i-lucide-x" @click="close" />
         </template>
       </UModal>
     </div>

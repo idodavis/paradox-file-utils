@@ -58,7 +58,7 @@ func Scan(
 	}
 
 	progress(onProgress, 70, "reading localization")
-	vloc, err := harvestLoc(ctx, inv.loc, locLang)
+	vloc, err := harvestLoc(ctx, inv.loc, locLang, installID, version)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -259,19 +259,23 @@ func collectExtracts(
 	return acc, err
 }
 
-func harvestLoc(ctx context.Context, files []string, locLang string) (*VanillaLoc, error) {
-	out := &VanillaLoc{FormatVersion: LocFormatVersion, Sites: map[string]LocEntry{}}
-	var refs []fileRef
+func harvestLoc(
+	ctx context.Context, files []string, locLang, installID, version string,
+) (*VanillaLoc, error) {
+	byLang := map[string]*VanillaLoc{}
+	refs := make([]fileRef, 0, len(files))
 	for _, f := range files {
-		if loc.LanguageFromRel(f) == locLang {
-			refs = append(refs, fileRef{abs: f})
+		if loc.LanguageFromRel(f) == "" {
+			continue
 		}
-	}
-	if len(refs) == 0 {
-		return out, nil
+		refs = append(refs, fileRef{abs: f})
 	}
 	var mu sync.Mutex
 	err := walkFiles(ctx, refs, func(f fileRef) error {
+		lang := loc.LanguageFromRel(f.abs)
+		if lang == "" {
+			return nil
+		}
 		raw, err := os.ReadFile(f.abs)
 		if err != nil {
 			return nil
@@ -279,13 +283,31 @@ func harvestLoc(ctx context.Context, files []string, locLang string) (*VanillaLo
 		text, _ := jomini.Decode(raw)
 		_, locd := ExtractLoc(f.abs, text, "")
 		mu.Lock()
+		out := byLang[lang]
+		if out == nil {
+			out = &VanillaLoc{FormatVersion: LocFormatVersion, Sites: map[string]LocEntry{}}
+			byLang[lang] = out
+		}
 		for k, v := range locd.Vals {
 			out.Sites[k] = LocEntry{File: v.File, Line: v.Line, Value: v.Value}
 		}
 		mu.Unlock()
 		return nil
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	if installID != "" {
+		for lang, vl := range byLang {
+			if err := SaveVanillaLoc(installID, version, lang, vl); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if out := byLang[locLang]; out != nil {
+		return out, nil
+	}
+	return &VanillaLoc{FormatVersion: LocFormatVersion, Sites: map[string]LocEntry{}}, nil
 }
 
 // HarvestLoc gathers install loc files for locLang without opening other languages.
@@ -298,7 +320,13 @@ func HarvestLoc(ctx context.Context, gameID, installPath, locLang string) (*Vani
 		locLang = "english"
 	}
 	inv := gather(scriptRoots(info, installPath))
-	return harvestLoc(ctx, inv.loc, locLang)
+	var one []string
+	for _, f := range inv.loc {
+		if loc.LanguageFromRel(f) == locLang {
+			one = append(one, f)
+		}
+	}
+	return harvestLoc(ctx, one, locLang, "", "")
 }
 
 // harvestDocs reads shipped `_*.info`/`*.md` docs into field prose and struct keys.

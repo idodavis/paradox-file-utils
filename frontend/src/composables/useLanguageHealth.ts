@@ -50,7 +50,11 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
   const id = computed(() => toValue(workspaceId));
   const { data: health, refetch } = useQuery({
     key: () => ["session", "health", id.value],
-    query: () => GetLanguageHealth(id.value),
+    query: async () => {
+      const wsId = id.value;
+      if (!wsId) return null;
+      return GetLanguageHealth(wsId);
+    },
     enabled: () => !!id.value,
     refetchOnWindowFocus: false,
   });

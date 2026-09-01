@@ -5,6 +5,8 @@ package services
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 
 	"paradox-modding-tools/services/internal/catalog"
@@ -49,17 +51,25 @@ type Workspace struct {
 	StagingDir     string         `json:"stagingDir"`
 	Tags           []string       `json:"tags"`
 	DefaultLocLang string         `json:"defaultLocLang"`
+	ResetIdeOnOpen bool           `json:"resetIdeOnOpen"`
+	DefaultTool    string         `json:"defaultTool,omitempty"`
+	IdeOpenFiles   []string       `json:"ideOpenFiles,omitempty"`
+	IdeActiveFile  string         `json:"ideActiveFile,omitempty"`
 	CreatedAt      string         `json:"createdAt"`
 	Mods           []WorkspaceMod `json:"mods"`
 }
 
 // WorkspaceMod is a mod attached to a workspace.
 type WorkspaceMod struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	IsBroken  bool   `json:"isBroken"`
-	CreatedAt string `json:"createdAt"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Path      string   `json:"path"`
+	Tags      []string `json:"tags"`
+	SortOrder int      `json:"sortOrder"`
+	Color     string   `json:"color,omitempty"`
+	Thumbnail string   `json:"thumbnail,omitempty"`
+	IsBroken  bool     `json:"isBroken"`
+	CreatedAt string   `json:"createdAt"`
 }
 
 // PatchRun is one patch of a mod onto a target install.
@@ -83,6 +93,8 @@ type PatchRunFile struct {
 	Status      string            `json:"status"`
 	Decision    string            `json:"decision"`
 	PreviewPath string            `json:"previewPath"`
+	ModPath     string            `json:"modPath,omitempty"`
+	TargetPath  string            `json:"targetPath,omitempty"`
 	Stats       PatchRunFileStats `json:"stats"`
 }
 
@@ -168,8 +180,23 @@ func (s *Store) Mutate(fn func(*Config) error) error {
 
 func cloneWorkspace(w Workspace) Workspace {
 	w.Tags = append([]string(nil), w.Tags...)
-	w.Mods = append([]WorkspaceMod(nil), w.Mods...)
+	w.IdeOpenFiles = append([]string(nil), w.IdeOpenFiles...)
+	mods := make([]WorkspaceMod, len(w.Mods))
+	for i, m := range w.Mods {
+		m.Tags = append([]string(nil), m.Tags...)
+		mods[i] = m
+	}
+	w.Mods = mods
 	return w
+}
+
+func sortWorkspaceMods(mods []WorkspaceMod) {
+	slices.SortFunc(mods, func(a, b WorkspaceMod) int {
+		if a.SortOrder != b.SortOrder {
+			return a.SortOrder - b.SortOrder
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
 }
 
 func findInstall(c *Config, id string) *GameInstall {

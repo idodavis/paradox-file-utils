@@ -6,8 +6,10 @@
 package session
 
 import (
-	"golang.org/x/sync/singleflight"
+	"fmt"
 	"sync"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // Builder constructs a Session for a workspace id (reads mods, loads the cache).
@@ -38,6 +40,9 @@ func NewPool(build Builder, emit Emitter) *Pool {
 // callers for the same id share a single build. Other live sessions are Dropped
 // first so only one workspace is live.
 func (p *Pool) EnsureSession(id string) (*Session, error) {
+	if id == "" {
+		return nil, fmt.Errorf("workspace id is required")
+	}
 	p.dropOthers(id)
 	p.mu.RLock()
 	if s := p.sessions[id]; s != nil {
@@ -79,6 +84,11 @@ func (p *Pool) Drop(id string) {
 	if s != nil {
 		s.Close()
 	}
+}
+
+// DropAll closes every live session.
+func (p *Pool) DropAll() {
+	p.dropOthers("")
 }
 
 func (p *Pool) dropOthers(keep string) {

@@ -59,6 +59,9 @@ export interface IdeRoot {
     "path": string;
     "readOnly": boolean;
     "kind": string;
+    "originId"?: string;
+    "color"?: string;
+    "thumbnail"?: string;
 }
 
 /**
@@ -122,6 +125,8 @@ export interface PatchRunFile {
     "status": string;
     "decision": string;
     "previewPath": string;
+    "modPath"?: string;
+    "targetPath"?: string;
     "stats": PatchRunFileStats;
 }
 
@@ -197,6 +202,10 @@ export interface Workspace {
     "stagingDir": string;
     "tags": string[] | null;
     "defaultLocLang": string;
+    "resetIdeOnOpen": boolean;
+    "defaultTool"?: string;
+    "ideOpenFiles"?: string[] | null;
+    "ideActiveFile"?: string;
     "createdAt": string;
     "mods": WorkspaceMod[] | null;
 }
@@ -208,6 +217,10 @@ export interface WorkspaceMod {
     "id": string;
     "name": string;
     "path": string;
+    "tags": string[] | null;
+    "sortOrder": number;
+    "color"?: string;
+    "thumbnail"?: string;
     "isBroken": boolean;
     "createdAt": string;
 }

@@ -16,6 +16,7 @@ import (
 // SettingsService provides persisted app settings.
 type SettingsService struct {
 	Store   *Store
+	Session *SessionService
 	Version string
 }
 
@@ -79,6 +80,9 @@ func (s *SettingsService) ResetData() error {
 	}
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("wipe cache: %w", err)
+	}
+	if s.Session != nil {
+		s.Session.pool().DropAll()
 	}
 	return nil
 }

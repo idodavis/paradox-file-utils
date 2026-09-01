@@ -1,7 +1,7 @@
 /**
  * Pinia store for active game, workspace list, and selection.
  */
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { useLocalStorage } from "@vueuse/core";
 import {
@@ -9,22 +9,15 @@ import {
   GetWorkspace,
   ListWorkspaceMods,
   MarkBrokenPaths,
+  ListGames,
 } from "@services/workspaceservice";
 import {
   EnsureSession,
   GetModelStatus,
 } from "@services/sessionservice";
+import { ReadFileBase64 } from "@services/fileservice";
 import { Workspace, WorkspaceMod } from "@services/models";
-
-/** Supported game identifiers. */
-export type GameId = "ck3" | "eu5" | "vic3";
-
-/** Game options for selector dropdowns. */
-export const GAME_OPTIONS: { label: string; value: GameId }[] = [
-  { label: "CK3", value: "ck3" },
-  { label: "EU5", value: "eu5" },
-  { label: "Vic3", value: "vic3" },
-];
+import type { GameInfo } from "@services/internal/game/models";
 
 /** Workspace default loc language choices (empty/english is the inherit lang). */
 export const LOC_LANG_ITEMS: { label: string; value: string }[] = [
@@ -41,13 +34,35 @@ export const LOC_LANG_ITEMS: { label: string; value: string }[] = [
   { label: "Japanese", value: "japanese" },
 ];
 
+function thumbMime(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  switch (ext) {
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "svg":
+      return "image/svg+xml";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function revokeAll(urls: Record<string, string>): void {
+  for (const u of Object.values(urls)) URL.revokeObjectURL(u);
+}
+
 /** Shared workspace library and active-workspace selection. */
 export const useWorkspaceStore = defineStore("workspace", () => {
-  const currentGameId = useLocalStorage<GameId>("workspace.gameId", "ck3");
+  const currentGameId = useLocalStorage("workspace.gameId", "ck3");
   const activeWorkspaceId = useLocalStorage("workspace.activeId", "");
   const workspaces = ref<Workspace[]>([]);
   const activeWorkspace = ref<Workspace | null>(null);
   const workspaceMods = ref<WorkspaceMod[]>([]);
+  const games = ref<GameInfo[]>([]);
+  const originVanilla = ref("vanilla");
+  const thumbUrls = ref<Record<string, string>>({});
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -59,19 +74,47 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const activeWorkspaceName = computed(
     () => activeWorkspace.value?.name ?? "No workspace",
   );
+  const gameOptions = computed(() =>
+    games.value.map((g) => ({ label: g.shortName, value: g.id })),
+  );
   const workspacesByGame = computed(() =>
-    GAME_OPTIONS.map((g) => ({
-      gameId: g.value,
-      label: g.label,
-      workspaces: workspaces.value.filter((w) => w.gameId === g.value),
+    games.value.map((g) => ({
+      gameId: g.id,
+      label: g.shortName,
+      workspaces: workspaces.value.filter((w) => w.gameId === g.id),
     })).filter((s) => s.workspaces.length > 0),
   );
+
+  /** Short name from the registry, or the raw id. */
+  function shortName(id: string): string {
+    return games.value.find((g) => g.id === id)?.shortName ?? id;
+  }
+
+  /** Full title from the registry, or "Game". */
+  function gameName(id: string): string {
+    return games.value.find((g) => g.id === id)?.name ?? "Game";
+  }
+
+  function applyGameList(list: {
+    originVanilla?: string;
+    games?: (GameInfo | null)[] | null;
+  } | null): void {
+    games.value = (list?.games ?? []).filter((g): g is GameInfo => !!g?.id);
+    originVanilla.value = list?.originVanilla || "vanilla";
+    if (
+      games.value.length &&
+      !games.value.some((g) => g.id === currentGameId.value)
+    ) {
+      currentGameId.value = games.value[0]!.id;
+    }
+  }
 
   /** Refresh all workspaces (every game). */
   async function refresh(): Promise<void> {
     loading.value = true;
     error.value = null;
     try {
+      applyGameList(await ListGames());
       await MarkBrokenPaths();
       workspaces.value = (await ListWorkspaces("")) ?? [];
       const id = activeWorkspaceId.value;
@@ -81,7 +124,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
       if (listed) {
         activeWorkspace.value = listed;
         workspaceMods.value = listed.mods ?? [];
-        if (listed.gameId) currentGameId.value = listed.gameId as GameId;
+        if (listed.gameId) currentGameId.value = listed.gameId;
       } else {
         if (id) activeWorkspaceId.value = "";
         activeWorkspace.value = null;
@@ -90,7 +133,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
           const match =
             workspaces.value.find((w) => w.gameId === currentGameId.value) ??
             workspaces.value[0];
-          if (match?.gameId) currentGameId.value = match.gameId as GameId;
+          if (match?.gameId) currentGameId.value = match.gameId;
         }
       }
     } catch (e) {
@@ -149,7 +192,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     activeWorkspaceId.value = next;
     if (next) {
       const found = workspaces.value.find((w) => w.id === next);
-      if (found?.gameId) currentGameId.value = found.gameId as GameId;
+      if (found?.gameId) currentGameId.value = found.gameId;
     }
     void loadActiveWorkspace();
   }
@@ -167,17 +210,47 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     }
   }
 
+  watch(
+    workspaceMods,
+    async (mods) => {
+      const prev = thumbUrls.value;
+      const next: Record<string, string> = {};
+      for (const m of mods) {
+        if (!m.thumbnail) continue;
+        try {
+          const file = await ReadFileBase64(m.thumbnail);
+          if (!file?.exists || !file.b64) continue;
+          const bin = Uint8Array.from(atob(file.b64), (c) => c.charCodeAt(0));
+          next[m.id] = URL.createObjectURL(new Blob([bin], {
+            type: thumbMime(m.thumbnail),
+          }));
+        } catch {
+          /* skip unreadable thumbs */
+        }
+      }
+      thumbUrls.value = next;
+      revokeAll(prev);
+    },
+    { deep: true },
+  );
+
   return {
     currentGameId,
     activeWorkspaceId,
     workspaces,
     activeWorkspace,
     workspaceMods,
+    games,
+    originVanilla,
+    thumbUrls,
     loading,
     error,
     hasWorkspaces,
     activeWorkspaceName,
+    gameOptions,
     workspacesByGame,
+    shortName,
+    gameName,
     refresh,
     loadActiveWorkspace,
     setActiveWorkspace,

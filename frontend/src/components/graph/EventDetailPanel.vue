@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Event inspector: header, loc, attributes, sections, incoming edges, options, refs.
+ * Event detail accordion: loc, attributes, sections, incoming edges, options, refs.
  */
 import { computed } from "vue";
 import type { AccordionItem } from "@nuxt/ui";
@@ -10,6 +10,7 @@ import type {
   EventSectionInfo,
 } from "@services/internal/views/models";
 import { useOpenInIde } from "../../composables/useOpenInIde";
+import DetailPane from "../DetailPane.vue";
 import EventScriptBlock from "./EventScriptBlock.vue";
 import EventRefsAccordion from "./EventRefsAccordion.vue";
 
@@ -61,79 +62,71 @@ function asSection(item: AccordionItem): EventSectionInfo | undefined {
 </script>
 
 <template>
-  <aside class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-default">
-    <div v-if="!detail" class="p-2 text-xs text-muted">
+  <DetailPane
+    :workspace-id="workspaceId"
+    :title="detail?.id"
+    :subtitle="detail?.title?.text"
+    :file="detail?.file"
+    :rel="detail?.rel"
+    :line="detail?.line"
+  >
+    <template #empty>
       Click a node to inspect. Double-click to re-root.
-    </div>
-    <template v-else>
-      <div class="shrink-0 space-y-1.5 border-b border-default px-2 py-1.5">
-        <div class="truncate text-sm font-semibold text-default">
-          {{ detail.id }}
-        </div>
-        <div v-if="detail.title?.text" class="truncate text-xs text-muted">
-          {{ detail.title.text }}
-        </div>
-        <div class="flex flex-wrap items-center gap-1">
-          <UBadge
-            v-if="detail.type"
-            :label="detail.type"
-            color="neutral"
-            variant="subtle"
-            size="xs"
-          />
-          <UBadge
-            v-if="detail.hidden"
-            label="hidden"
-            color="warning"
-            variant="subtle"
-            size="xs"
-          />
-          <UBadge
-            v-if="detail.theme"
-            :label="detail.theme"
-            color="info"
-            variant="subtle"
-            size="xs"
-          />
-          <UBadge
-            :label="detail.origin ? 'mod' : 'vanilla'"
-            :color="detail.origin ? 'primary' : 'neutral'"
-            variant="subtle"
-            size="xs"
-          />
-        </div>
-        <button
-          v-if="detail.file"
-          type="button"
-          class="block w-full truncate text-left text-xs text-muted
-            hover:text-default hover:underline"
-          :title="detail.file"
-          @click="open(detail.file, detail.line)"
-        >
-          {{ detail.rel || detail.file }}:{{ detail.line + 1 }}
-        </button>
-        <UButton label="Open in IDE" icon="i-lucide-file-code" size="xs"
-          color="neutral" variant="ghost" :disabled="!detail.file"
-          @click="open(detail.file, detail.line)" />
-      </div>
-      <div class="min-h-0 flex-1 overflow-auto p-2">
-        <UAccordion
-          type="multiple"
-          :items="items"
-          :ui="{
-            item: 'mb-1 overflow-hidden rounded-md border border-default last:mb-0',
-            header: 'bg-elevated',
-            trigger: 'px-2 py-1.5 text-xs font-medium',
-            body: 'px-2 text-xs',
-          }"
-        >
+    </template>
+    <template v-if="detail" #badges>
+      <UBadge
+        v-if="detail.kind && detail.kind !== 'event'"
+        :label="detail.kind"
+        color="neutral"
+        variant="subtle"
+        size="xs"
+      />
+      <UBadge
+        v-if="detail.type"
+        :label="detail.type"
+        color="neutral"
+        variant="subtle"
+        size="xs"
+      />
+      <UBadge
+        v-if="detail.hidden"
+        label="hidden"
+        color="warning"
+        variant="subtle"
+        size="xs"
+      />
+      <UBadge
+        v-if="detail.theme"
+        :label="detail.theme"
+        color="info"
+        variant="subtle"
+        size="xs"
+      />
+      <UBadge
+        :label="detail.origin ? 'mod' : 'vanilla'"
+        :color="detail.origin ? 'primary' : 'neutral'"
+        variant="subtle"
+        size="xs"
+      />
+    </template>
+    <UAccordion
+      v-if="detail"
+      type="multiple"
+      :items="items"
+      :ui="{
+        item: 'mb-1 overflow-hidden rounded-md border border-default last:mb-0',
+        header: 'bg-elevated',
+        trigger: 'px-2 py-1.5 text-xs font-medium',
+        body: 'px-2 text-xs',
+      }"
+    >
           <template #body="{ item }">
             <template v-if="item.value === 'loc'">
               <div
                 v-for="row in [
-                  { label: 'Title', loc: detail.title },
-                  { label: 'Desc', loc: detail.desc },
-                  { label: 'Flavor', loc: detail.flavor },
+                  { label: 'Title', loc: detail?.title },
+                  { label: 'Desc', loc: detail?.desc },
+                  { label: 'Flavor', loc: detail?.flavor },
                 ]"
                 v-show="row.loc"
                 :key="row.label"
@@ -228,7 +221,5 @@ function asSection(item: AccordionItem): EventSectionInfo | undefined {
             </template>
           </template>
         </UAccordion>
-      </div>
-    </template>
-  </aside>
+  </DetailPane>
 </template>

@@ -10,7 +10,7 @@ import ConflictPage from "../pages/ConflictPage.vue";
 import LocCoveragePage from "../pages/LocCoveragePage.vue";
 import PatcherPage from "../pages/PatcherPage.vue";
 import ToolsMergePage from "../pages/ToolsMergePage.vue";
-import SettingsPage from "../pages/SettingsPage.vue";
+import WorkspaceSettingsPage from "../pages/WorkspaceSettingsPage.vue";
 import { useWorkspaceStore } from "../stores/workspace";
 
 const routes = [
@@ -87,6 +87,16 @@ const routes = [
     },
   },
   {
+    path: "/workspace/:id/settings",
+    name: "workspace-settings",
+    component: WorkspaceSettingsPage,
+    meta: {
+      title: "Workspace Settings",
+      description: "Configure this workspace.",
+      workspaceTool: true,
+    },
+  },
+  {
     path: "/tools/merge",
     name: "tools-merge",
     component: ToolsMergePage,
@@ -98,10 +108,10 @@ const routes = [
   {
     path: "/settings",
     name: "settings",
-    component: SettingsPage,
-    meta: {
-      title: "Settings",
-      description: "App configuration and data management.",
+    redirect: () => {
+      const id = useWorkspaceStore().activeWorkspaceId;
+      if (id) return { name: "workspace-settings", params: { id } };
+      return { name: "library" };
     },
   },
 ];

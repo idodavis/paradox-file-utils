@@ -11,3 +11,60 @@ export interface DetectedInstall {
     "version": string;
     "appId": number;
 }
+
+/**
+ * GameInfo is the static identity and convention set for one game. It carries no
+ * derived data — the model package scans the install for objects, vocabulary, etc.
+ */
+export interface GameInfo {
+    "id": string;
+    "name": string;
+    "shortName": string;
+
+    /**
+     * WikiAPI is the MediaWiki api.php endpoint for this game's wiki.
+     */
+    "wikiApi"?: string;
+
+    /**
+     * ScriptRoot is the install-relative folder holding script (e.g. "game").
+     * Empty for EU5, whose content is split across StageRoots.
+     */
+    "scriptRoot"?: string;
+    "stageRoots"?: string[] | null;
+
+    /**
+     * Descriptor is how a mod root is identified: "mod" (descriptor.mod) or
+     * "metadata" (.metadata/metadata.json).
+     */
+    "descriptor"?: string;
+
+    /**
+     * DocsFolderName is the per-game Documents subfolder (e.g. "Crusader Kings III").
+     */
+    "docsFolderName"?: string;
+
+    /**
+     * ScriptDocsSubdir is where in-game console dumps land ("logs" or "docs").
+     */
+    "scriptDocsSubdir"?: string;
+
+    /**
+     * ScriptDocsFormat is "classic" (CK3 `_*.info`) or "markdown" (Vic3/EU5 `*.md`).
+     */
+    "scriptDocsFormat"?: string;
+
+    /**
+     * EntryModes are EU5 database entry-mode prefixes (INJECT:, REPLACE:, ...).
+     */
+    "entryModes"?: string[] | null;
+    "steamAppId"?: number;
+}
+
+/**
+ * GameList is the Wails payload for ListGames (consts are not exported).
+ */
+export interface GameList {
+    "originVanilla": string;
+    "games": (GameInfo | null)[] | null;
+}

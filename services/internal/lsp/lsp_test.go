@@ -193,7 +193,7 @@ t.2 = { title = k.t }
 	line, col = lineCol(body, "title = test.1.t")
 	wantHover(t, s, f, line, col, "Dynamic")
 	line, col = lineCol(body, "test.1.t")
-	wantHover(t, s, f, line, col, "localization", `"Hello"`)
+	wantHover(t, s, f, line, col, "localization", `"Hello"`, "**", ">")
 	line, col = lineCol(body, "title = type")
 	valCol := col + len("title = ")
 	wantHover(t, s, f, line, valCol, "localization")
@@ -203,7 +203,7 @@ t.2 = { title = k.t }
 	line, col = lineCol(body, "immediate")
 	wantHover(t, s, f, line, col, "event key", "`immediate`")
 	line, col = lineCol(body, "add_gold")
-	wantHover(t, s, f, line, col, "effect `add_gold`", "Gives gold")
+	wantHover(t, s, f, line, col, "**effect**", "`add_gold`", "Gives gold")
 	line, col = lineCol(body, "my_trig")
 	wantHover(t, s, f, line, col, "scripted trigger", "`my_trig`")
 	line, col = lineCol(body, "scope:duel_target")
@@ -296,4 +296,91 @@ func TestCompleteActionsSymbols(t *testing.T) {
 	if len(items) > 80 || len(items) == 0 || items[0].Label != "immediate" {
 		t.Fatalf("complete len=%d first=%q", len(items), items[0].Label)
 	}
+}
+
+func hasComplete(items []CompletionItem, label string) bool {
+	for _, it := range items {
+		if it.Label == label {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCompleteSlots(t *testing.T) {
+	cache := &catalog.VanillaCache{
+		Structures: map[string][]string{"event": {"immediate", "option", "title"}},
+		Effects:    []string{"add_gold"},
+		Triggers:   []string{"is_adult"},
+		FieldDocs:  map[string]string{"immediate": "runs first"},
+	}
+	vloc := &catalog.VanillaLoc{Sites: map[string]catalog.LocEntry{
+		"test.1.t": {Value: "Hi"},
+		"other":    {},
+	}}
+
+	imm := "test.1 = {\n\timmediate = {\n\t\t\n\t}\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": imm}, cache, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, _ := lineCol(imm, "immediate = {")
+	items := Complete(s, f, line+1, 2)
+	if !hasComplete(items, "add_gold") {
+		t.Fatalf("immediate slot missing add_gold: %v", labels(items))
+	}
+	if hasComplete(items, "option") || hasComplete(items, "title") {
+		t.Fatalf("immediate slot leaked structures: %v", labels(items))
+	}
+
+	trig := "test.1 = {\n\ttrigger = {\n\t\t\n\t}\n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": trig}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, _ = lineCol(trig, "trigger = {")
+	items = Complete(s, f, line+1, 2)
+	if !hasComplete(items, "is_adult") {
+		t.Fatalf("trigger slot missing is_adult: %v", labels(items))
+	}
+	if hasComplete(items, "add_gold") {
+		t.Fatalf("trigger slot leaked effect: %v", labels(items))
+	}
+
+	title := "test.1 = {\n\ttitle = te\n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": title}, cache, vloc)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(title, "title = te")
+	items = Complete(s, f, line, col+len("title = te"))
+	if !hasComplete(items, "test.1.t") || hasComplete(items, "other") {
+		t.Fatalf("title value loc: %v", labels(items))
+	}
+	if hasComplete(items, "add_gold") {
+		t.Fatalf("title value leaked effect: %v", labels(items))
+	}
+
+	fire := "test.1 = {\n\timmediate = { trigger_event = te }\n}\ntest.2 = { type = character_event }\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": fire}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(fire, "trigger_event = te")
+	items = Complete(s, f, line, col+len("trigger_event = te"))
+	if !hasComplete(items, "test.1") && !hasComplete(items, "test.2") {
+		t.Fatalf("trigger_event value: %v", labels(items))
+	}
+
+	body := "test.1 = {\n\timm"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": body}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(body, "imm")
+	items = Complete(s, f, line, col+len("imm"))
+	if len(items) == 0 || items[0].Label != "immediate" {
+		t.Fatalf("structure key: %v", labels(items))
+	}
+	if items[0].Documentation != "runs first" {
+		t.Fatalf("FieldDoc: %#v", items[0].Documentation)
+	}
+}
+
+func labels(items []CompletionItem) []string {
+	out := make([]string, len(items))
+	for i, it := range items {
+		out[i] = it.Label
+	}
+	return out
 }

@@ -147,19 +147,32 @@ type IdeRoot struct {
 	Path     string `json:"path"`
 	ReadOnly bool   `json:"readOnly"`
 	Kind     string `json:"kind"`
+	OriginId   string `json:"originId,omitempty"`
+	Color      string `json:"color,omitempty"`
+	Thumbnail  string `json:"thumbnail,omitempty"`
+}
+
+// gameFilesLabel is the explorer folder name for the install (registry Name).
+func gameFilesLabel(gameID string) string {
+	if g := game.Get(gameID); g != nil && g.Name != "" {
+		return g.Name
+	}
+	return "Game"
 }
 
 // GetIdeRoots returns game / mod / staging folders for the workspace IDE.
 func (w *WorkspaceService) GetIdeRoots(workspaceID string) ([]IdeRoot, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace id is required")
+	}
 	ws, err := w.GetWorkspace(workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	var roots []IdeRoot
-	if root, e := w.getScriptRoot(ws.InstallID); e == nil && root != "" {
-		roots = append(roots, IdeRoot{Label: "Game", Path: root, ReadOnly: true, Kind: "game"})
-	}
-	for _, mod := range ws.Mods {
+	mods := append([]WorkspaceMod(nil), ws.Mods...)
+	sortWorkspaceMods(mods)
+	for _, mod := range mods {
 		if mod.IsBroken || mod.Path == "" {
 			continue
 		}
@@ -167,10 +180,21 @@ func (w *WorkspaceService) GetIdeRoots(workspaceID string) ([]IdeRoot, error) {
 		if label == "" {
 			label = "Mod"
 		}
-		roots = append(roots, IdeRoot{Label: label, Path: mod.Path, Kind: "mod"})
+		roots = append(roots, IdeRoot{
+			Label: label, Path: mod.Path, Kind: "mod",
+			OriginId: mod.ID, Color: mod.Color, Thumbnail: mod.Thumbnail,
+		})
 	}
 	if ws.StagingDir != "" {
-		roots = append(roots, IdeRoot{Label: "Staging", Path: ws.StagingDir, Kind: "staging"})
+		roots = append(roots, IdeRoot{
+			Label: "Staging", Path: ws.StagingDir, Kind: "staging", OriginId: "staging",
+		})
+	}
+	if root, e := w.getScriptRoot(ws.InstallID); e == nil && root != "" {
+		roots = append(roots, IdeRoot{
+			Label: gameFilesLabel(ws.GameID), Path: root,
+			ReadOnly: true, Kind: "game", OriginId: game.OriginVanilla,
+		})
 	}
 	return roots, nil
 }

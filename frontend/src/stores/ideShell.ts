@@ -7,11 +7,13 @@ import { defineStore } from "pinia";
 /** Controls when the workbench overlays non-IDE Nuxt pages (e.g. patch review). */
 export const useIdeShellStore = defineStore("ideShell", () => {
   const mergeReview = ref(false);
+  const bannerLabel = ref("Back");
   let onEnd: (() => void) | null = null;
 
-  /** Show workbench over the current flow for diff review. */
-  function beginMergeReview(back?: () => void): void {
+  /** Show workbench over the current flow for diff/merge review. */
+  function beginMergeReview(back?: () => void, label = "Back"): void {
     onEnd = back ?? null;
+    bannerLabel.value = label;
     mergeReview.value = true;
   }
 
@@ -23,5 +25,5 @@ export const useIdeShellStore = defineStore("ideShell", () => {
     cb?.();
   }
 
-  return { mergeReview, beginMergeReview, endMergeReview };
+  return { mergeReview, bannerLabel, beginMergeReview, endMergeReview };
 });

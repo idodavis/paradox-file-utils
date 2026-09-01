@@ -38,6 +38,9 @@ export type IdeRoot = {
   path: string;
   readOnly: boolean;
   kind: IdeRootKind;
+  originId?: string;
+  color?: string;
+  thumbnail?: string;
 };
 
 type Disposable = { dispose(): void };
@@ -66,10 +69,23 @@ function b64FromBytes(data: Uint8Array): string {
   return btoa(parts.join(""));
 }
 
+function normFs(p: string): string {
+  return p.replace(/\//g, "\\").toLowerCase().replace(/\\+$/, "");
+}
+
 function underRoot(filePath: string, root: string): boolean {
-  const a = filePath.replace(/\//g, "\\").toLowerCase();
-  const b = root.replace(/\//g, "\\").toLowerCase().replace(/\\+$/, "");
+  const a = normFs(filePath);
+  const b = normFs(root);
   return a === b || a.startsWith(b + "\\");
+}
+
+type ModRootDeletedFn = (originId: string) => void | Promise<void>;
+
+let modRootDeleted: ModRootDeletedFn | undefined;
+
+/** Called after a successful disk delete of a mounted mod root. */
+export function setModRootDeletedHook(fn: ModRootDeletedFn | undefined): void {
+  modRootDeleted = fn;
 }
 
 /** Minimal event emitter matching VS Code Event shape. */
@@ -131,6 +147,11 @@ export class WailsFileSystemProvider
     }));
   }
 
+  /** True when the path is under a read-only (game) root. */
+  isReadOnly(filePath: string): boolean {
+    return this.roots.some((r) => r.readOnly && underRoot(filePath, r.path));
+  }
+
   /** True when path is under a mounted IDE root (or no roots yet). */
   private manages(path: string): boolean {
     if (!this.roots.length) return false;
@@ -190,11 +211,21 @@ export class WailsFileSystemProvider
     ]);
   }
 
+  /** Origin id when path is exactly a kind:mod root, not a child. */
+  private modRootOrigin(path: string): string | undefined {
+    const key = normFs(path);
+    return this.roots.find(
+      (r) => r.kind === "mod" && r.originId && normFs(r.path) === key,
+    )?.originId;
+  }
+
   async delete(resource: Uri, _opts: IFileDeleteOptions): Promise<void> {
     const path = fsPath(resource);
     if (!this.manages(path)) this.notFound();
     this.assertWritable(path);
+    const originId = this.modRootOrigin(path);
     await DeletePath(path);
+    if (originId && modRootDeleted) await modRootDeleted(originId);
   }
 
   async rename(from: Uri, to: Uri, _opts: IFileOverwriteOptions): Promise<void> {

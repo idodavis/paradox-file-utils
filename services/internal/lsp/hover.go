@@ -34,8 +34,8 @@ func Hover(s *session.Session, path string, line, col int) *HoverResult {
 		if docs == "" && !m.structKeys[a.Key.Text] && !m.structKeys[strings.ToLower(a.Key.Text)] {
 			return nil
 		}
-		head := kindLabel(at.kind) + " key `" + a.Key.Text + "`"
-		return &HoverResult{Contents: hoverCard(head, "", docs)}
+		head := kindLabel(at.kind) + " key"
+		return &HoverResult{Contents: hoverCard(head, a.Key.Text, "", docs)}
 	}
 	if at.word == "" {
 		return nil
@@ -44,7 +44,7 @@ func Hover(s *session.Session, path string, line, col int) *HoverResult {
 		return h
 	}
 	if extra := s.FieldDoc(at.word, ""); extra != "" {
-		return &HoverResult{Contents: extra}
+		return &HoverResult{Contents: hoverCard("field", at.word, "", extra)}
 	}
 	return nil
 }
@@ -65,9 +65,9 @@ func namedHoverAllow(s *session.Session, word string, allowLoc bool) *HoverResul
 			return savedScopeHover(word)
 		}
 		h := &HoverResult{
-			Contents: hoverCard(kindLabel(d.Type)+" `"+d.Key+"`", "", s.FieldDoc(word, d.Type)),
+			Contents: hoverCard(kindLabel(d.Type), d.Key, "", s.FieldDoc(word, d.Type)),
 		}
-		attachSite(h, s, d.Path, d.Line, d.Origin)
+		attachSite(h, s, d.Path, d.Line, d.Origin, d.Start)
 		return h
 	}
 	if allowLoc && locDefined(s, word) {
@@ -75,7 +75,7 @@ func namedHoverAllow(s *session.Session, word string, allowLoc bool) *HoverResul
 	}
 	if ck := memberSetsFor(s, "").catalogKind(word); ck != "" {
 		return &HoverResult{
-			Contents: hoverCard(ck+" `"+word+"`", "", s.FieldDoc(word, "")),
+			Contents: hoverCard(ck, word, "", s.FieldDoc(word, "")),
 		}
 	}
 	return nil
@@ -87,38 +87,61 @@ func locHover(s *session.Session, key string) *HoverResult {
 	if text == "" && !ok {
 		return nil
 	}
-	h := &HoverResult{Contents: hoverCard("localization `"+key+"`", text, "")}
+	h := &HoverResult{Contents: hoverCard("localization", key, text, "")}
 	if ok {
-		attachSite(h, s, file, line, origin)
+		attachSite(h, s, file, line, origin, 0)
 	}
 	return h
 }
 
-func hoverCard(head, locVal, docs string) string {
+func hoverCard(kind, key, locVal, docs string) string {
 	var b strings.Builder
-	b.WriteString(head)
+	b.WriteString("**")
+	b.WriteString(mdEscape(kind))
+	b.WriteString("** `")
+	b.WriteString(mdEscape(key))
+	b.WriteString("`")
 	if locVal != "" {
-		b.WriteString("\n\n\"")
-		b.WriteString(locVal)
+		b.WriteString("\n\n> \"")
+		b.WriteString(mdEscape(locVal))
 		b.WriteString("\"")
 	}
 	if docs != "" {
 		b.WriteString("\n\n")
-		b.WriteString(docs)
+		b.WriteString(mdEscape(docs))
 	}
 	return b.String()
 }
 
-func attachSite(h *HoverResult, s *session.Session, path string, line int, origin string) {
+func mdEscape(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "`", "\\`")
+	if !strings.Contains(s, "\n") {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		if strings.HasPrefix(ln, ">") {
+			lines[i] = `\` + ln
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func attachSite(h *HoverResult, s *session.Session, path string, line int, origin string, start int) {
 	if h == nil || path == "" {
 		return
 	}
+	h.Path = path
 	h.Rel = s.DisplayRel(path)
 	h.Line = line
 	if origin == "" {
-		origin = "vanilla"
+		origin = game.OriginVanilla
 	}
 	h.Origin = origin
+	if start > 0 {
+		h.Col = s.Parsed(path).Lines().PositionAt(start).Character
+	}
 }
 
 func kindLabel(t string) string {
@@ -142,7 +165,7 @@ func kindLabel(t string) string {
 
 func savedScopeHover(name string) *HoverResult {
 	return &HoverResult{
-		Contents: hoverCard(kindLabel("saved_scope")+" `scope:"+name+"`", "", ""),
+		Contents: hoverCard(kindLabel("saved_scope"), "scope:"+name, "", ""),
 	}
 }
 

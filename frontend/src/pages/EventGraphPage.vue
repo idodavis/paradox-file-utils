@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Event graph page: GetEventGraph + GetEventDetail. Layout is dagre in GraphCanvas.
+ * Event graph page: GetEventGraph + GetEventDetail. Layout is elkjs in GraphCanvas.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
@@ -14,6 +14,7 @@ import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import GraphCanvas from "../components/graph/GraphCanvas.vue";
 import EventDetailPanel from "../components/graph/EventDetailPanel.vue";
+import GameIcon from "../components/GameIcon.vue";
 import { useLiveEnabled } from "../composables/useSessionQuery";
 import type { GraphLayoutMode } from "../composables/useGraphLayout";
 import { originHex } from "../ide/rootDecorations";
@@ -21,24 +22,27 @@ import { useWorkspaceStore } from "../stores/workspace";
 
 defineOptions({ name: "EventGraphPage" });
 
-const VANILLA = "vanilla";
 const MENU_UI = { content: "min-w-96 w-[420px]", viewport: "max-h-96" };
 
 const route = useRoute();
 const ws = useWorkspaceStore();
+const vanilla = computed(() => ws.originVanilla);
 
 const liveMods = computed(() =>
   ws.workspaceMods.filter((m) => !m.isBroken && m.path),
 );
 const originItems = computed(() => [
   ...liveMods.value.map((m) => ({ label: m.name, id: m.id, path: m.path })),
-  { label: "Vanilla", id: VANILLA },
+  {
+    label: ws.gameName(ws.activeWorkspace?.gameId ?? ws.currentGameId),
+    id: vanilla.value,
+  },
 ]);
 const origins = ref<string[]>([]);
 watch(
   liveMods,
   (mods) => {
-    const ids = [...mods.map((m) => m.id), VANILLA];
+    const ids = [...mods.map((m) => m.id), vanilla.value];
     const keep = origins.value.filter((id) => ids.includes(id));
     origins.value = keep.length ? keep : ids;
   },
@@ -51,14 +55,22 @@ const originsNarrowed = computed(
 );
 const originColors = computed((): Record<string, string> =>
   Object.fromEntries([
-    [VANILLA, originHex({ kind: "game", path: "" })],
-    ...liveMods.value.map((m) => [m.id, originHex({ kind: "mod", path: m.path })]),
+    [vanilla.value, originHex({ kind: "game", path: "" })],
+    ...liveMods.value.map((m, i) => [
+      m.id,
+      originHex({
+        kind: "mod",
+        path: m.path,
+        color: m.color,
+        wrapIndex: i,
+      }),
+    ]),
   ]),
 );
 
 /** Explorer-matching swatch for a picker or payload origin. */
 function itemOriginHex(origin: string | undefined): string {
-  const key = !origin || origin === VANILLA ? VANILLA : origin;
+  const key = !origin || origin === vanilla.value ? vanilla.value : origin;
   return originColors.value[key] ?? originHex({ kind: "mod", path: origin ?? "" });
 }
 
@@ -146,7 +158,11 @@ function onNamespace(v: string | null | undefined): void {
   namespace.value = v ?? undefined;
 }
 function setRoot(v: string | null | undefined): void { if (v) root.value = v; }
-function clearRoot(): void { root.value = undefined; selectedId.value = ""; }
+function clearRoot(): void {
+  root.value = undefined;
+  namespace.value = undefined;
+  selectedId.value = "";
+}
 
 watch(namespace, (ns) => {
   if (ns && root.value && !root.value.startsWith(`${ns}.`)) {
@@ -192,12 +208,22 @@ watch(workspaceId, () => {
           :model-value="root"
           :items="graph?.suggestions?.ids ?? []"
           label-key="id" value-key="id" placeholder="Root event"
-          size="md" class="w-64" :ui="MENU_UI" :loading="loading"
+          size="md" class="min-w-64 flex-1" :ui="MENU_UI" :loading="loading"
           :virtualize="(graph?.suggestions?.ids?.length ?? 0) > 400"
           @update:model-value="setRoot"
         >
           <template #item-leading="{ item }">
-            <span v-if="item.id" class="size-2 shrink-0 rounded-full"
+            <img
+              v-if="item.origin && ws.thumbUrls[item.origin]"
+              :src="ws.thumbUrls[item.origin]"
+              alt=""
+              class="size-4 rounded-sm object-cover"
+            />
+            <GameIcon
+              v-else-if="!item.origin || item.origin === vanilla"
+              :game-id="ws.activeWorkspace?.gameId ?? ws.currentGameId"
+            />
+            <span v-else class="size-2 shrink-0 rounded-full"
               :style="{ backgroundColor: itemOriginHex(item.origin) }" />
           </template>
         </USelectMenu>
@@ -218,25 +244,38 @@ watch(workspaceId, () => {
           placeholder="Origins" size="md" class="w-72" :ui="MENU_UI"
         >
           <template #item-leading="{ item }">
+            <img
+              v-if="item.id !== vanilla && ws.thumbUrls[item.id]"
+              :src="ws.thumbUrls[item.id]"
+              alt=""
+              class="size-4 rounded-sm object-cover"
+            />
+            <GameIcon
+              v-else-if="item.id === vanilla"
+              :game-id="ws.activeWorkspace?.gameId ?? ws.currentGameId"
+            />
             <span
+              v-else
               class="size-2 shrink-0 rounded-full"
               :style="{ backgroundColor: itemOriginHex(item.id) }"
             />
           </template>
         </USelectMenu>
         <UButton
-          label="Clear root"
+          label="Clear"
+          icon="i-lucide-x"
           size="md"
           color="neutral"
-          variant="ghost"
-          :disabled="!root"
+          variant="outline"
+          :disabled="!root && !namespace"
           @click="clearRoot"
         />
         <UButton
           label="Recenter"
+          icon="i-lucide-locate-fixed"
           size="md"
           color="neutral"
-          variant="ghost"
+          variant="soft"
           :disabled="!root"
           @click="onRecenter"
         />
@@ -280,8 +319,19 @@ watch(workspaceId, () => {
       class="m-2"
     />
 
-    <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
+    <UDashboardGroup
+      storage="local"
+      storage-key="pmt-event-graph"
+      class="relative! inset-auto! min-h-0 min-w-0 flex-1 overflow-hidden"
+    >
+      <UDashboardPanel
+        id="event-graph-main"
+        resizable
+        :default-size="75"
+        :min-size="50"
+        :max-size="85"
+        class="min-h-0!"
+      >
         <GraphCanvas
           ref="graphCanvas"
           class="h-full min-h-0 w-full"
@@ -293,17 +343,16 @@ watch(workspaceId, () => {
           :origin-colors="originColors"
           @select="onSelect"
           @reroot="onReroot"
+          @clear-selection="selectedId = ''"
         />
-      </div>
-      <div
-        class="w-80 shrink-0 overflow-hidden border-l border-default"
-      >
+      </UDashboardPanel>
+      <UDashboardPanel id="event-graph-detail" class="min-h-0!">
         <EventDetailPanel
           :workspace-id="workspaceId"
           :detail="detail ?? null"
           @reroot="onReroot"
         />
-      </div>
-    </div>
+      </UDashboardPanel>
+    </UDashboardGroup>
   </div>
 </template>

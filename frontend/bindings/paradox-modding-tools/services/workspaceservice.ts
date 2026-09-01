@@ -28,8 +28,22 @@ export function AddGameInstall(gameID: string, name: string, path: string, versi
 /**
  * AddWorkspaceMod adds a mod to a workspace.
  */
-export function AddWorkspaceMod(workspaceID: string, name: string, path: string): $CancellablePromise<$models.WorkspaceMod | null> {
-    return $Call.ByID(123649806, workspaceID, name, path);
+export function AddWorkspaceMod(workspaceID: string, name: string, path: string, tags: string[] | null, thumbnail: string): $CancellablePromise<$models.WorkspaceMod | null> {
+    return $Call.ByID(123649806, workspaceID, name, path, tags, thumbnail);
+}
+
+/**
+ * CountWorkspacesUsingInstall returns names of workspaces on this install.
+ */
+export function CountWorkspacesUsingInstall(installID: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(1820687512, installID);
+}
+
+/**
+ * CreateMod writes a new mod skeleton under parentDir and returns its path.
+ */
+export function CreateMod(gameID: string, parentDir: string, name: string, locLang: string, supportedVersion: string, description: string, thumbnailSrc: string): $CancellablePromise<string> {
+    return $Call.ByID(3614381098, gameID, parentDir, name, locLang, supportedVersion, description, thumbnailSrc);
 }
 
 /**
@@ -40,10 +54,24 @@ export function CreateWorkspace(gameID: string, name: string, installID: string,
 }
 
 /**
+ * DefaultModParent is Documents/Paradox Interactive/<game>/mod, or "".
+ */
+export function DefaultModParent(gameID: string): $CancellablePromise<string> {
+    return $Call.ByID(1639189285, gameID);
+}
+
+/**
  * DeleteGameInstall removes an install if no workspace uses it.
  */
 export function DeleteGameInstall(id: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(3448659062, id);
+}
+
+/**
+ * DeleteWorkspace removes a workspace from PMT. Mod folders on disk stay.
+ */
+export function DeleteWorkspace(id: string): $CancellablePromise<void> {
+    return $Call.ByID(1615435582, id);
 }
 
 /**
@@ -96,7 +124,14 @@ export function ListGameInstalls(gameID: string): $CancellablePromise<$models.Ga
 }
 
 /**
- * ListWorkspaceMods returns all mods for a workspace.
+ * ListGames returns the supported-game table and vanilla origin token.
+ */
+export function ListGames(): $CancellablePromise<game$0.GameList> {
+    return $Call.ByID(1635414117);
+}
+
+/**
+ * ListWorkspaceMods returns all mods for a workspace, sorted by SortOrder then Name.
  */
 export function ListWorkspaceMods(workspaceID: string): $CancellablePromise<$models.WorkspaceMod[] | null> {
     return $Call.ByID(1179220170, workspaceID);
@@ -114,6 +149,27 @@ export function ListWorkspaces(gameID: string): $CancellablePromise<$models.Work
  */
 export function MarkBrokenPaths(): $CancellablePromise<void> {
     return $Call.ByID(2434148990);
+}
+
+/**
+ * RemoveWorkspaceMod detaches a mod from a workspace.
+ */
+export function RemoveWorkspaceMod(workspaceID: string, modID: string): $CancellablePromise<void> {
+    return $Call.ByID(1041246117, workspaceID, modID);
+}
+
+/**
+ * ReorderWorkspaceMods writes SortOrder from the given id list.
+ */
+export function ReorderWorkspaceMods(workspaceID: string, modIDs: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(3662824479, workspaceID, modIDs);
+}
+
+/**
+ * SaveIdeSession stores open editor paths for a workspace.
+ */
+export function SaveIdeSession(workspaceID: string, files: string[] | null, active: string): $CancellablePromise<void> {
+    return $Call.ByID(3665330071, workspaceID, files, active);
 }
 
 /**
@@ -142,4 +198,18 @@ export function UpdateGameInstall(id: string, path: string, docsPath: string): $
  */
 export function UpdateWorkspace(id: string, name: string, installID: string, stagingDir: string, tags: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(2311242704, id, name, installID, stagingDir, tags);
+}
+
+/**
+ * UpdateWorkspaceMod updates a mod's name, tags, and optional color override.
+ */
+export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: string, tags: string[] | null, color: string, thumbnail: string): $CancellablePromise<void> {
+    return $Call.ByID(439726452, workspaceID, modID, name, tags, color, thumbnail);
+}
+
+/**
+ * UpdateWorkspacePrefs sets IDE persist and default landing page.
+ */
+export function UpdateWorkspacePrefs(workspaceID: string, resetIdeOnOpen: boolean, defaultTool: string): $CancellablePromise<void> {
+    return $Call.ByID(3501301930, workspaceID, resetIdeOnOpen, defaultTool);
 }

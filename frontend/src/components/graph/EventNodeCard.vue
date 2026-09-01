@@ -13,10 +13,11 @@ const box = computed(() => nodeBox(props.data ?? {}));
 const isRoot = computed(() => props.data?.role === "root");
 const isCaller = computed(() => props.data?.role === "caller");
 const isMore = computed(() => props.data?.kind === "more");
-const isMod = computed(() => !!props.data?.origin);
-const badge = computed(
-  () => props.data?.originName || (isMod.value ? props.data?.origin : "vanilla"),
+const isGate = computed(
+  () => props.data?.kind === "on_action" || props.data?.kind === "decision",
 );
+const isMod = computed(() => !!props.data?.origin);
+const badge = computed(() => props.data?.originName || "");
 </script>
 
 <template>
@@ -24,13 +25,16 @@ const badge = computed(
     class="rounded-md border px-2 py-1.5 text-left shadow-sm"
     :class="{
       'ring-2 ring-primary bg-elevated': isRoot && !props.selected,
-      'border-muted text-muted': isCaller && !props.selected,
+      'border-muted text-muted border-l-4 border-l-warning':
+        isCaller && !props.selected,
       'border-dashed border-muted bg-default': isMore && !props.selected,
+      'rounded-lg border-dashed border-secondary bg-default':
+        isGate && !isMore && !props.selected,
       'border-primary bg-elevated ring-1 ring-primary': props.selected,
       'border-primary/60 bg-elevated':
-        !props.selected && !isRoot && !isCaller && !isMore && isMod,
+        !props.selected && !isRoot && !isCaller && !isMore && !isGate && isMod,
       'border-default bg-default':
-        !props.selected && !isRoot && !isCaller && !isMore && !isMod,
+        !props.selected && !isRoot && !isCaller && !isMore && !isGate && !isMod,
     }"
     :style="{ width: `${box.width}px`, height: `${box.height}px` }"
   >
@@ -63,10 +67,23 @@ const badge = computed(
       >
         root
       </UBadge>
-      <UBadge color="neutral" variant="subtle" size="xs">
+      <UBadge
+        v-if="isCaller"
+        color="warning"
+        variant="subtle"
+        size="xs"
+      >
+        fires this
+      </UBadge>
+      <UBadge
+        :color="isGate ? 'secondary' : 'neutral'"
+        variant="subtle"
+        size="xs"
+      >
         {{ props.data.kind }}
       </UBadge>
       <UBadge
+        v-if="badge"
         :color="isMod ? 'primary' : 'neutral'"
         variant="subtle"
         size="xs"

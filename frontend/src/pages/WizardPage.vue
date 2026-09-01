@@ -2,12 +2,14 @@
 /**
  * Workspace creation wizard: game → install → mods → name/tags → staging → create.
  */
-import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { computed, ref, useTemplateRef, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useMutation, useQuery } from "@pinia/colada";
 import type { StepperItem } from "@nuxt/ui";
-import FileSelector from "../components/FileSelector.vue";
-import { GAME_OPTIONS, LOC_LANG_ITEMS, useWorkspaceStore, type GameId } from "../stores/workspace";
+import { useSortable } from "@vueuse/integrations/useSortable";
+import FileSelector, { pickDirectory } from "../components/FileSelector.vue";
+import CreateModForm from "../components/CreateModForm.vue";
+import { LOC_LANG_ITEMS, useWorkspaceStore } from "../stores/workspace";
 import {
   ListGameInstalls,
   AddGameInstall,
@@ -22,13 +24,15 @@ import {
   GetInstallCacheInfo,
   SetWorkspaceLocLang,
 } from "@services/workspaceservice";
-import { pickDirectory } from "../composables/nativeDialog";
 
 const router = useRouter();
+const route = useRoute();
 const ctx = useWorkspaceStore();
+const wantsNewMod = computed(() => String(route.query.newMod ?? "") === "1");
+const creatingMod = ref(false);
 
 const step = ref(1);
-const selectedGame = ref<GameId>(ctx.currentGameId);
+const selectedGame = ref(ctx.currentGameId);
 const selectedInstallId = ref<string | undefined>(undefined);
 const newInstallPath = ref("");
 const newInstallName = ref("");
@@ -36,10 +40,17 @@ const newInstallVersion = ref("latest");
 const newDetected = ref("");
 const draftVersion = ref("latest");
 const defaultLocLang = ref("english");
-const modPaths = ref<string[]>([]);
+const modEntries = ref<{ path: string; tags: string[]; thumbnail: string }[]>([]);
 const workspaceName = ref("");
-const tagsText = ref("");
+const tags = ref<string[]>([]);
 const stagingDir = ref("");
+const wizardModsEl = useTemplateRef<HTMLElement>("wizardModsEl");
+
+useSortable(wizardModsEl, modEntries, {
+  handle: ".mod-handle",
+  animation: 150,
+  watchElement: true,
+});
 
 /** Wizard steps; `value` matches the 1-based `step` ref. */
 const stepItems: StepperItem[] = [
@@ -61,12 +72,18 @@ const installItems = computed(() =>
 const selectedInstall = computed(() =>
   installs.value.find((i) => i.id === selectedInstallId.value),
 );
+const supportedVersion = computed(() => {
+  const i = selectedInstall.value;
+  if (!i) return "";
+  const v = i.versionDetected || i.version || "";
+  return v === "latest" ? "" : v;
+});
 
 const canContinue = computed(() => {
   switch (step.value) {
     case 1: return !!selectedGame.value;
     case 2: return !!selectedInstallId.value;
-    case 3: return true;
+    case 3: return wantsNewMod.value ? modEntries.value.length > 0 : true;
     case 4: return !!workspaceName.value.trim();
     case 5: return !!selectedInstallId.value;
     default: return false;
@@ -99,7 +116,7 @@ const {
       cacheAt: Object.fromEntries(infos),
     };
   },
-  enabled: () => step.value === 2,
+  enabled: () => step.value >= 2,
 });
 
 const installs = computed(() => installPack.value?.installs ?? []);
@@ -191,12 +208,20 @@ const {
 /** Add a mod path entry. */
 async function addModPath(): Promise<void> {
   const path = await pickDirectory("Select mod folder");
-  if (path) modPaths.value.push(path);
+  if (path) modEntries.value.push({ path, tags: [], thumbnail: "" });
+}
+
+/** Attach a newly created mod folder. */
+function onModCreated(path: string, thumbnail = ""): void {
+  if (!modEntries.value.some((m) => m.path === path)) {
+    modEntries.value.push({ path, tags: [], thumbnail });
+  }
+  creatingMod.value = false;
 }
 
 /** Remove a mod path. */
 function removeModPath(index: number): void {
-  modPaths.value.splice(index, 1);
+  modEntries.value.splice(index, 1);
 }
 
 /** Move the stepper; later steps stay locked until an install is selected. */
@@ -225,15 +250,11 @@ const {
       step.value = 2;
       throw new Error("Select or add a game install before creating.");
     }
-    const tagsArray = tagsText.value
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
     const ws = await CreateWorkspace(
       selectedGame.value,
       workspaceName.value.trim(),
       selectedInstallId.value,
-      tagsArray,
+      tags.value,
     );
     if (!ws) throw new Error("Failed to create workspace");
     await SetWorkspaceLocLang(ws.id, defaultLocLang.value);
@@ -247,13 +268,13 @@ const {
       );
     }
     await EnsureStagingDir(ws.id);
-    for (const modPath of modPaths.value) {
-      const name = modPath.split(/[/\\]/).pop() || "Mod";
-      await AddWorkspaceMod(ws.id, name, modPath);
+    for (const mod of modEntries.value) {
+      const name = mod.path.split(/[/\\]/).pop() || "Mod";
+      await AddWorkspaceMod(ws.id, name, mod.path, mod.tags, mod.thumbnail);
     }
     ctx.setActiveWorkspace(ws.id);
     await ctx.refresh();
-    void router.push({ name: "workspace-ide", params: { id: ws.id } });
+    void router.replace({ name: "workspace-ide", params: { id: ws.id } });
   },
 });
 
@@ -289,7 +310,7 @@ const error = computed(
           <template v-if="step === 1">
             <div class="space-y-4">
               <h2 class="font-semibold">Select Game</h2>
-              <URadioGroup v-model="selectedGame" :items="GAME_OPTIONS" variant="card" />
+              <URadioGroup v-model="selectedGame" :items="ctx.gameOptions" variant="card" />
             </div>
           </template>
 
@@ -389,24 +410,80 @@ const error = computed(
           <template v-else-if="step === 3">
             <div class="space-y-4">
               <h2 class="font-semibold">Mod Folders</h2>
-              <p class="text-sm text-muted">
+              <UAlert
+                v-if="wantsNewMod"
+                color="info"
+                variant="subtle"
+                title="Creating a new mod"
+                description="Add at least one new or existing mod folder, then continue."
+              />
+              <p v-else class="text-sm text-muted">
                 Add one or more mod folders to include in this workspace.
               </p>
-              <div v-for="(path, idx) in modPaths" :key="idx" class="flex items-center gap-2">
-                <UInput :model-value="path" readonly class="flex-1" />
+              <div ref="wizardModsEl" class="space-y-2">
+                <div
+                  v-for="(mod, idx) in modEntries"
+                  :key="mod.path"
+                  class="space-y-2 rounded border border-default p-2"
+                >
+                  <div class="flex items-center gap-2">
+                    <UButton
+                      icon="i-lucide-grip-vertical"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      class="mod-handle cursor-grab"
+                    />
+                    <UInput :model-value="mod.path" readonly class="flex-1" />
+                    <UButton
+                      icon="i-lucide-trash-2"
+                      color="error"
+                      variant="ghost"
+                      size="sm"
+                      @click="removeModPath(idx)"
+                    />
+                  </div>
+                  <UInputTags v-model="mod.tags" placeholder="Optional tags" />
+                  <div class="flex items-end gap-2">
+                    <FileSelector
+                      v-model="mod.thumbnail"
+                      mode="file"
+                      label="Thumbnail"
+                      dialog-title="Select thumbnail"
+                      file-filter="*.png; *.jpg; *.jpeg; *.svg"
+                      class="flex-1"
+                    />
+                    <UButton
+                      v-if="mod.thumbnail"
+                      label="Clear"
+                      size="xs"
+                      color="neutral"
+                      variant="ghost"
+                      @click="mod.thumbnail = ''"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2">
                 <UButton
-                  icon="i-lucide-trash-2"
-                  color="error"
-                  variant="ghost"
-                  size="sm"
-                  @click="removeModPath(idx)"
+                  label="Add existing folder"
+                  icon="i-lucide-folder-plus"
+                  variant="outline"
+                  @click="addModPath"
+                />
+                <UButton
+                  label="Create new mod"
+                  icon="i-lucide-package-plus"
+                  variant="outline"
+                  @click="creatingMod = !creatingMod"
                 />
               </div>
-              <UButton
-                label="Add Mod Folder"
-                icon="i-lucide-folder-plus"
-                variant="outline"
-                @click="addModPath"
+              <CreateModForm
+                v-if="creatingMod"
+                :game-id="selectedGame"
+                :loc-lang="defaultLocLang"
+                :supported-version="supportedVersion"
+                @created="onModCreated"
               />
             </div>
           </template>
@@ -417,8 +494,8 @@ const error = computed(
               <UFormField label="Workspace name" required>
                 <UInput v-model="workspaceName" placeholder="My CK3 Mod Project" />
               </UFormField>
-              <UFormField label="Tags (comma-separated)">
-                <UInput v-model="tagsText" placeholder="wip, balance, events" />
+              <UFormField label="Tags">
+                <UInputTags v-model="tags" placeholder="Add tag" />
               </UFormField>
               <UFormField label="Default loc language">
                 <USelect v-model="defaultLocLang" :items="LOC_LANG_ITEMS" value-key="value" />
@@ -470,7 +547,7 @@ const error = computed(
             label="Cancel"
             variant="ghost"
             color="neutral"
-            @click="router.push({ name: 'library' })"
+            @click="router.replace({ name: 'library' })"
           />
         </div>
       </div>

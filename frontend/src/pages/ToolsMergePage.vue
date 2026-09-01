@@ -8,7 +8,7 @@ import FileSelector from "../components/FileSelector.vue";
 import { MergePreview, Merge } from "@services/mergeservice";
 import { PreviewItem, MergerOptions } from "@services/models";
 import { GetUserDownloadsDir } from "@services/fileservice";
-import { reviewDiffInWorkbench } from "../composables/workbenchMerge";
+import { openDiff, openMergeEditor, startMergeOverlay } from "../ide/commands";
 import { useRouter } from "vue-router";
 
 defineOptions({ name: "ToolsMergePage" });
@@ -59,15 +59,27 @@ function runPreview(): void {
   void previewMut();
 }
 
-/** Review one preview pair in the workbench. */
+/** 2-way preview of one pair in the chrome-hidden workbench. */
+async function previewItem(item: PreviewItem): Promise<void> {
+  await startMergeOverlay({
+    files: [item.pathA, item.pathB, item.outputPath],
+    label: "Back to Merge",
+    back: () => { void router.push({ name: "tools-merge" }); },
+    open: () => openDiff(item.pathA, item.pathB, item.relPath),
+  });
+}
+
+/** Review one pair in the VS Code merge editor. */
 async function reviewItem(item: PreviewItem): Promise<void> {
-  await reviewDiffInWorkbench({
-    pathA: item.pathA,
-    pathB: item.pathB,
-    title: item.relPath,
-    onBack: () => {
-      void router.push({ name: "tools-merge" });
-    },
+  await startMergeOverlay({
+    files: [item.pathA, item.pathB, item.outputPath],
+    label: "Back to Merge",
+    back: () => { void router.push({ name: "tools-merge" }); },
+    open: () => openMergeEditor({
+      input1: item.pathA,
+      input2: item.pathB,
+      result: item.outputPath || item.pathA,
+    }),
   });
 }
 
@@ -171,7 +183,7 @@ async function runMerge(): Promise<void> {
                 label="Diff"
                 size="xs"
                 variant="outline"
-                @click="reviewItem(item)"
+                @click="previewItem(item)"
               />
             </div>
           </div>

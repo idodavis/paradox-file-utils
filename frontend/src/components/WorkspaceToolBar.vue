@@ -5,6 +5,8 @@
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { NavigationMenuItem } from "@nuxt/ui";
+import { useSettingsStore } from "../stores/settings";
+import { WORKSPACE_TOOLS } from "../workspaceTools";
 
 const props = defineProps<{
   workspaceId: string;
@@ -14,26 +16,34 @@ const props = defineProps<{
 
 const route = useRoute();
 const router = useRouter();
+const settings = useSettingsStore();
 
 const id = computed(() => props.workspaceId || String(route.params.id ?? ""));
 
-const tools: { label: string; icon: string; name: string }[] = [
-  { label: "IDE", icon: "i-lucide-code", name: "workspace-ide" },
-  { label: "Event Graph", icon: "i-lucide-git-fork", name: "event-graph" },
-  { label: "Conflicts", icon: "i-lucide-layers", name: "conflicts" },
-  { label: "Loc Coverage", icon: "i-lucide-languages", name: "loc-coverage" },
-  { label: "Mod Patcher", icon: "i-lucide-git-compare", name: "patcher" },
-];
+/** History back unless the previous entry is the create-workspace wizard. */
+function goBack(): void {
+  const back = window.history.state?.back;
+  if (!back || String(back).includes("/wizard")) {
+    void router.replace({ name: "library" });
+    return;
+  }
+  router.back();
+}
 
 /** Tool routes as navigation-menu items with active-state highlighting. */
-const toolItems = computed<NavigationMenuItem[]>(() =>
-  tools.map((t) => ({
+const toolItems = computed<NavigationMenuItem[]>(() => {
+  const visible = settings.visibleTools;
+  let shown = WORKSPACE_TOOLS.filter((t) => visible.includes(t.name));
+  if (!shown.length) {
+    shown = WORKSPACE_TOOLS.filter((t) => t.name === "workspace-ide");
+  }
+  return shown.map((t) => ({
     label: t.label,
     icon: t.icon,
     active: props.active ? props.active === t.name : route.name === t.name,
     to: { name: t.name, params: { id: id.value } },
-  })),
-);
+  }));
+});
 </script>
 
 <template>
@@ -41,11 +51,11 @@ const toolItems = computed<NavigationMenuItem[]>(() =>
     <template #left>
       <UButton
         icon="i-lucide-arrow-left"
-        label="Library"
+        label="Back"
         color="neutral"
         variant="ghost"
         size="sm"
-        @click="router.push({ name: 'library' })"
+        @click="goBack"
       />
       <span class="font-semibold text-default">{{ title }}</span>
       <UNavigationMenu

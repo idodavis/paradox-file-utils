@@ -139,6 +139,40 @@ func EventSectionRole(name string) string {
 	return "effect"
 }
 
+var triggerSlotKeys = map[string]bool{
+	"limit": true, "potential": true,
+	"and": true, "or": true, "not": true, "nor": true, "nand": true,
+}
+
+var effectSlotKeys = map[string]bool{
+	"immediate": true, "option": true, "after": true, "else": true, "effect": true,
+}
+
+// ScriptSlot is the completion bag for a block named key: "trigger", "effect",
+// or "" (object-body structure keys). Event gates map to trigger; EventSectionRole's
+// default "effect" is not used (title/type are not effect slots).
+func ScriptSlot(key string) string {
+	k := strings.ToLower(key)
+	if EventSectionRole(k) == "gate" {
+		return "trigger"
+	}
+	if triggerSlotKeys[k] {
+		return "trigger"
+	}
+	if effectSlotKeys[k] {
+		return "effect"
+	}
+	switch {
+	case strings.HasPrefix(k, "any_"):
+		return "trigger"
+	case strings.HasPrefix(k, "every_"),
+		strings.HasPrefix(k, "random_"),
+		strings.HasPrefix(k, "ordered_"):
+		return "effect"
+	}
+	return ""
+}
+
 // FireKind reports whether key is an event or on_action fire site.
 func FireKind(key string) string {
 	switch strings.ToLower(key) {

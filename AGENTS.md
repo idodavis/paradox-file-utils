@@ -14,6 +14,7 @@
 - Prefer Nuxt UI component patterns (`:items` and similar) over ad-hoc `v-if`/`v-model` control flow where Nuxt UI fits.
 - Prefer denser layouts where editor/diff/merge content dominates the viewport and path/config chrome stays compact.
 - When cleaning code, keep useful comments and user-facing behavior; reduce complexity without expanding scope.
+- Do not re-wrap, pack, or densify code to move a line-count gate. A reduction counts only when a representation, pass, helper, or file is deleted. `wc` is a consequence metric, never a reason to change formatting.
 
 ## Learned Workspace Facts
 
@@ -31,8 +32,8 @@
 - **Pool:** `EnsureSession` Drops every other live session (one live workspace). `Pool.Drop` is not a Wails RPC. DeleteGameInstall refuses while in use (does not Drop).
 - Workspaces: first-launch/retriggerable wizard, dropdown switching, user-specified mod paths, default staging, multiple installs per game, broken-path marking, default loc language, install version pin/`latest`, DeleteGameInstall (refuses while in use). No DeleteWorkspace RPC.
 - Scan hot-swap: `RebuildInstallSemantics(installId)` ReplaceCache/ReplaceVanillaLoc on every live session on that install, emit `lang:cache-updated`; languageClient re-Diagnoses open LANGS docs (no app reload).
-- Event-graph layout is frontend `@dagrejs/dagre` + Vue Flow; Go returns nodes/edges with no coordinates. Origin hulls and via-effect edges stay. Vue templates the payload (no regroup of gates/effects/locRows).
-- **Frontend husk:** appearance + interaction only. `SEEDS` in `frontend/src/ide/colorThemes.ts` is the only palette; `applySeedCss` injects onto `:root`. Families: pmt, catppuccin, one, monokai, github. `themes.css` is the structural `@theme` / `--ui-*` bridge. Syntax tokens from `@codingame/monaco-vscode-theme-defaults-default-extension` (dark_plus / light_plus); all `@codingame/monaco-vscode-*` packages pin the same version via npm overrides. Table filters live in UTable column state; fetch state in Pinia Colada `useQuery`/`useMutation`. No path-stripping helpers; payloads carry `rel`/`origin`/`originName`. Kept as presentation: dagre (`useGraphLayout`) and GraphCanvas hull geometry.
+- Event-graph layout is frontend `elkjs` layered + Vue Flow nested `parentNode` (origin groups). Go returns nodes/edges with no coordinates. Via-effect edges stay. Vue templates the payload (no regroup of gates/effects/locRows).
+- **Frontend husk:** appearance + interaction only. `SEEDS` in `frontend/src/ide/colorThemes.ts` is the only palette; `applySeedCss` injects onto `:root`. Families: pmt, catppuccin, one, monokai, github. `themes.css` is the structural `@theme` / `--ui-*` bridge. Syntax tokens from `@codingame/monaco-vscode-theme-defaults-default-extension` (dark_plus / light_plus); all `@codingame/monaco-vscode-*` packages pin the same version via npm overrides. Table filters live in UTable column state; fetch state in Pinia Colada `useQuery`/`useMutation`. No path-stripping helpers; payloads carry `rel`/`origin`/`originName`. Kept as presentation: elkjs (`useGraphLayout`) and Vue Flow origin parents.
 - Monaco language providers use `registerLanguageClient(() => workspaceId)` — no `useWorkspaceStore()` inside provider callbacks.
 - Tool pages use `useWorkspaceStore().ensureReady()` — success means a **live** session (`GetModelStatus().live`), not merely `defCount > 0`.
 - On Windows, the parser is pure Go (`CGO_ENABLED=0`). Linux/darwin stay `CGO_ENABLED=1` for Wails WebKit. `go test -race ./services/internal/parser/...` should work on Windows.

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -42,11 +43,6 @@ func Coverage(s *session.Session) []LocCoverage {
 		}
 	}
 
-	inheritedKeys := map[string]bool{}
-	for _, k := range s.LocKeys(true) {
-		inheritedKeys[k] = true
-	}
-
 	defaultLang := s.DefaultLang()
 	source := byLang[defaultLang]
 	if source == nil {
@@ -59,8 +55,14 @@ func Coverage(s *session.Session) []LocCoverage {
 	}
 	slices.Sort(langs)
 
+	_, _, ver, installID := s.CacheInfo()
+	if ver == "" {
+		ver = "latest"
+	}
+
 	out := make([]LocCoverage, 0, len(langs))
 	for _, lang := range langs {
+		inheritedKeys := sidecarKeys(s, installID, ver, lang)
 		entries := byLang[lang]
 		row := LocCoverage{Language: lang, Defined: len(entries)}
 		addIssue := func(kind string, site locSite, value string) {
@@ -85,7 +87,7 @@ func Coverage(s *session.Session) []LocCoverage {
 			if _, ok := referenced[key]; ok || inheritedKeys[key] {
 				continue
 			}
-			addIssue("orphaned", site, "")
+			addIssue("orphaned", site, site.value)
 		}
 		if lang != defaultLang {
 			for key, site := range entries {
@@ -105,6 +107,26 @@ func Coverage(s *session.Session) []LocCoverage {
 			return cmp.Compare(a.Key, b.Key)
 		})
 		out = append(out, row)
+	}
+	return out
+}
+
+func sidecarKeys(s *session.Session, installID, ver, lang string) map[string]bool {
+	out := map[string]bool{}
+	if lang == s.DefaultLang() {
+		for _, k := range s.LocKeys(true) {
+			out[k] = true
+		}
+	}
+	if installID == "" {
+		return out
+	}
+	vl, err := catalog.LoadVanillaLoc(installID, ver, lang)
+	if err != nil || vl == nil {
+		return out
+	}
+	for k := range vl.Sites {
+		out[k] = true
 	}
 	return out
 }

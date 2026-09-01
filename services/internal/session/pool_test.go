@@ -46,3 +46,32 @@ func TestEnsureSession(t *testing.T) {
 		t.Errorf("events = %v, want [%s]", events, EventReady)
 	}
 }
+
+func TestEnsureSessionEmptyIDDoesNotDrop(t *testing.T) {
+	pool := NewPool(func(id string) (*Session, error) {
+		return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+	}, nil)
+	live, err := pool.EnsureSession("ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.EnsureSession(""); err == nil {
+		t.Fatal("empty id: want error")
+	}
+	if pool.Get("ws") != live {
+		t.Fatal("empty EnsureSession dropped the live session")
+	}
+}
+
+func TestDropAll(t *testing.T) {
+	pool := NewPool(func(id string) (*Session, error) {
+		return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+	}, nil)
+	if _, err := pool.EnsureSession("ws"); err != nil {
+		t.Fatal(err)
+	}
+	pool.DropAll()
+	if pool.Get("ws") != nil {
+		t.Fatal("DropAll left a session")
+	}
+}

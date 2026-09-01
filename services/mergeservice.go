@@ -341,7 +341,9 @@ func scriptValuesEqual(a, b string) bool {
 func (p *PatcherService) previewOne(
 	staging, rel, modP, tgt string, prev *PatchRunPreview,
 ) (PatchRunFile, error) {
-	f := PatchRunFile{ID: uuid.New().String(), RelPath: rel}
+	f := PatchRunFile{
+		ID: uuid.New().String(), RelPath: rel, ModPath: modP, TargetPath: tgt,
+	}
 	if tgt == "" {
 		f.Status = "mod_only"
 		prev.SkippedCount++
