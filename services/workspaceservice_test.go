@@ -33,11 +33,11 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	seedWorkspace(t, svc.Store, "ws1", "inst1")
 	modDir := t.TempDir()
 
-	a, err := svc.AddWorkspaceMod("ws1", "Alpha", filepath.Join(modDir, "a"), []string{"x"}, "")
+	a, err := svc.AddWorkspaceMod("ws1", "Alpha", filepath.Join(modDir, "a"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := svc.AddWorkspaceMod("ws1", "Beta", filepath.Join(modDir, "b"), nil, "")
+	b, err := svc.AddWorkspaceMod("ws1", "Beta", filepath.Join(modDir, "b"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,11 +79,11 @@ func TestWorkspaceService_ReorderIncomplete(t *testing.T) {
 	t.Parallel()
 	svc := testWorkspaceService(t)
 	seedWorkspace(t, svc.Store, "ws1", "")
-	a, err := svc.AddWorkspaceMod("ws1", "A", t.TempDir(), nil, "")
+	a, err := svc.AddWorkspaceMod("ws1", "A", t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.AddWorkspaceMod("ws1", "B", t.TempDir(), nil, ""); err != nil {
+	if _, err := svc.AddWorkspaceMod("ws1", "B", t.TempDir(), ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.ReorderWorkspaceMods("ws1", []string{a.ID}); err == nil {
@@ -135,7 +135,7 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.AddWorkspaceMod("ws1", "Alpha", modDir, nil, ""); err != nil {
+	if _, err := svc.AddWorkspaceMod("ws1", "Alpha", modDir, ""); err != nil {
 		t.Fatal(err)
 	}
 	roots, err := svc.GetIdeRoots("ws1")
@@ -168,10 +168,10 @@ func TestWorkspaceService_DeleteWorkspace(t *testing.T) {
 		t.Fatal("empty id")
 	}
 	seedWorkspace(t, svc.Store, "ws1", "inst1")
-	if _, err := svc.AddWorkspaceMod("ws1", "A", t.TempDir(), nil, ""); err != nil {
+	if _, err := svc.AddWorkspaceMod("ws1", "A", t.TempDir(), ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.AddWorkspaceMod("ws1", "B", t.TempDir(), nil, ""); err != nil {
+	if _, err := svc.AddWorkspaceMod("ws1", "B", t.TempDir(), ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.DeleteWorkspace("ws1"); err != nil {

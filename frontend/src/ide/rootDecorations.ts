@@ -225,19 +225,9 @@ function thumbMime(path: string): string {
 
 function dotRule(label: string, hex: string): string {
   const row = explorerRootSel(label);
-  const after = `${row} .monaco-icon-label::after`;
-  const name = `${row} .monaco-icon-name-container`;
   return [
-    `${after} {`,
-    '  content: "";',
-    "  display: inline-block;",
-    "  width: 8px;",
-    "  height: 8px;",
-    "  border-radius: 50%;",
-    "  margin-left: 6px;",
-    `  background: ${hex};`,
-    "}",
-    `${name} { color: ${hex} !important; }`,
+    `${row}::after { background: ${hex}; }`,
+    `${row} .monaco-icon-name-container { color: ${hex} !important; }`,
   ].join("\n");
 }
 

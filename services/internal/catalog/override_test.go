@@ -7,12 +7,13 @@ import "testing"
 func TestWinner(t *testing.T) {
 	tests := []struct {
 		name   string
+		gameID string
 		defs   []Def
 		order  map[string]int
 		origin string
 	}{
 		{
-			"LIOS last mod",
+			"LIOS last mod", "",
 			[]Def{
 				{Type: "trait", Key: "brave", Origin: "a"},
 				{Type: "trait", Key: "brave", Origin: "b"},
@@ -21,7 +22,7 @@ func TestWinner(t *testing.T) {
 			map[string]int{"a": 0, "b": 1}, "b",
 		},
 		{
-			"FIOS gui",
+			"FIOS gui", "ck3",
 			[]Def{
 				{Type: "gui_type", Key: "widget", Origin: "b"},
 				{Type: "gui_type", Key: "widget", Origin: "a"},
@@ -29,14 +30,38 @@ func TestWinner(t *testing.T) {
 			map[string]int{"a": 0, "b": 1}, "a",
 		},
 		{
-			"vanilla only",
+			"vanilla only", "",
 			[]Def{{Type: "trait", Key: "x", Origin: ""}},
 			map[string]int{}, "",
+		},
+		{
+			"vic3 event FIOS", "vic3",
+			[]Def{
+				{Type: "event", Key: "e.1", Origin: "b"},
+				{Type: "event", Key: "e.1", Origin: "a"},
+			},
+			map[string]int{"a": 0, "b": 1}, "a",
+		},
+		{
+			"eu5 gui_type LIOS", "eu5",
+			[]Def{
+				{Type: "gui_type", Key: "widget", Origin: "a"},
+				{Type: "gui_type", Key: "widget", Origin: "b"},
+			},
+			map[string]int{"a": 0, "b": 1}, "b",
+		},
+		{
+			"ck3 event LIOS", "ck3",
+			[]Def{
+				{Type: "event", Key: "e.1", Origin: "a"},
+				{Type: "event", Key: "e.1", Origin: "b"},
+			},
+			map[string]int{"a": 0, "b": 1}, "b",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := Winner(tt.defs, tt.order)
+			w := Winner(tt.gameID, tt.defs, tt.order)
 			if w == nil || w.Origin != tt.origin {
 				t.Errorf("winner = %v, want origin %q", w, tt.origin)
 			}
@@ -52,6 +77,7 @@ func TestContests(t *testing.T) {
 	}
 	tests := []struct {
 		name    string
+		gameID  string
 		defs    []Def
 		cache   []Def
 		order   []string
@@ -60,13 +86,13 @@ func TestContests(t *testing.T) {
 		winner  string
 		mods    int
 	}{
-		{"mod vs mod LIOS", modPair, nil, []string{"a", "b"}, 1, false, "b", 2},
-		{"vanilla shadow conflict", modPair, vanilla, []string{"a", "b"}, 1, false, "b", 2},
-		{"vanilla overlay only",
+		{"mod vs mod LIOS", "", modPair, nil, []string{"a", "b"}, 1, false, "b", 2},
+		{"vanilla shadow conflict", "", modPair, vanilla, []string{"a", "b"}, 1, false, "b", 2},
+		{"vanilla overlay only", "",
 			[]Def{{Type: "trait", Key: "brave", Origin: "a", Path: "a.txt", Line: 1}},
 			vanilla, []string{"a"}, 1, true, "", 1},
 		{
-			"skip loc and isolated kinds",
+			"skip loc and isolated kinds", "",
 			[]Def{
 				{Type: "loc_key", Key: "brave", Origin: "a", Path: "a.yml"},
 				{Type: "loc_key", Key: "brave", Origin: "b", Path: "b.yml"},
@@ -77,10 +103,26 @@ func TestContests(t *testing.T) {
 			},
 			nil, []string{"a", "b"}, 0, false, "", 0,
 		},
+		{
+			"vic3 event FIOS", "vic3",
+			[]Def{
+				{Type: "event", Key: "e.1", Origin: "a", Path: "a.txt", Line: 1},
+				{Type: "event", Key: "e.1", Origin: "b", Path: "b.txt", Line: 2},
+			},
+			nil, []string{"a", "b"}, 1, false, "a", 2,
+		},
+		{
+			"eu5 gui_type LIOS", "eu5",
+			[]Def{
+				{Type: "gui_type", Key: "w", Origin: "a", Path: "a.gui", Line: 1},
+				{Type: "gui_type", Key: "w", Origin: "b", Path: "b.gui", Line: 2},
+			},
+			nil, []string{"a", "b"}, 1, false, "b", 2,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rows := Contests(tt.defs, tt.cache, tt.order)
+			rows := Contests(tt.gameID, tt.defs, tt.cache, tt.order)
 			if len(rows) != tt.n {
 				t.Fatalf("rows = %d, want %d (%+v)", len(rows), tt.n, rows)
 			}
@@ -93,6 +135,12 @@ func TestContests(t *testing.T) {
 			}
 			if tt.winner != "" && r.Winner != tt.winner {
 				t.Errorf("winner = %q, want %s", r.Winner, tt.winner)
+			}
+			if tt.name == "vic3 event FIOS" && r.Rule != "FIOS" {
+				t.Errorf("rule = %q, want FIOS", r.Rule)
+			}
+			if tt.name == "eu5 gui_type LIOS" && r.Rule != "LIOS" {
+				t.Errorf("rule = %q, want LIOS", r.Rule)
 			}
 		})
 	}

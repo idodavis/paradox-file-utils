@@ -333,6 +333,35 @@ func TestLocFileReferences(t *testing.T) {
 	}
 }
 
+func TestTriggerLocalizationReferences(t *testing.T) {
+	locBody := "l_english:\n IS_ADULT_TRIGGER:0 \"Is an adult\"\n"
+	trig := "is_adult = {\n\tglobal = IS_ADULT_TRIGGER\n\tfirst = I_AM_ADULT_TRIGGER\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/trigger_localization/x.txt":    trig,
+		"localization/english/a_l_english.yml": locBody,
+	}, nil, nil)
+	locFile := filepath.Join(root, "localization", "english", "a_l_english.yml")
+	line, col := lineCol(locBody, "IS_ADULT_TRIGGER")
+	locs := References(s, locFile, line, col)
+	if !hasURI(locs, "trigger_localization") {
+		t.Fatalf("trigger loc key refs=%v", locs)
+	}
+	trigFile := filepath.Join(root, "common", "trigger_localization", "x.txt")
+	tLine, tCol := lineCol(trig, "IS_ADULT_TRIGGER")
+	if locs := Definition(s, trigFile, tLine, tCol); !hasURI(locs, "a_l_english.yml") {
+		t.Fatalf("script-side Definition=%v", locs)
+	}
+}
+
+func hasURI(locs []Location, sub string) bool {
+	for _, loc := range locs {
+		if strings.Contains(loc.URI, sub) {
+			return true
+		}
+	}
+	return false
+}
+
 func hasRefSite(locs []Location, line, col int) bool {
 	for _, loc := range locs {
 		if loc.Range.Start.Line == line && loc.Range.Start.Character == col {

@@ -339,7 +339,7 @@ func (s *Session) ResolveMatching(key string, keep func(catalog.Def) bool) *cata
 		}
 		defs = defs[:n]
 	}
-	return catalog.Winner(defs, s.order)
+	return catalog.Winner(s.GameID, defs, s.order)
 }
 
 // LocSite returns the winning localization definition site for key.
@@ -352,7 +352,7 @@ func (s *Session) LocSite(key string) (file string, line int, origin string, ok 
 			locDefs = append(locDefs, d)
 		}
 	}
-	if w := catalog.Winner(locDefs, s.order); w != nil {
+	if w := catalog.Winner(s.GameID, locDefs, s.order); w != nil {
 		return w.Path, w.Line, w.Origin, true
 	}
 	if s.vanillaLoc != nil {
@@ -672,7 +672,7 @@ func (s *Session) Contests(order []string) []catalog.Contest {
 	if s.cache != nil {
 		vanilla = s.cache.Defs
 	}
-	return catalog.Contests(mods, vanilla, order)
+	return catalog.Contests(s.GameID, mods, vanilla, order)
 }
 
 // LocFile returns a workspace loc file path for origin and lang, if indexed.

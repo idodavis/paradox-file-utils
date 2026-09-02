@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Workspace creation wizard: game → install → mods → name/tags → staging → create.
+ * Workspace creation wizard: game → install → mods → name → staging → create.
  */
 import { computed, ref, useTemplateRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -40,9 +40,8 @@ const newInstallVersion = ref("latest");
 const newDetected = ref("");
 const draftVersion = ref("latest");
 const defaultLocLang = ref("english");
-const modEntries = ref<{ path: string; tags: string[]; thumbnail: string }[]>([]);
+const modEntries = ref<{ path: string; thumbnail: string }[]>([]);
 const workspaceName = ref("");
-const tags = ref<string[]>([]);
 const stagingDir = ref("");
 const wizardModsEl = useTemplateRef<HTMLElement>("wizardModsEl");
 
@@ -208,13 +207,13 @@ const {
 /** Add a mod path entry. */
 async function addModPath(): Promise<void> {
   const path = await pickDirectory("Select mod folder");
-  if (path) modEntries.value.push({ path, tags: [], thumbnail: "" });
+  if (path) modEntries.value.push({ path, thumbnail: "" });
 }
 
 /** Attach a newly created mod folder. */
 function onModCreated(path: string, thumbnail = ""): void {
   if (!modEntries.value.some((m) => m.path === path)) {
-    modEntries.value.push({ path, tags: [], thumbnail });
+    modEntries.value.push({ path, thumbnail });
   }
   creatingMod.value = false;
 }
@@ -254,7 +253,6 @@ const {
       selectedGame.value,
       workspaceName.value.trim(),
       selectedInstallId.value,
-      tags.value,
     );
     if (!ws) throw new Error("Failed to create workspace");
     await SetWorkspaceLocLang(ws.id, defaultLocLang.value);
@@ -264,13 +262,12 @@ const {
         ws.name,
         ws.installId,
         stagingDir.value.trim(),
-        ws.tags ?? [],
       );
     }
     await EnsureStagingDir(ws.id);
     for (const mod of modEntries.value) {
       const name = mod.path.split(/[/\\]/).pop() || "Mod";
-      await AddWorkspaceMod(ws.id, name, mod.path, mod.tags, mod.thumbnail);
+      await AddWorkspaceMod(ws.id, name, mod.path, mod.thumbnail);
     }
     ctx.setActiveWorkspace(ws.id);
     await ctx.refresh();
@@ -443,7 +440,6 @@ const error = computed(
                       @click="removeModPath(idx)"
                     />
                   </div>
-                  <UInputTags v-model="mod.tags" placeholder="Optional tags" />
                   <div class="flex items-end gap-2">
                     <FileSelector
                       v-model="mod.thumbnail"
@@ -493,9 +489,6 @@ const error = computed(
               <h2 class="font-semibold">Workspace Details</h2>
               <UFormField label="Workspace name" required>
                 <UInput v-model="workspaceName" placeholder="My CK3 Mod Project" />
-              </UFormField>
-              <UFormField label="Tags">
-                <UInputTags v-model="tags" placeholder="Add tag" />
               </UFormField>
               <UFormField label="Default loc language">
                 <USelect v-model="defaultLocLang" :items="LOC_LANG_ITEMS" value-key="value" />

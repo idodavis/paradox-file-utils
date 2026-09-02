@@ -28,8 +28,8 @@ export function AddGameInstall(gameID: string, name: string, path: string, versi
 /**
  * AddWorkspaceMod adds a mod to a workspace.
  */
-export function AddWorkspaceMod(workspaceID: string, name: string, path: string, tags: string[] | null, thumbnail: string): $CancellablePromise<$models.WorkspaceMod | null> {
-    return $Call.ByID(123649806, workspaceID, name, path, tags, thumbnail);
+export function AddWorkspaceMod(workspaceID: string, name: string, path: string, thumbnail: string): $CancellablePromise<$models.WorkspaceMod | null> {
+    return $Call.ByID(123649806, workspaceID, name, path, thumbnail);
 }
 
 /**
@@ -49,8 +49,8 @@ export function CreateMod(gameID: string, parentDir: string, name: string, locLa
 /**
  * CreateWorkspace creates a new workspace and default staging dir.
  */
-export function CreateWorkspace(gameID: string, name: string, installID: string, tags: string[] | null): $CancellablePromise<$models.Workspace | null> {
-    return $Call.ByID(2742011767, gameID, name, installID, tags);
+export function CreateWorkspace(gameID: string, name: string, installID: string): $CancellablePromise<$models.Workspace | null> {
+    return $Call.ByID(2742011767, gameID, name, installID);
 }
 
 /**
@@ -196,15 +196,15 @@ export function UpdateGameInstall(id: string, path: string, docsPath: string): $
 /**
  * UpdateWorkspace updates workspace fields.
  */
-export function UpdateWorkspace(id: string, name: string, installID: string, stagingDir: string, tags: string[] | null): $CancellablePromise<void> {
-    return $Call.ByID(2311242704, id, name, installID, stagingDir, tags);
+export function UpdateWorkspace(id: string, name: string, installID: string, stagingDir: string): $CancellablePromise<void> {
+    return $Call.ByID(2311242704, id, name, installID, stagingDir);
 }
 
 /**
- * UpdateWorkspaceMod updates a mod's name, tags, and optional color override.
+ * UpdateWorkspaceMod updates a mod's name and optional color/thumbnail.
  */
-export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: string, tags: string[] | null, color: string, thumbnail: string): $CancellablePromise<void> {
-    return $Call.ByID(439726452, workspaceID, modID, name, tags, color, thumbnail);
+export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: string, color: string, thumbnail: string): $CancellablePromise<void> {
+    return $Call.ByID(439726452, workspaceID, modID, name, color, thumbnail);
 }
 
 /**

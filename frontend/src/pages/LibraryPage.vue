@@ -91,7 +91,7 @@ async function onModCreated(path: string, thumbnail: string): Promise<void> {
   const id = attachWsId.value;
   if (!id) return;
   const label = path.split(/[/\\]/).pop() || "Mod";
-  await AddWorkspaceMod(id, label, path, [], thumbnail);
+  await AddWorkspaceMod(id, label, path, thumbnail);
   newModOpen.value = false;
   await ctx.refresh();
   toast.add({ title: "Mod created.", color: "success" });
@@ -221,17 +221,6 @@ onActivated(() => {
               class="mt-2"
               :workspace-id="ctx.activeWorkspace.id"
             />
-            <div v-if="ctx.activeWorkspace.tags?.length" class="mt-1 flex flex-wrap gap-1">
-              <UBadge
-                v-for="tag in ctx.activeWorkspace.tags"
-                :key="tag"
-                color="secondary"
-                variant="subtle"
-                size="xs"
-              >
-                {{ tag }}
-              </UBadge>
-            </div>
           </div>
         </UCard>
       </div>
@@ -288,17 +277,6 @@ onActivated(() => {
               <div class="space-y-1 text-xs text-muted">
                 <p v-if="ws.installId">Install configured</p>
                 <p v-else class="text-warning">No install set</p>
-                <div v-if="ws.tags?.length" class="flex flex-wrap gap-1">
-                  <UBadge
-                    v-for="tag in ws.tags"
-                    :key="tag"
-                    color="secondary"
-                    variant="subtle"
-                    size="xs"
-                  >
-                    {{ tag }}
-                  </UBadge>
-                </div>
               </div>
             </UCard>
           </div>

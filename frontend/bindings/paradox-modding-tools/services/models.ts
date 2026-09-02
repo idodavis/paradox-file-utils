@@ -265,7 +265,6 @@ export interface Workspace {
     "name": string;
     "installId": string;
     "stagingDir": string;
-    "tags": string[] | null;
     "defaultLocLang": string;
     "gameColor"?: string;
     "stagingColor"?: string;
@@ -284,7 +283,6 @@ export interface WorkspaceMod {
     "id": string;
     "name": string;
     "path": string;
-    "tags": string[] | null;
     "sortOrder": number;
     "color"?: string;
     "thumbnail"?: string;

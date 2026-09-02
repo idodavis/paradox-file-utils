@@ -56,6 +56,33 @@ watch(
   },
   { immediate: true },
 );
+
+/** First-wins kinds for this workspace's game (mirrors game.IsFIOS). */
+function firstWinsNote(gameId: string): string {
+  switch (gameId) {
+    case "ck3":
+      return "GUI types and templates are first-wins.";
+    case "vic3":
+      return "GUI types, templates, and events are first-wins.";
+    case "eu5":
+      return "Events are first-wins; GUI types last-wins.";
+    default:
+      return "GUI types and templates are first-wins.";
+  }
+}
+
+const loadOrderCopy = computed(() => {
+  const extra = firstWinsNote(ws.activeWorkspace?.gameId ?? ws.currentGameId);
+  return `Last listed wins (LIOS). ${extra} Click a row to filter.`;
+});
+
+/** Toggle a mod origin in the same set OriginSelectMenu uses. */
+function toggleOrigin(id: string): void {
+  const cur = originIds.value;
+  originIds.value = cur.includes(id)
+    ? cur.filter((x) => x !== id)
+    : [...cur, id];
+}
 const scopeItems = [
   { label: "Conflicts", value: "conflicts" },
   { label: "Overrides", value: "overrides" },
@@ -221,11 +248,50 @@ function onRowSelect(
       class="relative! inset-auto! min-h-0 min-w-0 flex-1 overflow-hidden"
     >
       <UDashboardPanel
+        id="conflicts-order"
+        resizable
+        :default-size="16"
+        :min-size="12"
+        :max-size="24"
+        class="min-h-0!"
+      >
+        <div class="flex h-full min-h-0 flex-col overflow-hidden p-2">
+          <p class="text-xs font-semibold">Load order</p>
+          <p class="mt-1 text-[11px] leading-snug text-muted">{{ loadOrderCopy }}</p>
+          <ul class="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+            <li v-for="(mod, i) in ws.workspaceMods" :key="mod.id">
+              <button
+                type="button"
+                class="flex w-full items-center gap-1.5 rounded-sm px-1 py-0.5 text-left"
+                :class="originIds.includes(mod.id) ? 'bg-elevated' : 'opacity-60'"
+                :aria-pressed="originIds.includes(mod.id)"
+                @click="toggleOrigin(mod.id)"
+              >
+                <span class="w-4 shrink-0 tabular-nums text-xs text-muted">
+                  {{ (mod.sortOrder ?? i) + 1 }}
+                </span>
+                <img
+                  v-if="ws.thumbUrls[mod.id]"
+                  :src="ws.thumbUrls[mod.id]"
+                  alt=""
+                  class="size-4 shrink-0 rounded-sm object-cover"
+                >
+                <OriginBadge
+                  :label="mod.name"
+                  :hex="originHexByOriginId(mod.id)"
+                  class="min-w-0"
+                />
+              </button>
+            </li>
+          </ul>
+        </div>
+      </UDashboardPanel>
+      <UDashboardPanel
         id="conflicts-main"
         resizable
-        :default-size="75"
-        :min-size="50"
-        :max-size="85"
+        :default-size="60"
+        :min-size="40"
+        :max-size="80"
         class="min-h-0!"
       >
         <UTable

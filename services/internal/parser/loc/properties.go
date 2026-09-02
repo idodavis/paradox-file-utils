@@ -8,15 +8,22 @@ import "strings"
 
 // strictProps virtually always hold a loc key.
 var strictProps = map[string]bool{
-	"title":          true,
-	"desc":           true,
-	"flavor":         true,
-	"custom_tooltip": true,
-	"confirm_text":   true,
-	"confirm_title":  true,
-	"prompt":         true,
-	"failure_desc":   true,
-	"success_desc":   true,
+	"title":            true,
+	"desc":             true,
+	"flavor":           true,
+	"custom_tooltip":   true,
+	"confirm_text":     true,
+	"confirm_title":    true,
+	"prompt":           true,
+	"failure_desc":     true,
+	"success_desc":     true,
+	"localization_key": true,
+	// trigger_localization / effect_localization person+tense slots
+	"first": true, "third": true, "global": true, "none": true,
+	"first_not": true, "third_not": true, "global_not": true, "none_not": true,
+	"first_past": true, "third_past": true, "global_past": true,
+	"first_neg": true, "third_neg": true, "global_neg": true,
+	"first_past_neg": true, "third_past_neg": true, "global_past_neg": true,
 }
 
 // broadProps often hold a loc key (superset of strict). These also hold non-loc

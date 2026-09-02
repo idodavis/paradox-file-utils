@@ -39,6 +39,7 @@ const ideShell = useIdeShellStore();
 
 const colorMode = useColorMode();
 const currentFamily = shallowRef<PmtThemeFamily>("pmt");
+const themeHydrated = shallowRef(false);
 const appearance = computed(() =>
   colorMode.value === "dark" ? ("dark" as const) : ("light" as const),
 );
@@ -158,7 +159,7 @@ async function loadVersion(): Promise<void> {
 
 /** Apply and persist a palette family; sync workbench when ready. */
 async function onThemeChange(theme: string | null): Promise<void> {
-  if (!theme) return;
+  if (!themeHydrated.value || !theme) return;
   const family = normalizeThemeFamily(theme);
   setFamily(family);
   await saveFamily(family);
@@ -218,6 +219,10 @@ onMounted(async () => {
     colorMode.store.value = "dark";
   }
   setFamily(family);
+  themeHydrated.value = true;
+  if (isWorkbenchReady()) {
+    await applyWorkbenchTheme(workbenchThemeId(family, appearance.value));
+  }
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (link) link.href = appIcon;
 });

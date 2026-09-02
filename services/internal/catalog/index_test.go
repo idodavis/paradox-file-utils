@@ -162,6 +162,37 @@ real_effect = {
 			t.Fatalf("missing setting_ key: %v", ex.Refs)
 		}
 	})
+	t.Run("trigger localization slots are loc refs", func(t *testing.T) {
+		ex := extractCK3("common/trigger_localization/x.txt",
+			"is_adult = {\n\tglobal = IS_ADULT_TRIGGER\n\tfirst = I_AM_ADULT_TRIGGER\n"+
+				"\tthird = THEY_ARE_ADULT_TRIGGER\n\tnone = yes\n}\n",
+			"mod")
+		if !hasRef(ex.Refs, "loc", "IS_ADULT_TRIGGER") ||
+			!hasRef(ex.Refs, "loc", "I_AM_ADULT_TRIGGER") ||
+			!hasRef(ex.Refs, "loc", "THEY_ARE_ADULT_TRIGGER") {
+			t.Fatalf("missing trigger loc refs: %v", ex.Refs)
+		}
+		if hasRef(ex.Refs, "loc", "yes") {
+			t.Fatalf("none = yes harvested: %v", ex.Refs)
+		}
+	})
+	t.Run("effect localization slots are loc refs", func(t *testing.T) {
+		ex := extractCK3("common/effect_localization/x.txt",
+			"add_gold = {\n\tfirst = I_GAIN_GOLD_EFFECT\n\tfirst_past = I_GAINED_GOLD_EFFECT\n}\n",
+			"mod")
+		if !hasRef(ex.Refs, "loc", "I_GAIN_GOLD_EFFECT") ||
+			!hasRef(ex.Refs, "loc", "I_GAINED_GOLD_EFFECT") {
+			t.Fatalf("missing effect loc refs: %v", ex.Refs)
+		}
+	})
+	t.Run("customizable localization_key is loc", func(t *testing.T) {
+		ex := extractCK3("common/customizable_localization/x.txt",
+			"LifestyleFocus = {\n\ttext = {\n\t\tlocalization_key = LifestyleFocus_martial\n\t}\n}\n",
+			"mod")
+		if !hasRef(ex.Refs, "loc", "LifestyleFocus_martial") {
+			t.Fatalf("missing localization_key ref: %v", ex.Refs)
+		}
+	})
 	t.Run("loc file interpolations", func(t *testing.T) {
 		bom := "\ufeffl_english:\n used:0 \"Hi\"\n other:0 \"see $used$ and $used|U$\"\n"
 		ex := extractCK3("localization/english/a_l_english.yml", bom, "mod")

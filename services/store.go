@@ -49,7 +49,6 @@ type Workspace struct {
 	Name           string         `json:"name"`
 	InstallID      string         `json:"installId"`
 	StagingDir     string         `json:"stagingDir"`
-	Tags           []string       `json:"tags"`
 	DefaultLocLang string         `json:"defaultLocLang"`
 	GameColor      string         `json:"gameColor,omitempty"`
 	StagingColor   string         `json:"stagingColor,omitempty"`
@@ -63,15 +62,14 @@ type Workspace struct {
 
 // WorkspaceMod is a mod attached to a workspace.
 type WorkspaceMod struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Path      string   `json:"path"`
-	Tags      []string `json:"tags"`
-	SortOrder int      `json:"sortOrder"`
-	Color     string   `json:"color,omitempty"`
-	Thumbnail string   `json:"thumbnail,omitempty"`
-	IsBroken  bool     `json:"isBroken"`
-	CreatedAt string   `json:"createdAt"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	SortOrder int    `json:"sortOrder"`
+	Color     string `json:"color,omitempty"`
+	Thumbnail string `json:"thumbnail,omitempty"`
+	IsBroken  bool   `json:"isBroken"`
+	CreatedAt string `json:"createdAt"`
 }
 
 // PatchRun is one patch of a mod onto a target install.
@@ -181,13 +179,9 @@ func (s *Store) Mutate(fn func(*Config) error) error {
 }
 
 func cloneWorkspace(w Workspace) Workspace {
-	w.Tags = append([]string(nil), w.Tags...)
 	w.IdeOpenFiles = append([]string(nil), w.IdeOpenFiles...)
 	mods := make([]WorkspaceMod, len(w.Mods))
-	for i, m := range w.Mods {
-		m.Tags = append([]string(nil), m.Tags...)
-		mods[i] = m
-	}
+	copy(mods, w.Mods)
 	w.Mods = mods
 	return w
 }

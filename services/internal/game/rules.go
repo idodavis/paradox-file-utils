@@ -95,14 +95,18 @@ var callKinds = map[string]bool{
 // IsCallKind reports whether kind's keys are called directly as effects/triggers.
 func IsCallKind(kind string) bool { return callKinds[CanonicalKind(kind)] }
 
-// fiosKinds use first-in-order-selection (first mod to define wins); everything
-// else uses last-in-order-selection.
-var fiosKinds = map[string]bool{
-	"gui_type": true,
+// IsFIOS reports whether kind resolves first-in-order for this game.
+// Empty/unknown gameID keeps the historical gui_type-only default.
+func IsFIOS(gameID, kind string) bool {
+	switch gameID {
+	case "vic3":
+		return kind == "gui_type" || kind == "event"
+	case "eu5":
+		return kind == "event"
+	default:
+		return kind == "gui_type"
+	}
 }
-
-// IsFIOS reports whether kind resolves overrides first-in wins (vs last-in).
-func IsFIOS(kind string) bool { return fiosKinds[kind] }
 
 // ScopePrefix is the saved-scope qualifier (`scope:target`).
 const ScopePrefix = "scope"

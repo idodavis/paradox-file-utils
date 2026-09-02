@@ -1,17 +1,24 @@
 /**
- * Explorer-only row spacing. Colors come from the workbench theme JSON.
- *
- * Material already supplies folder icons; keep CSS to row metrics
- * and origin color dots. Root thumbnails are injected from rootDecorations.ts.
+ * IDE chrome: explorer row metrics, origin dots, rounded pane/search,
+ * selected-row accent hairline, activity wells. Theme hex lives in SEEDS.
  */
 
+/* ExplorerDelegate.ITEM_HEIGHT is 22. Taller CSS rows overlap the next slot. */
+.monaco-workbench .explorer-folders-view {
+  --pmt-explorer-row: 22px;
+}
+
 .monaco-workbench .explorer-folders-view .monaco-list-row {
-  min-height: calc(var(--pmt-ide-ui-font, 13px) + 9px);
+  height: var(--pmt-explorer-row);
+  min-height: var(--pmt-explorer-row);
+  overflow: hidden;
   font-size: var(--pmt-ide-ui-font, 13px);
+  line-height: var(--pmt-explorer-row);
 }
 
 .monaco-workbench .explorer-folders-view .monaco-tl-row {
-  min-height: calc(var(--pmt-ide-ui-font, 13px) + 9px);
+  height: var(--pmt-explorer-row);
+  min-height: var(--pmt-explorer-row);
   align-items: center;
 }
 
@@ -28,7 +35,7 @@
   background-position: center;
   background-repeat: no-repeat;
   width: 16px;
-  height: calc(var(--pmt-ide-ui-font, 13px) + 9px);
+  height: var(--pmt-explorer-row);
   padding-right: 6px;
   flex-shrink: 0;
   display: inline-block;
@@ -37,14 +44,26 @@
 }
 
 .monaco-workbench .explorer-folders-view .monaco-list-row[aria-level="1"] {
-  min-height: calc(var(--pmt-ide-ui-font, 13px) + 17px);
   font-size: calc(var(--pmt-ide-ui-font, 13px) + 2px);
   font-weight: 600;
+  line-height: var(--pmt-explorer-row);
 }
 
-.monaco-workbench .explorer-folders-view
-  .monaco-list-row[aria-level="1"] .monaco-tl-row {
-  min-height: calc(var(--pmt-ide-ui-font, 13px) + 17px);
+/* Origin dot is painted on the 22px row, not in-flow after the name. */
+.monaco-workbench .explorer-folders-view .monaco-list-row[aria-level="1"]::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  margin-top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.monaco-workbench .explorer-folders-view .monaco-list-row[aria-level="1"] .monaco-tl-contents {
+  padding-right: 18px;
 }
 
 /* Hide Menu / Accounts / Manage. VS Code uses aria-label, not id. */
@@ -63,6 +82,50 @@
 .monaco-workbench .part.activitybar .action-item:has(.codicon-accounts-view-bar-icon),
 .monaco-workbench .part.activitybar .action-item:has(.codicon-settings-view-bar-icon) {
   display: none !important;
+}
+
+/* C: Nuxt-like pane header + search field. */
+.monaco-workbench .pane-header {
+  border-radius: 6px;
+  margin: 4px 6px 0;
+  padding-inline: 8px;
+}
+
+.monaco-workbench .monaco-inputbox {
+  border-radius: 6px;
+}
+
+.ide-sidebar {
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+/* D: SEEDS accent hairline on selected/focused rows (not hardcoded gold). */
+.monaco-workbench .part.sidebar .monaco-list-row.selected,
+.monaco-workbench .part.sidebar .monaco-list-row.focused,
+.monaco-workbench .search-view .monaco-list-row.selected,
+.monaco-workbench .search-view .monaco-list-row.focused,
+.monaco-workbench .markers-panel .monaco-list-row.selected,
+.monaco-workbench .markers-panel .monaco-list-row.focused {
+  box-shadow: inset 2px 0 0 var(--vscode-focusBorder);
+}
+
+/* D: rounded activity-icon wells; accent wash on the checked icon. */
+.ide-activity-bar .action-item,
+.monaco-workbench .part.activitybar .action-item {
+  border-radius: 8px;
+  margin-inline: 4px;
+}
+
+.ide-activity-bar .action-item.checked,
+.ide-activity-bar .action-item.active,
+.monaco-workbench .part.activitybar .action-item.checked,
+.monaco-workbench .part.activitybar .action-item.active {
+  background-color: color-mix(
+    in srgb,
+    var(--vscode-focusBorder) 28%,
+    transparent
+  );
 }
 
 /* Activity-bar context only — do not hide explorer file context. */

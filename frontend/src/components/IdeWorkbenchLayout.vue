@@ -128,7 +128,7 @@ onMounted(async () => {
           <div ref="activityBar" class="ide-activity-bar w-12 shrink-0" />
           <div
             ref="sidebar"
-            class="ide-sidebar w-[var(--ide-sidebar-width,300px)] min-w-[170px] max-w-[50%]"
+            class="ide-sidebar w-[var(--ide-sidebar-width,300px)] min-w-[170px] max-w-[50%] rounded-xl my-1.5 me-1 overflow-hidden"
           />
           <div
             class="ide-sash ide-sash--v w-1 shrink-0 cursor-col-resize"

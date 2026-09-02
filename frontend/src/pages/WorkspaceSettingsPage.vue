@@ -37,6 +37,7 @@ import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
 import { LOC_LANG_ITEMS, useWorkspaceStore } from "../stores/workspace";
 import { WORKSPACE_TOOLS } from "../workspaceTools";
 import { refreshIdeRootDecorations } from "../ide/workbenchHost";
+import { originHex } from "../ide/rootDecorations";
 import type { IdeRoot } from "../ide/fsBridge";
 
 defineOptions({ name: "WorkspaceSettingsPage" });
@@ -50,7 +51,6 @@ const creatingMod = ref(false);
 const removeOpen = ref(false);
 
 const name = ref("");
-const tags = ref<string[]>([]);
 const locLang = ref("english");
 const rememberOpen = ref(true);
 const defaultTool = ref("workspace-ide");
@@ -118,7 +118,6 @@ function applyWorkspace(): void {
   if (!p) return;
   const w = p.workspace;
   name.value = w.name;
-  tags.value = w.tags ?? [];
   locLang.value = w.defaultLocLang || "english";
   rememberOpen.value = !w.resetIdeOnOpen;
   defaultTool.value = w.defaultTool || "workspace-ide";
@@ -126,7 +125,7 @@ function applyWorkspace(): void {
   gameColor.value = w.gameColor ?? "";
   stagingColor.value = w.stagingColor ?? "";
   installId.value = w.installId;
-  mods.value = p.mods.map((m) => ({ ...m, tags: m.tags ?? [] }));
+  mods.value = p.mods.map((m) => ({ ...m }));
   const inst = p.installs.find((i) => i.id === w.installId);
   draftVersion.value = inst?.version || "latest";
   draftPath.value = inst?.path ?? "";
@@ -160,7 +159,11 @@ const error = computed(() => loadError.value?.message ?? "");
 useSortable(modListEl, mods, {
   handle: ".mod-handle",
   animation: 150,
+  watchElement: true,
   onEnd: () => {
+    mods.value.forEach((m, i) => {
+      m.sortOrder = i;
+    });
     void ReorderWorkspaceMods(id.value, mods.value.map((m) => m.id));
   },
 });
@@ -190,7 +193,7 @@ const { mutateAsync: saveOverview, isLoading: savingOverview } = useMutation({
     const wsId = id.value;
     const w = page.value?.workspace;
     if (!w) return;
-    await UpdateWorkspace(wsId, name.value.trim(), w.installId, w.stagingDir, tags.value);
+    await UpdateWorkspace(wsId, name.value.trim(), w.installId, w.stagingDir);
     if (locLang.value !== (w.defaultLocLang || "english")) {
       await SetWorkspaceLocLang(wsId, locLang.value);
     }
@@ -208,7 +211,7 @@ const { mutateAsync: changeInstall, isLoading: changingInstall } = useMutation({
     const w = page.value?.workspace;
     if (!w) return;
     installId.value = nextId;
-    await UpdateWorkspace(id.value, w.name, nextId, w.stagingDir, w.tags ?? []);
+    await UpdateWorkspace(id.value, w.name, nextId, w.stagingDir);
     await wsStore.refresh();
   },
   onSuccess: () => { toastOk("Install updated."); void refetch(); },
@@ -254,7 +257,7 @@ const { mutateAsync: saveStaging, isLoading: savingStaging } = useMutation({
     const w = page.value?.workspace;
     if (!w) return;
     const dir = stagingDir.value.trim();
-    await UpdateWorkspace(id.value, w.name, w.installId, dir, w.tags ?? []);
+    await UpdateWorkspace(id.value, w.name, w.installId, dir);
     if (!dir) await EnsureStagingDir(id.value);
     await wsStore.refresh();
   },
@@ -263,7 +266,7 @@ const { mutateAsync: saveStaging, isLoading: savingStaging } = useMutation({
 
 const persistMod = useDebounceFn(async (mod: WorkspaceMod) => {
   await UpdateWorkspaceMod(
-    id.value, mod.id, mod.name, mod.tags ?? [], mod.color ?? "",
+    id.value, mod.id, mod.name, mod.color ?? "",
     mod.thumbnail ?? "",
   );
   await wsStore.refresh();
@@ -275,14 +278,14 @@ async function addMod(): Promise<void> {
   const path = await pickDirectory("Select mod folder");
   if (!path) return;
   const label = path.split(/[/\\]/).pop() || "Mod";
-  await AddWorkspaceMod(id.value, label, path, [], "");
+  await AddWorkspaceMod(id.value, label, path, "");
   toastOk("Mod added.");
   await refetch();
 }
 
 async function onModCreated(path: string, thumbnail = ""): Promise<void> {
   const label = path.split(/[/\\]/).pop() || "Mod";
-  await AddWorkspaceMod(id.value, label, path, [], thumbnail);
+  await AddWorkspaceMod(id.value, label, path, thumbnail);
   creatingMod.value = false;
   toastOk("Mod created.");
   await refetch();
@@ -317,23 +320,29 @@ const persistColors = useDebounceFn(async () => {
 /** Field descriptions for the settings page (filter + UFormField). */
 const COPY = {
   name: "Display name in the library and title bar.",
-  tags: "Labels for filtering the library. They are not load-order.",
-  loc: "Language used for loc coverage, hover text, and new-mod loc files.",
-  remember: "Keep IDE tabs across workspace switch and app close.",
+  loc: "Language used for localization coverage, hover text, and new-mod localization files.",
+  remember: "Maintain IDE tabs status across workspace switches and app closes.",
   defaultPage: "Page opened when you enter this workspace.",
   gameColor:
-    "Color of the game root in the IDE explorer. Empty uses the default teal.",
+    "Game/vanilla chips in IDE, Conflicts, LocCoverage, and Graph. Default is teal.",
   installList:
-    "Which scanned install this workspace reads. Shared installs warn before you switch.",
+    "Which scanned game install this workspace reads. Shared installs warn before you switch.",
   versionPin:
-    "Cache key (`latest` follows the live folder). Your pin wins over detection.",
+    "Version of the game that this install is. Your pin wins over auto-detection.",
   installPath:
-    "Folder of the game; docs empty means auto-detect `script_docs`.",
+    "Top level Folder of the game; needed for scanning the game and supporting most features.",
+  docsPath:
+    "Script_docs folder, used for certain language features.",
   addInstall:
     "Register another copy of the same game (Steam vs Paradox, version folders).",
-  mods: "Load order is list order (drag handle). Color and thumbnail are explorer-only.",
+  mods: "Generally, Last listed wins (LISO). Drag the grip. Color and thumbnail paint explorer and origin chips.",
+  modColor:
+    "Same color in explorer roots, conflict/loc/graph origin chips. Empty uses the palette.",
+  modThumb:
+    "Explorer folder icon and origin menus. Not used on OriginBadge chips.",
   staging: "Scratch folder for patch/merge output. Not a playset.",
-  stagingColor: "Staging root in the explorer. Empty uses the default amber.",
+  stagingColor:
+    "Staging root in explorer and origin chips. Staging is not a playset. Empty uses amber.",
   remove: "Drops the workspace record. Mod folders on disk stay.",
 } as const;
 
@@ -350,7 +359,6 @@ const showOverview = computed(() =>
   matchesFilter(
     "Overview",
     "Name", COPY.name,
-    "Tags", COPY.tags,
     "Default loc language", COPY.loc,
     "Remember open files", COPY.remember,
     "Default page", COPY.defaultPage,
@@ -368,8 +376,30 @@ const showGame = computed(() =>
   ),
 );
 const showMods = computed(() =>
-  matchesFilter("Mods", COPY.mods, "Thumbnail"),
+  matchesFilter("Mods", COPY.mods, "Color", COPY.modColor, "Thumbnail", COPY.modThumb),
 );
+
+/** First-wins kinds for this workspace's game (mirrors game.IsFIOS). */
+function firstWinsNote(gameId: string): string {
+  switch (gameId) {
+    case "ck3":
+      return "GUI types and templates are first-wins.";
+    case "vic3":
+      return "GUI types, templates, and events are first-wins.";
+    case "eu5":
+      return "Events are first-wins; GUI types last-wins.";
+    default:
+      return "GUI types and templates are first-wins.";
+  }
+}
+
+const loadOrderCopy = computed(() => {
+  const extra = firstWinsNote(page.value?.workspace.gameId ?? "");
+  return (
+    `Last listed wins for most kinds. ${extra} ` +
+    "Vanilla loses to any mod. Staging is not in this list. Conflicts labels each row."
+  );
+});
 const showStaging = computed(() =>
   matchesFilter(
     "Staging",
@@ -449,6 +479,13 @@ function onModColor(mod: WorkspaceMod, hex: string): void {
   void persistMod(mod);
 }
 
+/** Palette or custom hex for a mod card's color picker. */
+function modOriginHex(mod: WorkspaceMod, idx: number): string {
+  return originHex({
+    kind: "mod", path: mod.path, color: mod.color, wrapIndex: idx,
+  });
+}
+
 function clearModColor(mod: WorkspaceMod): void {
   mod.color = "";
   void persistMod(mod);
@@ -470,56 +507,30 @@ function clearModThumb(mod: WorkspaceMod): void {
     <WorkspaceToolBar :workspace-id="id" title="Workspace Settings" />
     <div class="flex min-h-0 flex-1">
       <aside class="flex w-52 shrink-0 flex-col gap-3 border-e border-default p-3">
-        <UInput
-          v-model="filter"
-          icon="i-lucide-search"
-          placeholder="Filter settings…"
-          class="w-full"
-        />
-        <UNavigationMenu
-          :items="navItems"
-          orientation="vertical"
-          highlight
-          class="data-[orientation=vertical]:w-full"
+        <UInput v-model="filter" icon="i-lucide-search" placeholder="Filter settings…" class="w-full" />
+        <UNavigationMenu :items="navItems" orientation="vertical" highlight class="data-[orientation=vertical]:w-full"
           :ui="{
             link: [
               'after:absolute after:-start-1.5 after:inset-y-0.5 after:block',
               'after:w-px after:rounded-full data-[active]:after:bg-primary',
             ],
-          }"
-        />
+          }" />
       </aside>
       <div class="flex min-w-0 flex-1 flex-col">
         <div class="min-h-0 flex-1 overflow-auto p-6">
           <UAlert v-if="error" color="error" variant="subtle" :description="error" />
           <p v-if="loading" class="text-sm text-muted">Loading…</p>
 
-          <div
-            v-else-if="section === 'overview'"
-            class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2"
-          >
+          <div v-else-if="section === 'overview'" class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
             <UFormField label="Name" :description="COPY.name">
               <UInput v-model="name" class="w-full" />
             </UFormField>
-            <UFormField label="Tags" :description="COPY.tags">
-              <UInputTags v-model="tags" placeholder="Add tag" class="w-full" />
-            </UFormField>
             <UFormField label="Default loc language" :description="COPY.loc">
-              <USelect
-                v-model="locLang"
-                :items="LOC_LANG_ITEMS"
-                value-key="value"
-                class="w-full"
-              />
+              <USelect v-model="locLang" :items="LOC_LANG_ITEMS" value-key="value" class="w-full" />
             </UFormField>
             <UFormField label="Default page" :description="COPY.defaultPage">
-              <USelect
-                v-model="defaultTool"
-                :items="pageItems"
-                value-key="value"
-                class="w-full"
-                :ui="{ content: 'min-w-max' }"
-              />
+              <USelect v-model="defaultTool" :items="pageItems" value-key="value" class="w-full"
+                :ui="{ content: 'min-w-max' }" />
             </UFormField>
             <UFormField label="Remember open files" :description="COPY.remember">
               <USwitch v-model="rememberOpen" label="Enabled" />
@@ -527,13 +538,8 @@ function clearModThumb(mod: WorkspaceMod): void {
           </div>
 
           <div v-else-if="section === 'game'" class="space-y-5">
-            <UAlert
-              v-if="sharingWarn"
-              color="warning"
-              variant="subtle"
-              title="Shared install"
-              :description="`Also used by: ${sharingWarn}`"
-            />
+            <UAlert v-if="sharingWarn" color="warning" variant="subtle" title="Shared install"
+              :description="`Also used by: ${sharingWarn}`" />
             <p v-if="selectedInstall" class="text-sm text-muted">
               {{ selectedInstall.path }}
               · pin {{ selectedInstall.version || "latest" }}
@@ -544,56 +550,23 @@ function clearModThumb(mod: WorkspaceMod): void {
             <div class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
               <UFormField label="Explorer color (game)" :description="COPY.gameColor">
                 <div class="flex items-center gap-2">
-                  <input
-                    type="color"
-                    class="size-8 cursor-pointer rounded border border-default"
-                    :value="gameColor || '#5B9A8B'"
-                    @input="gameColor = ($event.target as HTMLInputElement).value; persistColors()"
-                  >
-                  <UButton
-                    v-if="gameColor"
-                    label="Reset color"
-                    size="xs"
-                    variant="ghost"
-                    @click="gameColor = ''; persistColors()"
-                  />
+                  <input type="color" class="size-8 cursor-pointer rounded border border-default"
+                    :value="originHex({ kind: 'game', path: '', color: gameColor })"
+                    @input="gameColor = ($event.target as HTMLInputElement).value; persistColors()">
+                  <UButton v-if="gameColor" label="Reset color" size="xs" variant="ghost"
+                    @click="gameColor = ''; persistColors()" />
                 </div>
               </UFormField>
-              <UFormField
-                v-if="selectedInstall"
-                label="Version pin"
-                :description="COPY.versionPin"
-              >
+              <UFormField v-if="selectedInstall" label="Version pin" :description="COPY.versionPin">
                 <div class="flex gap-2">
                   <UInput v-model="draftVersion" placeholder="latest" class="w-full" />
-                  <UButton
-                    label="latest"
-                    size="xs"
-                    variant="outline"
-                    @click="draftVersion = 'latest'"
-                  />
-                  <UButton
-                    label="Save"
-                    size="xs"
-                    variant="outline"
-                    :loading="savingVersion"
-                    @click="saveVersion()"
-                  />
+                  <UButton label="latest" size="xs" variant="outline" @click="draftVersion = 'latest'" />
+                  <UButton label="Save" size="xs" variant="outline" :loading="savingVersion" @click="saveVersion()" />
                 </div>
               </UFormField>
-              <UFormField
-                label="Install list"
-                :description="COPY.installList"
-                class="md:col-span-2"
-              >
-                <URadioGroup
-                  v-if="installItems.length"
-                  :model-value="installId"
-                  :items="installItems"
-                  variant="card"
-                  :disabled="changingInstall"
-                  @update:model-value="onInstallPick"
-                />
+              <UFormField label="Install list" :description="COPY.installList" class="md:col-span-2">
+                <URadioGroup v-if="installItems.length" :model-value="installId" :items="installItems" variant="card"
+                  :disabled="changingInstall" @update:model-value="onInstallPick" />
               </UFormField>
               <template v-if="selectedInstall">
                 <p class="text-xs text-muted md:col-span-2">
@@ -601,39 +574,20 @@ function clearModThumb(mod: WorkspaceMod): void {
                     ? `cache scanned ${page.cacheAt[selectedInstall.id]}`
                     : "cache not scanned" }}
                 </p>
-                <FileSelector
-                  v-model="draftPath"
-                  mode="folder"
-                  label="Install path"
-                  :description="COPY.installPath"
+                <FileSelector v-model="draftPath" mode="folder" label="Install path" :description="COPY.installPath"
                   dialog-title="Select game install folder"
-                />
-                <FileSelector
-                  v-model="draftDocs"
-                  mode="folder"
-                  label="Docs path"
-                  :description="COPY.installPath"
+                  placeholder="C:\Program Files (x86)\Steam\steamapps\common\GAME_NAME" />
+                <FileSelector v-model="draftDocs" mode="folder" label="Docs path" :description="COPY.docsPath"
                   dialog-title="Select script_docs folder"
-                />
+                  placeholder="C:\Users\idhis\Documents\Paradox Interactive\GAME_NAME\docs(or logs)" />
                 <div class="md:col-span-2">
-                  <UButton
-                    label="Save paths"
-                    size="xs"
-                    variant="outline"
-                    :loading="savingPaths"
-                    @click="saveInstallPaths()"
-                  />
+                  <UButton label="Save paths" size="xs" variant="outline" :loading="savingPaths"
+                    @click="saveInstallPaths()" />
                 </div>
               </template>
               <USeparator class="md:col-span-2" />
-              <FileSelector
-                v-model="newInstallPath"
-                mode="folder"
-                label="Install path"
-                :description="COPY.addInstall"
-                dialog-title="Select game install folder"
-                class="md:col-span-2"
-              />
+              <FileSelector v-model="newInstallPath" mode="folder" label="Install path" :description="COPY.addInstall"
+                dialog-title="Select game install folder" class="md:col-span-2" />
               <UFormField label="Install name" :description="COPY.addInstall">
                 <UInput v-model="newInstallName" placeholder="e.g. Steam 1.14.0" />
               </UFormField>
@@ -645,186 +599,90 @@ function clearModThumb(mod: WorkspaceMod): void {
                 <template v-else>detected: none — default latest</template>
               </p>
               <div class="md:col-span-2">
-                <UButton
-                  label="Add Install"
-                  icon="i-lucide-plus"
-                  size="sm"
-                  :disabled="!newInstallPath || !newInstallName"
-                  :loading="addingInstall"
-                  @click="addInstall()"
-                />
+                <UButton label="Add Install" icon="i-lucide-plus" size="sm"
+                  :disabled="!newInstallPath || !newInstallName" :loading="addingInstall" @click="addInstall()" />
               </div>
             </div>
           </div>
 
           <div v-else-if="section === 'mods'" class="space-y-3">
-            <p class="text-sm text-muted">{{ COPY.mods }}</p>
+            <UAlert color="neutral" variant="subtle" title="Generally, Last listed wins (LISO). Drag the grip."
+              :description="loadOrderCopy" />
             <div ref="modListEl" class="space-y-2">
-              <div
-                v-for="mod in mods"
-                :key="mod.id"
-                class="space-y-2 rounded border border-default p-2"
-              >
+              <div v-for="(mod, idx) in mods" :key="mod.id" class="space-y-2 rounded border border-default p-2">
                 <div class="flex items-center gap-2">
-                  <UButton
-                    icon="i-lucide-grip-vertical"
-                    color="neutral"
-                    variant="ghost"
-                    size="xs"
-                    class="mod-handle cursor-grab"
-                  />
-                  <UInput
-                    v-model="mod.name"
-                    class="flex-1"
-                    @update:model-value="persistMod(mod)"
-                  />
+                  <UBadge :label="String((mod.sortOrder ?? idx) + 1)" color="neutral" variant="subtle" size="xs"
+                    class="w-6 justify-center tabular-nums" />
+                  <UButton icon="i-lucide-grip-vertical" color="neutral" variant="ghost" size="xs"
+                    class="mod-handle cursor-grab" />
+                  <UInput v-model="mod.name" class="flex-1" @update:model-value="persistMod(mod)" />
                   <UBadge v-if="mod.isBroken" color="error" variant="subtle" size="xs">
                     Missing
                   </UBadge>
-                  <UButton
-                    icon="i-lucide-trash-2"
-                    color="error"
-                    variant="ghost"
-                    size="xs"
-                    @click="removeMod(mod)"
-                  />
+                  <UButton icon="i-lucide-trash-2" color="error" variant="ghost" size="xs" @click="removeMod(mod)" />
                 </div>
                 <p class="truncate text-xs text-muted">{{ mod.path }}</p>
                 <div class="grid grid-cols-1 gap-x-6 gap-y-3 md:grid-cols-2">
-                  <UInputTags
-                    :model-value="mod.tags ?? []"
-                    placeholder="Mod tags"
-                    @update:model-value="(v: string[]) => { mod.tags = v; persistMod(mod); }"
-                  />
-                  <div class="flex items-center gap-2">
-                    <input
-                      type="color"
-                      class="size-8 cursor-pointer rounded border border-default"
-                      :value="mod.color || '#5B9A8B'"
-                      @input="onModColor(mod, ($event.target as HTMLInputElement).value)"
-                    >
-                    <UButton
-                      v-if="mod.color"
-                      label="Reset color"
-                      size="xs"
-                      variant="ghost"
-                      @click="clearModColor(mod)"
-                    />
-                    <img
-                      v-if="mod.thumbnail && wsStore.thumbUrls[mod.id]"
-                      :src="wsStore.thumbUrls[mod.id]"
-                      alt=""
-                      class="size-6 rounded-sm object-cover"
-                    >
-                    <FileSelector
-                      :model-value="mod.thumbnail ?? ''"
-                      mode="file"
-                      label="Thumbnail"
-                      dialog-title="Select thumbnail"
-                      file-filter="*.png; *.jpg; *.jpeg; *.svg"
-                      class="min-w-48 flex-1"
-                      @update:model-value="onModThumb(mod, $event)"
-                    />
-                    <UButton
-                      v-if="mod.thumbnail"
-                      label="Clear"
-                      size="xs"
-                      variant="ghost"
-                      @click="clearModThumb(mod)"
-                    />
-                  </div>
+                  <UFormField label="Color" :description="COPY.modColor">
+                    <div class="flex items-center gap-2">
+                      <input type="color" class="size-8 cursor-pointer rounded border border-default"
+                        :value="modOriginHex(mod, idx)"
+                        @input="onModColor(mod, ($event.target as HTMLInputElement).value)">
+                      <UButton v-if="mod.color" label="Reset color" size="xs" variant="ghost"
+                        @click="clearModColor(mod)" />
+                    </div>
+                  </UFormField>
+                  <UFormField label="Thumbnail" :description="COPY.modThumb">
+                    <div class="flex items-center gap-2">
+                      <img v-if="mod.thumbnail && wsStore.thumbUrls[mod.id]" :src="wsStore.thumbUrls[mod.id]" alt=""
+                        class="size-6 rounded-sm object-cover">
+                      <FileSelector :model-value="mod.thumbnail ?? ''" mode="file" label="Thumbnail"
+                        dialog-title="Select thumbnail" file-filter="*.png; *.jpg; *.jpeg; *.svg"
+                        class="min-w-48 flex-1" @update:model-value="onModThumb(mod, $event)" />
+                      <UButton v-if="mod.thumbnail" label="Clear" size="xs" variant="ghost"
+                        @click="clearModThumb(mod)" />
+                    </div>
+                  </UFormField>
                 </div>
               </div>
             </div>
             <p v-if="!mods.length" class="text-sm text-muted">No mods yet.</p>
             <div class="flex flex-wrap gap-2">
-              <UButton
-                label="Add existing folder"
-                icon="i-lucide-folder-plus"
-                variant="outline"
-                @click="addMod"
-              />
-              <UButton
-                label="Create new mod"
-                icon="i-lucide-package-plus"
-                variant="outline"
-                @click="creatingMod = !creatingMod"
-              />
+              <UButton label="Add existing folder" icon="i-lucide-folder-plus" variant="outline" @click="addMod" />
+              <UButton label="Create new mod" icon="i-lucide-package-plus" variant="outline"
+                @click="creatingMod = !creatingMod" />
             </div>
-            <CreateModForm
-              v-if="creatingMod && page?.workspace"
-              :game-id="page.workspace.gameId"
-              :loc-lang="locLang"
-              :supported-version="supportedVersion"
-              @created="onModCreated"
-            />
+            <CreateModForm v-if="creatingMod && page?.workspace" :game-id="page.workspace.gameId" :loc-lang="locLang"
+              :supported-version="supportedVersion" @created="onModCreated" />
           </div>
 
-          <div
-            v-else-if="section === 'staging'"
-            class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2"
-          >
-            <FileSelector
-              v-model="stagingDir"
-              mode="folder"
-              label="Staging directory"
-              :description="COPY.staging"
-              dialog-title="Select staging folder"
-            />
+          <div v-else-if="section === 'staging'" class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
+            <FileSelector v-model="stagingDir" mode="folder" label="Staging directory" :description="COPY.staging"
+              dialog-title="Select staging folder" />
             <UFormField label="Explorer color (staging)" :description="COPY.stagingColor">
               <div class="flex items-center gap-2">
-                <input
-                  type="color"
-                  class="size-8 cursor-pointer rounded border border-default"
-                  :value="stagingColor || '#B08948'"
-                  @input="stagingColor = ($event.target as HTMLInputElement).value; persistColors()"
-                >
-                <UButton
-                  v-if="stagingColor"
-                  label="Reset color"
-                  size="xs"
-                  variant="ghost"
-                  @click="stagingColor = ''; persistColors()"
-                />
+                <input type="color" class="size-8 cursor-pointer rounded border border-default"
+                  :value="originHex({ kind: 'staging', path: '', color: stagingColor })"
+                  @input="stagingColor = ($event.target as HTMLInputElement).value; persistColors()">
+                <UButton v-if="stagingColor" label="Reset color" size="xs" variant="ghost"
+                  @click="stagingColor = ''; persistColors()" />
               </div>
             </UFormField>
           </div>
 
           <div v-else-if="section === 'danger'" class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
             <UFormField label="Remove workspace" :description="COPY.remove">
-              <UButton
-                label="Remove workspace"
-                color="error"
-                variant="outline"
-                size="sm"
-                @click="removeOpen = true"
-              />
+              <UButton label="Remove workspace" color="error" variant="outline" size="sm" @click="removeOpen = true" />
             </UFormField>
           </div>
         </div>
-        <div
-          v-if="showFooter"
-          class="flex justify-end gap-2 border-t border-default px-6 py-3"
-        >
-          <UButton
-            label="Cancel"
-            color="neutral"
-            variant="outline"
-            @click="applyWorkspace"
-          />
-          <UButton
-            label="Save"
-            :loading="section === 'overview' ? savingOverview : savingStaging"
-            @click="saveSection"
-          />
+        <div v-if="showFooter" class="flex justify-end gap-2 border-t border-default px-6 py-3">
+          <UButton label="Cancel" color="neutral" variant="outline" @click="applyWorkspace" />
+          <UButton label="Save" :loading="section === 'overview' ? savingOverview : savingStaging"
+            @click="saveSection" />
         </div>
       </div>
     </div>
-    <RemoveWorkspaceModal
-      v-model:open="removeOpen"
-      :name="name"
-      :loading="deleting"
-      @confirm="deleteThis()"
-    />
+    <RemoveWorkspaceModal v-model:open="removeOpen" :name="name" :loading="deleting" @confirm="deleteThis()" />
   </div>
 </template>

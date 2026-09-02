@@ -120,7 +120,7 @@ func (w *WorkspaceService) GetWorkspace(id string) (*Workspace, error) {
 
 // CreateWorkspace creates a new workspace and default staging dir.
 func (w *WorkspaceService) CreateWorkspace(
-	gameID, name, installID string, tags []string,
+	gameID, name, installID string,
 ) (*Workspace, error) {
 	if game.Get(gameID) == nil {
 		return nil, fmt.Errorf("unknown game %s", gameID)
@@ -135,7 +135,7 @@ func (w *WorkspaceService) CreateWorkspace(
 	}
 	ws := Workspace{
 		ID: id, GameID: gameID, Name: name, InstallID: installID,
-		StagingDir: stagingDir, Tags: tags, CreatedAt: nowUTC(),
+		StagingDir: stagingDir, CreatedAt: nowUTC(),
 	}
 	err = w.Store.Mutate(func(c *Config) error {
 		c.Workspaces = append(c.Workspaces, ws)
@@ -172,7 +172,7 @@ func (w *WorkspaceService) DeleteWorkspace(id string) error {
 
 // UpdateWorkspace updates workspace fields.
 func (w *WorkspaceService) UpdateWorkspace(
-	id, name, installID, stagingDir string, tags []string,
+	id, name, installID, stagingDir string,
 ) error {
 	var rebuild bool
 	err := w.Store.Mutate(func(c *Config) error {
@@ -181,7 +181,7 @@ func (w *WorkspaceService) UpdateWorkspace(
 			return fmt.Errorf("workspace not found")
 		}
 		rebuild = ws.InstallID != installID || ws.StagingDir != stagingDir
-		ws.Name, ws.InstallID, ws.StagingDir, ws.Tags = name, installID, stagingDir, tags
+		ws.Name, ws.InstallID, ws.StagingDir = name, installID, stagingDir
 		return nil
 	})
 	if err != nil {
@@ -203,11 +203,11 @@ func (w *WorkspaceService) rebuildSession(id string) error {
 
 // AddWorkspaceMod adds a mod to a workspace.
 func (w *WorkspaceService) AddWorkspaceMod(
-	workspaceID, name, path string, tags []string, thumbnail string,
+	workspaceID, name, path, thumbnail string,
 ) (*WorkspaceMod, error) {
 	_, statErr := os.Stat(path)
 	mod := WorkspaceMod{
-		ID: uuid.New().String(), Name: name, Path: path, Tags: tags,
+		ID: uuid.New().String(), Name: name, Path: path,
 		Thumbnail: thumbnail, IsBroken: statErr != nil, CreatedAt: nowUTC(),
 	}
 	err := w.Store.Mutate(func(c *Config) error {
@@ -337,9 +337,9 @@ func (w *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []str
 	return w.rebuildSession(workspaceID)
 }
 
-// UpdateWorkspaceMod updates a mod's name, tags, and optional color override.
+// UpdateWorkspaceMod updates a mod's name and optional color/thumbnail.
 func (w *WorkspaceService) UpdateWorkspaceMod(
-	workspaceID, modID, name string, tags []string, color, thumbnail string,
+	workspaceID, modID, name, color, thumbnail string,
 ) error {
 	return w.Store.Mutate(func(c *Config) error {
 		ws := findWorkspace(c, workspaceID)
@@ -351,7 +351,6 @@ func (w *WorkspaceService) UpdateWorkspaceMod(
 				if name != "" {
 					ws.Mods[i].Name = name
 				}
-				ws.Mods[i].Tags = tags
 				ws.Mods[i].Color = color
 				ws.Mods[i].Thumbnail = thumbnail
 				return nil
@@ -484,7 +483,7 @@ func (w *WorkspaceService) EnsureStagingDir(workspaceID string) (string, error) 
 		return "", fmt.Errorf("create staging dir: %w", err)
 	}
 	if needPersist {
-		err = w.UpdateWorkspace(ws.ID, ws.Name, ws.InstallID, dir, ws.Tags)
+		err = w.UpdateWorkspace(ws.ID, ws.Name, ws.InstallID, dir)
 		if err != nil {
 			return "", fmt.Errorf("persist staging dir: %w", err)
 		}

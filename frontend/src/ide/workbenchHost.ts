@@ -754,7 +754,9 @@ async function runInitialize(theme: string): Promise<void> {
       await initUserConfiguration(
         JSON.stringify(
           {
-            ...workbenchSettingsForTheme(theme),
+            ...workbenchSettingsForTheme(
+              document.documentElement.dataset.theme ? chromeTheme() : theme,
+            ),
             "workbench.startupEditor": "none",
             "workbench.activity.showAccounts": false,
             "window.menuBarVisibility": "hidden",
@@ -810,7 +812,9 @@ async function runInitialize(theme: string): Promise<void> {
       rootDeco = registerRootDecorations();
     }
     setDecoratedRoots(currentRoots);
-    await applyWorkbenchTheme(theme);
+    await applyWorkbenchTheme(
+      document.documentElement.dataset.theme ? chromeTheme() : theme,
+    );
     if (!foldersMatch(currentRoots)) {
       await writeWorkspaceFolders(currentRoots);
     }
@@ -895,7 +899,7 @@ async function applyWorkbenchRoots(
   if (!foldersMatch(roots)) {
     await writeWorkspaceFolders(roots);
   }
-  await applyWorkbenchTheme(themeName);
+  await applyWorkbenchTheme(chromeTheme());
 
   if (session) {
     mountedWorkspaceId = session.workspaceId;

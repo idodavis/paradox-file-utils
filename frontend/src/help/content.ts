@@ -19,8 +19,8 @@ export const HELP_COPY: Record<string, HelpCopy> = {
   },
   wizard: {
     paragraphs: [
-      "Walk through game, install, mods, name, and staging. Tags are PMT labels only — they are not written into .mod or metadata.json.",
-      "Add existing folders or Create new mod (descriptor, empty common/ and events/, readmes, localization stub with UTF-8 BOM). PMT tags are not written into the descriptor.",
+      "Walk through game, install, mods, name, and staging.",
+      "Add existing folders or Create new mod (descriptor, empty common/ and events/, readmes, localization stub with UTF-8 BOM).",
       "Drag mods to set load order (SortOrder). You can change all of this later in Workspace Settings.",
       "After create you land in the IDE so you can open the files you just attached.",
     ],
@@ -41,7 +41,7 @@ export const HELP_COPY: Record<string, HelpCopy> = {
   },
   conflicts: {
     paragraphs: [
-      "This lists overlapping definitions (FIOS / LIOS). The winner is who actually loads in game.",
+      "This lists overlapping definitions (FIOS / LIOS). The winner is who actually loads in game. The left rail is workspace load order; last listed wins except first-wins kinds for that game.",
       "Use Conflicts vs game-file overrides to switch scope. Origin names match the IDE explorer.",
       "Open a row to jump to the file in the IDE.",
     ],
@@ -66,8 +66,8 @@ export const HELP_COPY: Record<string, HelpCopy> = {
   },
   "workspace-settings": {
     paragraphs: [
-      "Overview: name, tags, default loc language, whether the IDE remembers open files, and which page Library should open.",
-      "Game: pick or add an install and pin a version. Changing install rebuilds language intelligence. Mods: attach an existing folder or create a new skeleton, then tag, color, reorder, or detach. Detach does not delete the folder on disk. Staging: where patched output lands.",
+      "Overview: name, default loc language, whether the IDE remembers open files, and which page Library should open.",
+      "Game: pick or add an install and pin a version. Changing install rebuilds language intelligence. Mods: attach an existing folder or create a new skeleton, then color, reorder, or detach. Detach does not delete the folder on disk. Staging: where patched output lands.",
       "Remove this workspace deletes the PMT record only. Reset all data lives on the Library page. Appearance (scale, editor font, which tools show) lives in the header Display control, not here.",
     ],
   },

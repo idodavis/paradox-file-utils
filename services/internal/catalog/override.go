@@ -1,4 +1,4 @@
-// override.go decides which definition of a key wins (LIOS; FIOS for gui_type).
+// override.go decides which definition of a key wins (LIOS, with per-game FIOS).
 // Vanilla loses to any mod. Contests lists mod-vs-mod rows and vanilla overlays.
 
 package catalog
@@ -17,7 +17,7 @@ type Contest struct {
 }
 
 // Winner picks the effective definition. order is origin → rank; vanilla always loses.
-func Winner(defs []Def, order map[string]int) *Def {
+func Winner(gameID string, defs []Def, order map[string]int) *Def {
 	if len(defs) == 0 {
 		return nil
 	}
@@ -33,7 +33,7 @@ func Winner(defs []Def, order map[string]int) *Def {
 	if len(mods) == 0 {
 		return vanilla
 	}
-	fios := game.IsFIOS(mods[0].Type)
+	fios := game.IsFIOS(gameID, mods[0].Type)
 	best := 0
 	for i := 1; i < len(mods); i++ {
 		ri, rb := order[mods[i].Origin], order[mods[best].Origin]
@@ -54,7 +54,7 @@ func skipOverrideKind(t string) bool {
 }
 
 // Contests returns override rows from workspace and vanilla defs.
-func Contests(workspace, vanilla []Def, order []string) []Contest {
+func Contests(gameID string, workspace, vanilla []Def, order []string) []Contest {
 	orderMap := OrderMap(order)
 	by := map[string][]Def{}
 	for _, d := range workspace {
@@ -90,12 +90,12 @@ func Contests(workspace, vanilla []Def, order []string) []Contest {
 		if len(modOrigins) < 2 && !overlay {
 			continue
 		}
-		w := Winner(all, orderMap)
+		w := Winner(gameID, all, orderMap)
 		if w == nil {
 			continue
 		}
 		rule := "LIOS"
-		if game.IsFIOS(w.Type) {
+		if game.IsFIOS(gameID, w.Type) {
 			rule = "FIOS"
 		}
 		rows = append(rows, Contest{
