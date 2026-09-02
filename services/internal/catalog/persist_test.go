@@ -16,8 +16,14 @@ func TestCache(t *testing.T) {
 		InstallID:     "inst",
 		GameID:        "ck3",
 		GameVersion:   "1.0",
-		Defs:          []Def{{Type: "trait", Key: "brave", Path: "a.txt", Line: 3}},
-		Vocabulary:    []string{"add_gold"},
+		Defs:            []Def{{Type: "trait", Key: "brave", Path: "a.txt", Line: 3}},
+		Vocabulary:      []string{"add_gold"},
+		LocRefs:         []Ref{{Key: "k.t", Kind: "loc", Path: "e.txt", Line: 1, Start: 2, End: 5}},
+		FieldValueKinds: map[string]string{"theme": "event_theme"},
+		FieldEnumsByKind: map[string]map[string][]string{
+			"event": {"type": {"character_event"}},
+		},
+		StructureBlocks: map[string][]string{"event": {"immediate"}},
 	}
 	if err := SaveCacheFile(path, in); err != nil {
 		t.Fatal(err)
@@ -28,6 +34,16 @@ func TestCache(t *testing.T) {
 	}
 	if len(out.Defs) != 1 || out.Defs[0].Key != "brave" || out.InstallID != "inst" {
 		t.Errorf("round-trip mismatch: %+v", out)
+	}
+	if len(out.LocRefs) != 1 || out.LocRefs[0].Key != "k.t" ||
+		out.FieldValueKinds["theme"] != "event_theme" {
+		t.Errorf("format-8 fields: refs=%+v kinds=%v", out.LocRefs, out.FieldValueKinds)
+	}
+	if len(out.StructureBlocks["event"]) != 1 || out.StructureBlocks["event"][0] != "immediate" {
+		t.Errorf("structureBlocks: %v", out.StructureBlocks)
+	}
+	if out.FieldEnumsByKind["event"]["type"][0] != "character_event" {
+		t.Errorf("fieldEnumsByKind: %v", out.FieldEnumsByKind)
 	}
 
 	for _, tt := range []struct{ name, body string }{

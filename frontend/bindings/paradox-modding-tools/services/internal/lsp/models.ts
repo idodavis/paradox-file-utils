@@ -16,6 +16,13 @@ export interface CompletionItem {
     "label": string;
     "detail"?: string;
     "documentation"?: string;
+
+    /**
+     * property | value
+     */
+    "kind"?: string;
+    "range"?: Range;
+    "insertText"?: string;
 }
 
 /**
@@ -74,6 +81,16 @@ export interface Position {
 export interface Range {
     "start": Position;
     "end": Position;
+}
+
+/**
+ * SignatureHelpResult is the Monaco signature popup.
+ */
+export interface SignatureHelpResult {
+    "label": string;
+    "documentation"?: string;
+    "parameters"?: string[] | null;
+    "activeParameter": number;
 }
 
 /**

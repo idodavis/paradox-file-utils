@@ -5,6 +5,7 @@ import { Events } from "@wailsio/runtime";
 import {
   FileType,
   FileChangeType,
+  FilePermission,
   FileSystemProviderCapabilities,
   FileSystemProviderError,
   FileSystemProviderErrorCode,
@@ -46,11 +47,17 @@ export type IdeRoot = {
 type Disposable = { dispose(): void };
 
 function fsPath(resource: Uri): string {
-  let p = resource.fsPath || resource.path;
-  if (p.startsWith("/") && /^\/[A-Za-z]:/.test(p)) {
-    p = p.slice(1);
+  return toOsPath(resource.fsPath || resource.path);
+}
+
+/** Strip a monaco `/C:` prefix; use backslash on Windows drive paths. */
+function toOsPath(p: string): string {
+  let s = p;
+  if (s.startsWith("/") && /^\/[A-Za-z]:/.test(s)) s = s.slice(1);
+  if (/^[A-Za-z]:/.test(s) || s.includes("\\")) {
+    return s.replace(/\//g, "\\");
   }
-  return p.replace(/\//g, "\\");
+  return s;
 }
 
 /** Decode standard base64 to bytes without a per-char loop. */
@@ -70,13 +77,15 @@ function b64FromBytes(data: Uint8Array): string {
 }
 
 function normFs(p: string): string {
-  return p.replace(/\//g, "\\").toLowerCase().replace(/\\+$/, "");
+  let s = p.replace(/\\/g, "/");
+  if (s.startsWith("/") && /^\/[A-Za-z]:/.test(s)) s = s.slice(1);
+  return s.replace(/\/+$/, "").toLowerCase();
 }
 
 function underRoot(filePath: string, root: string): boolean {
   const a = normFs(filePath);
   const b = normFs(root);
-  return a === b || a.startsWith(b + "\\");
+  return a === b || a.startsWith(b + "/");
 }
 
 type ModRootDeletedFn = (originId: string) => void | Promise<void>;
@@ -141,10 +150,14 @@ export class WailsFileSystemProvider
 
   /** Update multi-root mount points and read-only game roots. */
   setRoots(roots: IdeRoot[]): void {
-    this.roots = roots.map((r) => ({
-      ...r,
-      path: r.path.replace(/\//g, "\\"),
-    }));
+    this.roots = roots.map((r) => ({ ...r }));
+    if (!this.roots.length) return;
+    this._onDidChangeFile.fire(
+      this.roots.map((r) => ({
+        resource: monaco.Uri.file(r.path),
+        type: FileChangeType.UPDATED,
+      })),
+    );
   }
 
   /** True when the path is under a read-only (game) root. */
@@ -191,6 +204,7 @@ export class WailsFileSystemProvider
       ctime: st.ctimeMs,
       mtime: st.mtimeMs,
       size: st.size,
+      permissions: this.isReadOnly(path) ? FilePermission.Readonly : undefined,
     };
   }
 

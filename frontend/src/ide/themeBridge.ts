@@ -7,6 +7,14 @@
 import { updateUserConfiguration } from "@codingame/monaco-vscode-configuration-service-override";
 import * as vscode from "vscode";
 
+/** Bracket match / auto-close defaults (also in workbench construction). */
+export const EDITOR_BRACKET_DEFAULTS: Record<string, unknown> = {
+  "editor.matchBrackets": "always",
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": "active",
+  "editor.autoClosingBrackets": "languageDefined",
+};
+
 /** User-settings fragment: named theme + icon theme + tree indent. */
 export function workbenchSettingsForTheme(
   themeName: string,
@@ -17,11 +25,13 @@ export function workbenchSettingsForTheme(
     "workbench.tree.indent": 16,
     "workbench.tree.renderIndentGuides": "always",
     "editor.semanticHighlighting.enabled": false,
+    ...EDITOR_BRACKET_DEFAULTS,
   };
 }
 
 let applyingTheme = false;
 let lastThemeName = "";
+let queuedTheme: string | null = null;
 let editorFontSize = 14;
 
 /** Merge editor.fontSize into the next workbench settings write. */
@@ -32,23 +42,31 @@ export function applyEditorFontSize(px: number): void {
 
 /** Push workbench.colorTheme / iconTheme / tree indent from the Nuxt name. */
 export async function applyWorkbenchTheme(themeName: string): Promise<void> {
-  if (applyingTheme) return;
+  if (applyingTheme) {
+    queuedTheme = themeName;
+    return;
+  }
   applyingTheme = true;
   lastThemeName = themeName;
   try {
-    await updateUserConfiguration(
-      JSON.stringify(
-        {
-          ...workbenchSettingsForTheme(themeName),
-          "editor.fontSize": editorFontSize,
-          "workbench.startupEditor": "none",
-          "window.title": "PMT${separator}${activeEditorShort}",
-          "files.autoSave": "off",
-        },
-        null,
-        2,
-      ),
-    );
+    do {
+      const name = queuedTheme ?? lastThemeName;
+      queuedTheme = null;
+      lastThemeName = name;
+      await updateUserConfiguration(
+        JSON.stringify(
+          {
+            ...workbenchSettingsForTheme(name),
+            "editor.fontSize": editorFontSize,
+            "workbench.startupEditor": "none",
+            "window.title": "PMT${separator}${activeEditorShort}",
+            "files.autoSave": "off",
+          },
+          null,
+          2,
+        ),
+      );
+    } while (queuedTheme);
   } finally {
     applyingTheme = false;
   }

@@ -19,6 +19,7 @@ const (
 	outDepth        = 3
 	maxFanout       = 12
 	morePrefix      = "more:"
+	moreInPrefix    = "more-in:"
 )
 
 // Graph returns the event graph for the live session. Layout is not computed.
@@ -35,7 +36,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 	}
 
 	edges := storedEdges(s, effectSet)
-	selected, inboundOnly, truncated, hidden := neighborhood(
+	selected, truncated, hidden, hiddenIn := neighborhood(
 		edges, params.Root, kinds, maxNodes, params.Expand,
 	)
 
@@ -63,6 +64,16 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 			From: parent, To: id, Via: "more", Kind: "events",
 		})
 	}
+	for parent, n := range hiddenIn {
+		if n <= 0 || !selected[parent] {
+			continue
+		}
+		id := moreInPrefix + parent
+		selected[id] = true
+		outEdges = append(outEdges, EventGraphEdge{
+			From: id, To: parent, Via: "more-in", Kind: "events",
+		})
+	}
 
 	firesCount := map[string]int{}
 	for _, e := range outEdges {
@@ -79,6 +90,14 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 			})
 			continue
 		}
+		if strings.HasPrefix(id, moreInPrefix) {
+			parent := strings.TrimPrefix(id, moreInPrefix)
+			nodes = append(nodes, EventGraphNode{
+				ID: id, Kind: "more",
+				Title: "+" + strconv.Itoa(hiddenIn[parent]) + " fired by",
+			})
+			continue
+		}
 		d := s.Resolve(id)
 		n := EventGraphNode{ID: id, Kind: "unknown"}
 		if d != nil {
@@ -90,11 +109,8 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 		if c := firesCount[id]; c > 0 {
 			n.Fires = c
 		}
-		switch {
-		case id == params.Root:
+		if id == params.Root {
 			n.Role = "root"
-		case inboundOnly[id]:
-			n.Role = "caller"
 		}
 		nodes = append(nodes, n)
 	}
@@ -122,10 +138,10 @@ func storedEdges(s *session.Session, effectSet map[string]bool) []EventGraphEdge
 
 func neighborhood(
 	edges []EventGraphEdge, root string, kinds map[string]string, maxNodes int, expand []string,
-) (selected, inboundOnly map[string]bool, truncated bool, hidden map[string]int) {
+) (selected map[string]bool, truncated bool, hidden, hiddenIn map[string]int) {
 	selected = map[string]bool{root: true}
-	inboundOnly = map[string]bool{}
 	hidden = map[string]int{}
+	hiddenIn = map[string]int{}
 	lift := map[string]bool{}
 	for _, id := range expand {
 		lift[id] = true
@@ -174,7 +190,7 @@ func neighborhood(
 		for _, to := range children {
 			if !take(to) {
 				if truncated {
-					return selected, inboundOnly, true, hidden
+					return selected, true, hidden, hiddenIn
 				}
 				continue
 			}
@@ -184,20 +200,25 @@ func neighborhood(
 			q = append(q, item{to, cur.depth + 1})
 		}
 	}
+	var inbound []string
+	seenIn := map[string]bool{}
 	for _, e := range edges {
-		if e.To != root {
+		if e.To != root || selected[e.From] || seenIn[e.From] {
 			continue
 		}
-		if selected[e.From] {
-			continue
-		}
-		if take(e.From) {
-			inboundOnly[e.From] = true
-		} else if truncated {
-			break
-		}
+		seenIn[e.From] = true
+		inbound = append(inbound, e.From)
 	}
-	return selected, inboundOnly, truncated, hidden
+	if lift[root] {
+		for _, from := range inbound {
+			if !take(from) {
+				break
+			}
+		}
+	} else if len(inbound) > 0 {
+		hiddenIn[root] = len(inbound)
+	}
+	return selected, truncated, hidden, hiddenIn
 }
 
 func suggestionsOf(vocab map[string]string, namespace string) EventGraphSuggestions {

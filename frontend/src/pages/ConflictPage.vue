@@ -3,7 +3,7 @@
  * Conflict monitor: GetOverrides. FIOS/LIOS is computed in Go.
  * Filters live in UTable column state (overlay, kind, origin, rule).
  */
-import { computed, shallowRef, useTemplateRef } from "vue";
+import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import {
@@ -17,9 +17,12 @@ import type { OverrideRow, OverrideSite } from "@services/internal/views/models"
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import DetailPane from "../components/DetailPane.vue";
+import OriginBadge from "../components/OriginBadge.vue";
+import OriginSelectMenu from "../components/OriginSelectMenu.vue";
 import { useOpenInIde } from "../composables/useOpenInIde";
 import { useLiveEnabled } from "../composables/useSessionQuery";
 import { useWorkspaceStore } from "../stores/workspace";
+import { originHex, originHexByOriginId } from "../ide/rootDecorations";
 
 defineOptions({ name: "ConflictPage" });
 
@@ -32,6 +35,27 @@ const originFallback = computed(() =>
   ws.gameName(ws.activeWorkspace?.gameId ?? ws.currentGameId),
 );
 const vanilla = computed(() => ws.originVanilla);
+const liveMods = computed(() =>
+  ws.workspaceMods.filter((m) => !m.isBroken && m.path),
+);
+const originItems = computed(() =>
+  liveMods.value.map((m, i) => ({
+    id: m.id,
+    label: m.name,
+    color: originHex({ kind: "mod", path: m.path, color: m.color, wrapIndex: i }),
+    thumbnail: ws.thumbUrls[m.id],
+  })),
+);
+const originIds = ref<string[]>([]);
+watch(
+  liveMods,
+  (mods) => {
+    const ids = mods.map((m) => m.id);
+    const keep = originIds.value.filter((id) => ids.includes(id));
+    originIds.value = keep.length ? keep : ids;
+  },
+  { immediate: true },
+);
 const scopeItems = [
   { label: "Conflicts", value: "conflicts" },
   { label: "Overrides", value: "overrides" },
@@ -50,18 +74,16 @@ const scope = computed({
   },
 });
 
-/** Mod origin names only (no vanilla / game title); Set-deduped. */
-function modOriginNames(row: OverrideRow): string[] {
+/** Mod origin ids only (no vanilla). */
+function modOriginIds(row: OverrideRow): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const s of row.sites ?? []) {
     const origin = s.origin || "";
-    const name = s.originName || "";
     if (!origin || origin === vanilla.value) continue;
-    if (!name || name === originFallback.value) continue;
-    if (seen.has(name)) continue;
-    seen.add(name);
-    out.push(name);
+    if (seen.has(origin)) continue;
+    seen.add(origin);
+    out.push(origin);
   }
   return out;
 }
@@ -98,11 +120,11 @@ const columns: TableColumn<OverrideRow>[] = [
   {
     id: "origin",
     header: "Origin",
-    accessorFn: (row) => modOriginNames(row),
-    getUniqueValues: (row) => modOriginNames(row),
+    accessorFn: (row) => modOriginIds(row),
+    getUniqueValues: (row) => modOriginIds(row),
     filterFn: (row, id, value) => {
-      if (value == null || value === "") return true;
-      return (row.getValue(id) as string[]).includes(value as string);
+      if (!Array.isArray(value) || !value.length) return true;
+      return (row.getValue(id) as string[]).some((o) => value.includes(o));
     },
   },
   { id: "winner", header: "Winner" },
@@ -115,19 +137,20 @@ function facetItems(id: string): { label: string; value: string }[] {
     value: String(v),
   }));
 }
-function filterString(c: { getFilterValue: () => unknown }) {
-  const v = c.getFilterValue();
-  return v == null ? undefined : String(v);
+function setCol(id: string, value: unknown): void {
+  const rest = columnFilters.value.filter((f) => f.id !== id);
+  columnFilters.value = value == null || value === ""
+    ? rest
+    : [...rest, { id, value }];
 }
-function originFacetItems(): { label: string; value: string }[] {
-  const counts = new Map<string, number>();
-  for (const row of rows.value) {
-    for (const name of new Set(modOriginNames(row))) {
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-  }
-  return [...counts].map(([v, n]) => ({ label: `${v} (${n})`, value: v }));
+function colString(id: string): string | undefined {
+  const hit = columnFilters.value.find((f) => f.id === id);
+  return hit?.value == null ? undefined : String(hit.value);
 }
+watch(originIds, (ids) => {
+  const narrowed = ids.length > 0 && ids.length < originItems.value.length;
+  setCol("origin", narrowed ? ids : undefined);
+});
 
 /** Open a definition site in the workspace IDE. */
 function open(file: string, line: number): void {
@@ -156,12 +179,41 @@ function onRowSelect(
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
     <WorkspaceToolBar :workspace-id="workspaceId" title="Conflicts" active="conflicts">
       <template #trailing>
-        <UInput v-model="globalFilter" icon="i-lucide-search" placeholder="Filter"
-          size="xs" class="w-48" />
         <LanguageHealthStrip v-if="workspaceId" :workspace-id="workspaceId" />
       </template>
     </WorkspaceToolBar>
     <UAlert v-if="error" color="error" variant="subtle" :description="error" class="m-2" />
+
+    <UDashboardToolbar class="px-2 sm:px-2">
+      <template #left>
+        <UTabs
+          v-model="scope"
+          :items="scopeItems"
+          :content="false"
+          variant="pill"
+          size="sm"
+        />
+        <USelect
+          :model-value="colString('kind')"
+          :items="facetItems('kind')"
+          placeholder="Kind"
+          size="md"
+          class="w-36"
+          @update:model-value="setCol('kind', $event)"
+        />
+        <USelect
+          :model-value="colString('rule')"
+          :items="facetItems('rule')"
+          placeholder="Rule"
+          size="md"
+          class="w-28"
+          @update:model-value="setCol('rule', $event)"
+        />
+        <OriginSelectMenu v-model="originIds" :items="originItems" />
+        <UInput v-model="globalFilter" icon="i-lucide-search" placeholder="Filter"
+          size="md" class="w-48" />
+      </template>
+    </UDashboardToolbar>
 
     <UDashboardGroup
       storage="local"
@@ -176,15 +228,6 @@ function onRowSelect(
         :max-size="85"
         class="min-h-0!"
       >
-        <div class="flex shrink-0 items-center gap-3 border-b border-default px-2 py-1">
-          <UTabs
-            v-model="scope"
-            :items="scopeItems"
-            :content="false"
-            variant="pill"
-            size="sm"
-          />
-        </div>
         <UTable
           ref="table"
           class="h-full"
@@ -203,23 +246,15 @@ function onRowSelect(
           @update:global-filter="(v?: string) => { globalFilter = v ?? '' }"
           @select="onRowSelect"
         >
-          <template #overlay-header>
-            <span class="text-xs text-muted">Scope</span>
-          </template>
-          <template #kind-header="{ column }">
-            <USelect :model-value="filterString(column)" :items="facetItems('kind')"
-              placeholder="Kind" size="xs" class="w-36"
-              @update:model-value="column.setFilterValue($event)" />
-          </template>
-          <template #origin-header="{ column }">
-            <USelect :model-value="filterString(column)" :items="originFacetItems()"
-              placeholder="Origin" size="xs" class="w-40"
-              @update:model-value="column.setFilterValue($event)" />
-          </template>
-          <template #rule-header="{ column }">
-            <USelect :model-value="filterString(column)" :items="facetItems('rule')"
-              placeholder="Rule" size="xs" class="w-28"
-              @update:model-value="column.setFilterValue($event)" />
+          <template #origin-cell="{ row }">
+            <div class="flex flex-wrap gap-1">
+              <OriginBadge
+                v-for="oid in (row.getValue('origin') as string[])"
+                :key="oid"
+                :label="row.original.sites?.find((s) => s.origin === oid)?.originName || oid"
+                :hex="originHexByOriginId(oid)"
+              />
+            </div>
           </template>
           <template #overlay-cell="{ row }">
             <UBadge :label="row.original.overlay ? 'override' : 'conflict'"
@@ -232,9 +267,10 @@ function onRowSelect(
               variant="subtle" size="xs" />
           </template>
           <template #winner-cell="{ row }">
-            <UBadge :label="row.original.winnerName || originFallback"
-              :color="row.original.winner ? 'primary' : 'neutral'"
-              variant="subtle" size="xs" />
+            <OriginBadge
+              :label="row.original.winnerName || originFallback"
+              :hex="originHexByOriginId(row.original.winner || 'vanilla')"
+            />
           </template>
         </UTable>
       </UDashboardPanel>
@@ -253,9 +289,10 @@ function onRowSelect(
             <UBadge :label="selected.rule"
               :color="selected.rule === 'FIOS' ? 'warning' : 'info'"
               variant="subtle" size="xs" />
-            <UBadge :label="selected.winnerName || originFallback"
-              :color="selected.winner ? 'primary' : 'neutral'"
-              variant="subtle" size="xs" />
+            <OriginBadge
+              :label="selected.winnerName || originFallback"
+              :hex="originHexByOriginId(selected.winner || 'vanilla')"
+            />
           </template>
           <div class="flex flex-col gap-1">
             <UButton

@@ -15,7 +15,7 @@ import Color from "colorjs.io";
 
 /** Palette families for `data-theme`. */
 export const PMT_THEME_FAMILIES = [
-  "pmt", "catppuccin", "one", "monokai", "github",
+  "pmt", "catppuccin", "one", "monokai", "github", "gruvbox", "horizon",
 ] as const;
 /** Named palette family. */
 export type PmtThemeFamily = (typeof PMT_THEME_FAMILIES)[number];
@@ -27,12 +27,13 @@ export type PmtThemeName = `${PmtThemeFamily}-${ColorAppearance}`;
 export const PMT_THEME_NAMES = [
   "pmt-dark", "pmt-light", "catppuccin-dark", "catppuccin-light",
   "one-dark", "one-light", "monokai-dark", "monokai-light",
-  "github-dark", "github-light",
+  "github-dark", "github-light", "gruvbox-dark", "gruvbox-light",
+  "horizon-dark", "horizon-light",
 ] as const satisfies readonly PmtThemeName[];
 
 const FAMILY_LABELS: Record<PmtThemeFamily, string> = {
   pmt: "PMT", catppuccin: "Catppuccin", one: "One",
-  monokai: "Monokai", github: "GitHub",
+  monokai: "Monokai", github: "GitHub", gruvbox: "Gruvbox", horizon: "Horizon",
 };
 
 /** Display label for a palette family. */
@@ -69,13 +70,14 @@ export function normalizeThemeFamily(name: string | undefined): PmtThemeFamily {
   return "pmt";
 }
 
-/** Workbench id from the live `data-theme` + `.dark` class. */
-export function currentWorkbenchTheme(): PmtThemeName {
+/** Workbench id from `data-theme` and appearance (or html.dark as fallback). */
+export function currentWorkbenchTheme(
+  appearance?: ColorAppearance,
+): PmtThemeName {
   const el = document.documentElement;
-  const appearance: ColorAppearance = el.classList.contains("dark")
-    ? "dark"
-    : "light";
-  return workbenchThemeId(normalizeThemeFamily(el.dataset.theme), appearance);
+  const mode: ColorAppearance =
+    appearance ?? (el.classList.contains("dark") ? "dark" : "light");
+  return workbenchThemeId(normalizeThemeFamily(el.dataset.theme), mode);
 }
 
 /** ~18 seed colors that expand into the workbench chrome palette. */
@@ -156,6 +158,34 @@ const SEEDS: Record<PmtThemeName, ThemeSeed> = {
     chrome: "#f6f8fa", chrome2: "#d0d7de", input: "#ffffff", button: "#1f883d",
     buttonHover: "#1a7f37", badgeFg: "#ffffff", remoteBg: "#0969da",
     remoteFg: "#ffffff", inactive: "#8250df",
+  },
+  "gruvbox-dark": {
+    fg: "#ebdbb2", accent: "#fe8019", link: "#83a598", error: "#fb4934",
+    info: "#83a598", warning: "#fabd2f", success: "#b8bb26", editorBg: "#282828",
+    chrome: "#1d2021", chrome2: "#3c3836", input: "#1d2021", button: "#fe8019",
+    buttonHover: "#d65d0e", badgeFg: "#1d2021", remoteBg: "#458588",
+    remoteFg: "#ebdbb2", inactive: "#d3869b",
+  },
+  "gruvbox-light": {
+    fg: "#3c3836", accent: "#af3a03", link: "#076678", error: "#9d0006",
+    info: "#076678", warning: "#b57614", success: "#79740e", editorBg: "#f4f3ef",
+    chrome: "#ecebe6", chrome2: "#e4e2dc", input: "#f8f7f4", button: "#af3a03",
+    buttonHover: "#9d0006", badgeFg: "#f4f3ef", remoteBg: "#427b58",
+    remoteFg: "#f4f3ef", inactive: "#8f3f71",
+  },
+  "horizon-dark": {
+    fg: "#e0d6d1", accent: "#e95678", link: "#f09383", error: "#e95678",
+    info: "#25b0bc", warning: "#fab795", success: "#29d398", editorBg: "#1c1e26",
+    chrome: "#16161c", chrome2: "#232530", input: "#2e303e", button: "#f09383",
+    buttonHover: "#e95678", badgeFg: "#1c1e26", remoteBg: "#e95678",
+    remoteFg: "#1c1e26", inactive: "#b877db",
+  },
+  "horizon-light": {
+    fg: "#3d3440", accent: "#d72638", link: "#e0583a", error: "#d72638",
+    info: "#1d8991", warning: "#c47a2a", success: "#1d8a5b", editorBg: "#fdf0ed",
+    chrome: "#fadad1", chrome2: "#f9cbbe", input: "#fff6f3", button: "#e0583a",
+    buttonHover: "#d72638", badgeFg: "#fff6f3", remoteBg: "#d72638",
+    remoteFg: "#fff6f3", inactive: "#8a56ac",
   },
 };
 

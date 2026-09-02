@@ -208,8 +208,8 @@ export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: str
 }
 
 /**
- * UpdateWorkspacePrefs sets IDE persist and default landing page.
+ * UpdateWorkspacePrefs sets IDE persist, default landing page, and origin colors.
  */
-export function UpdateWorkspacePrefs(workspaceID: string, resetIdeOnOpen: boolean, defaultTool: string): $CancellablePromise<void> {
-    return $Call.ByID(3501301930, workspaceID, resetIdeOnOpen, defaultTool);
+export function UpdateWorkspacePrefs(workspaceID: string, resetIdeOnOpen: boolean, defaultTool: string, gameColor: string, stagingColor: string): $CancellablePromise<void> {
+    return $Call.ByID(3501301930, workspaceID, resetIdeOnOpen, defaultTool, gameColor, stagingColor);
 }

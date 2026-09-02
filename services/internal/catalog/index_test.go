@@ -138,6 +138,40 @@ real_effect = {
 			}
 		}
 	})
+	t.Run("message title is loc not convention id", func(t *testing.T) {
+		ex := extractCK3("common/messages/x.txt",
+			"quieter_events_neutral = {\n\ttitle = event_message_title\n}\n", "mod")
+		if hasRef(ex.Refs, "loc", "quieter_events_neutral") ||
+			hasRef(ex.Refs, "loc-convention", "quieter_events_neutral") {
+			t.Fatalf("invented message loc: %v", ex.Refs)
+		}
+		if !hasRef(ex.Refs, "loc", "event_message_title") {
+			t.Fatalf("missing title loc: %v", ex.Refs)
+		}
+	})
+	t.Run("game_rules convention keys", func(t *testing.T) {
+		ex := extractCK3("common/game_rules/x.txt",
+			"my_rule = {\n\tdefault = a\n\ta = { }\n}\n", "mod")
+		if hasRef(ex.Refs, "loc", "my_rule") || hasRef(ex.Refs, "loc-convention", "my_rule") {
+			t.Fatalf("bare rule id: %v", ex.Refs)
+		}
+		if !hasRef(ex.Refs, "loc-convention", "rule_my_rule") {
+			t.Fatalf("missing rule_ key: %v", ex.Refs)
+		}
+		if !hasRef(ex.Refs, "loc-convention", "setting_a") {
+			t.Fatalf("missing setting_ key: %v", ex.Refs)
+		}
+	})
+	t.Run("loc file interpolations", func(t *testing.T) {
+		bom := "\ufeffl_english:\n used:0 \"Hi\"\n other:0 \"see $used$ and $used|U$\"\n"
+		ex := extractCK3("localization/english/a_l_english.yml", bom, "mod")
+		if !findDef(ex.Defs, "loc_key", "used") || !findDef(ex.Defs, "loc_key", "other") {
+			t.Fatalf("defs=%v", ex.Defs)
+		}
+		if !hasRef(ex.Refs, "loc", "used") {
+			t.Fatalf("missing $used$ ref: %v", ex.Refs)
+		}
+	})
 }
 
 func TestBuildIndex(t *testing.T) {
@@ -167,5 +201,44 @@ func TestBuildIndex(t *testing.T) {
 	locIdx := BuildIndex("ck3", []ModInput{{Origin: "mod", Root: root, Order: 0}}, nil)
 	if got := locIdx.Loc["english"]["test.1.t"].Value; got != "Hello" {
 		t.Fatalf("Loc from header = %v", locIdx.Loc)
+	}
+}
+
+func TestVoteFieldValueKinds(t *testing.T) {
+	defs := []Def{
+		{Type: "event_theme", Key: "seduction"},
+		{Type: "trait", Key: "brave"},
+	}
+	ok := VoteFieldValueKinds(map[string]map[string]bool{
+		"theme": {"seduction": true},
+	}, defs)
+	if ok["theme"] != "event_theme" {
+		t.Fatalf("theme = %v", ok)
+	}
+	conflict := VoteFieldValueKinds(map[string]map[string]bool{
+		"theme": {"seduction": true, "brave": true},
+	}, defs)
+	if _, hit := conflict["theme"]; hit {
+		t.Fatalf("conflict should omit theme: %v", conflict)
+	}
+}
+
+func TestVoteFieldEnums(t *testing.T) {
+	voted := map[string]string{"theme": "event_theme"}
+	got := VoteFieldEnums(map[string]map[string]map[string]bool{
+		"event": {
+			"type":  {"character_event": true, "letter_event": true},
+			"theme": {"seduction": true, "default": true},
+			"id":    {"a": true},
+		},
+	}, voted)
+	if len(got["event"]["type"]) != 2 {
+		t.Fatalf("type enums: %v", got)
+	}
+	if _, hit := got["event"]["theme"]; hit {
+		t.Fatalf("voted field should be omitted: %v", got)
+	}
+	if _, hit := got["event"]["id"]; hit {
+		t.Fatalf("single value should be omitted: %v", got)
 	}
 }

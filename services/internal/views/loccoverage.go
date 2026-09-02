@@ -34,8 +34,21 @@ func Coverage(s *session.Session) []LocCoverage {
 	}
 
 	referenced := map[string]locSite{}
+	used := map[string]bool{}
+	for _, r := range s.AllLocRefs() {
+		if r.Kind != "loc" && r.Kind != "loc-broad" && r.Kind != "loc-convention" {
+			continue
+		}
+		if skipLocIssueFile(s, r.Path) {
+			continue
+		}
+		used[r.Key] = true
+	}
 	for _, r := range s.LocRefs() {
-		if _, _, ok := s.Locate(r.Path); !ok {
+		if r.Kind != "loc" {
+			continue
+		}
+		if skipLocIssueFile(s, r.Path) {
 			continue
 		}
 		if _, ok := referenced[r.Key]; !ok {
@@ -55,14 +68,9 @@ func Coverage(s *session.Session) []LocCoverage {
 	}
 	slices.Sort(langs)
 
-	_, _, ver, installID := s.CacheInfo()
-	if ver == "" {
-		ver = "latest"
-	}
-
 	out := make([]LocCoverage, 0, len(langs))
 	for _, lang := range langs {
-		inheritedKeys := sidecarKeys(s, installID, ver, lang)
+		inheritedKeys := inheritKeys(s, lang)
 		entries := byLang[lang]
 		row := LocCoverage{Language: lang, Defined: len(entries)}
 		addIssue := func(kind string, site locSite, value string) {
@@ -78,13 +86,13 @@ func Coverage(s *session.Session) []LocCoverage {
 			})
 		}
 		for key, site := range referenced {
-			if _, ok := entries[key]; ok || inheritedKeys[key] {
+			if locPresent(s, key, entries, inheritedKeys) {
 				continue
 			}
 			addIssue("missing", site, "")
 		}
 		for key, site := range entries {
-			if _, ok := referenced[key]; ok || inheritedKeys[key] {
+			if used[key] || inheritedKeys[key] || skipOrphanLocFile(site.file) {
 				continue
 			}
 			addIssue("orphaned", site, site.value)
@@ -111,15 +119,33 @@ func Coverage(s *session.Session) []LocCoverage {
 	return out
 }
 
-func sidecarKeys(s *session.Session, installID, ver, lang string) map[string]bool {
+func locPresent(
+	s *session.Session, key string, entries map[string]locSite, inherited map[string]bool,
+) bool {
+	if _, ok := entries[key]; ok || inherited[key] {
+		return true
+	}
+	if _, ok := s.DefaultLoc(key); ok {
+		return true
+	}
+	_, _, _, ok := s.LocSite(key)
+	return ok
+}
+
+func inheritKeys(s *session.Session, lang string) map[string]bool {
 	out := map[string]bool{}
 	if lang == s.DefaultLang() {
 		for _, k := range s.LocKeys(true) {
 			out[k] = true
 		}
+		return out
 	}
+	_, _, ver, installID := s.CacheInfo()
 	if installID == "" {
 		return out
+	}
+	if ver == "" {
+		ver = "latest"
 	}
 	vl, err := catalog.LoadVanillaLoc(installID, ver, lang)
 	if err != nil || vl == nil {
@@ -129,6 +155,24 @@ func sidecarKeys(s *session.Session, installID, ver, lang string) map[string]boo
 		out[k] = true
 	}
 	return out
+}
+
+func skipLocIssueFile(s *session.Session, path string) bool {
+	switch s.KindFor(path) {
+	case "mod", "meta":
+		return true
+	default:
+		return false
+	}
+}
+
+func skipOrphanLocFile(path string) bool {
+	p := strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
+	return strings.Contains(p, "game_rules") ||
+		strings.Contains(p, "game_rule") ||
+		strings.Contains(p, "message_filter") ||
+		strings.Contains(p, "/messages/") ||
+		strings.Contains(p, "messages_l_")
 }
 
 // Lookup returns the default-lang loc text and winning site for key, or nil.

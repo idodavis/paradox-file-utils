@@ -5,6 +5,7 @@ package catalog
 import (
 	"cmp"
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,15 +52,17 @@ type FileExtract struct {
 	Edges      []Edge
 	Cands      []CallCandidate
 	Loc        LocDelta
-	StructKind string
-	StructKeys map[string]bool
-	Vocab      map[string]bool
+	StructKind   string
+	StructCounts map[string]int
+	StructBlocks map[string]int
+	Vocab        map[string]bool
 	GUITypes   map[string]bool
 	GUIProps   map[string]bool
+	FieldRHS   map[string]map[string]bool
 }
 
-// ExtractLoc turns a localization file into loc_key defs and per-language values.
-func ExtractLoc(absPath, content, origin string) (defs []Def, locd LocDelta) {
+// ExtractLoc turns a localization file into loc_key defs, values, and `$key$` refs.
+func ExtractLoc(absPath, content, origin string) (defs []Def, locd LocDelta, refs []Ref) {
 	r := loc.Parse(content)
 	lang := loc.LanguageOf(absPath, r.Language)
 	vals := map[string]LocEntry{}
@@ -73,8 +76,14 @@ func ExtractLoc(absPath, content, origin string) (defs []Def, locd LocDelta) {
 			v = v[:locValueLimit]
 		}
 		vals[e.Key] = LocEntry{Value: v, File: absPath, Line: e.Line}
+		for _, ip := range loc.Interps(e.Value, e.ValueRange.Start) {
+			refs = append(refs, Ref{
+				Key: ip.Key, Kind: "loc", Path: absPath,
+				Line: e.Line, Start: ip.KeyRange.Start, End: ip.KeyRange.End,
+			})
+		}
 	}
-	return defs, LocDelta{Lang: lang, Vals: vals}
+	return defs, LocDelta{Lang: lang, Vals: vals}, refs
 }
 
 // ExtractParsed extracts defs, refs, edges, and call candidates from a parsed
@@ -101,13 +110,78 @@ func ExtractParsed(
 			if rule.Mode == game.ModeEventID {
 				ex.StructKind = "event"
 			}
-			ex.StructKeys, ex.Vocab = harvestStructVocab(res.Root)
+			ex.StructCounts, ex.StructBlocks, ex.Vocab = harvestStructVocab(res.Root)
 		}
 	default:
 		return ex
 	}
 	ex.Refs, ex.Edges, ex.Cands = extractRefsAndEdges(res.Root, res.Lines(), absPath, ex.Defs)
+	if conventionLocKind(rule.Kind) {
+		ex.Refs = append(ex.Refs, conventionLocRefs(
+			res.Root, res.Lines(), absPath, ex.Defs, rule.Kind)...)
+	}
+	ex.FieldRHS = extractFieldRHS(res.Root)
 	return ex
+}
+
+func conventionLocKind(kind string) bool {
+	switch game.CanonicalKind(kind) {
+	case "game_rules", "game_rule", "game_rule_category",
+		"messages", "message_filter_types", "message_group_types", "message":
+		return true
+	default:
+		return false
+	}
+}
+
+func conventionLocRefs(
+	root *jomini.Root, li *jomini.LineIndex, path string, defs []Def, kind string,
+) []Ref {
+	var out []Ref
+	add := func(key string, start, end int) {
+		if key == "" {
+			return
+		}
+		out = append(out, Ref{
+			Key: key, Kind: "loc-convention", Path: path,
+			Line: li.PositionAt(start).Line, Start: start, End: end,
+		})
+	}
+	ck := game.CanonicalKind(kind)
+	for _, d := range defs {
+		switch ck {
+		case "game_rules", "game_rule":
+			add("rule_"+d.Key, d.Start, d.End)
+		case "game_rule_category":
+			add("game_rule_category_"+d.Key, d.Start, d.End)
+		case "message_filter_types":
+			add("message_filter_"+d.Key, d.Start, d.End)
+			add("message_filter_"+d.Key+"_desc", d.Start, d.End)
+		}
+	}
+	if (ck != "game_rules" && ck != "game_rule") || root == nil {
+		return out
+	}
+	for _, st := range root.Statements {
+		a, ok := st.(*jomini.Assignment)
+		if !ok {
+			continue
+		}
+		b := jomini.BlockOf(a.Value)
+		if b == nil {
+			continue
+		}
+		for _, inner := range b.Statements {
+			ia, ok := inner.(*jomini.Assignment)
+			if !ok || ia.Key.Quoted || jomini.BlockOf(ia.Value) == nil {
+				continue
+			}
+			key := ia.Key.Text
+			add("setting_"+key, ia.Key.Range.Start, ia.Key.Range.End)
+			add("setting_"+key+"_desc", ia.Key.Range.Start, ia.Key.Range.End)
+		}
+	}
+	return out
 }
 
 // ExtractFile extracts one decoded (CR-free) file, choosing the loc or script
@@ -116,7 +190,7 @@ func ExtractFile(gameID, absPath, rel, origin, text string, harvestBodies bool) 
 	text = jomini.Normalize(text)
 	if game.MatchExtract(gameID, rel).Mode == game.ModeLocKey {
 		var ex FileExtract
-		ex.Defs, ex.Loc = ExtractLoc(filepath.Clean(absPath), text, origin)
+		ex.Defs, ex.Loc, ex.Refs = ExtractLoc(filepath.Clean(absPath), text, origin)
 		return ex
 	}
 	return ExtractParsed(gameID, absPath, rel, origin, jomini.Parse(text), harvestBodies)
@@ -240,10 +314,10 @@ func extractGUI(root *jomini.Root, li *jomini.LineIndex, path string) ([]Def, ma
 	return defs, guiTypes, guiProps
 }
 
-func harvestStructVocab(root *jomini.Root) (structs, vocab map[string]bool) {
-	structs, vocab = map[string]bool{}, map[string]bool{}
+func harvestStructVocab(root *jomini.Root) (counts, blocks map[string]int, vocab map[string]bool) {
+	counts, blocks, vocab = map[string]int{}, map[string]int{}, map[string]bool{}
 	if root == nil {
-		return structs, vocab
+		return counts, blocks, vocab
 	}
 	for _, st := range root.Statements {
 		a, ok := st.(*jomini.Assignment)
@@ -263,9 +337,10 @@ func harvestStructVocab(root *jomini.Root) (structs, vocab map[string]bool) {
 			if !nameOKRe.MatchString(k) || stoplist[k] {
 				continue
 			}
-			structs[k] = true
+			counts[k]++
 			vocab[k] = true
 			if sub := jomini.BlockOf(ca.Value); sub != nil {
+				blocks[k]++
 				for _, gc := range sub.Statements {
 					if ga, ok := gc.(*jomini.Assignment); ok && !ga.Key.Quoted {
 						gk := strings.ToLower(ga.Key.Text)
@@ -277,7 +352,7 @@ func harvestStructVocab(root *jomini.Root) (structs, vocab map[string]bool) {
 			}
 		}
 	}
-	return structs, vocab
+	return counts, blocks, vocab
 }
 
 type edgeFrame struct {
@@ -386,6 +461,215 @@ func extractRefsAndEdges(
 	}
 	walk(root.Statements)
 	return refs, edges, cands
+}
+
+func extractFieldRHS(root *jomini.Root) map[string]map[string]bool {
+	if root == nil {
+		return nil
+	}
+	out := map[string]map[string]bool{}
+	var walk func(stmts []jomini.Statement)
+	walk = func(stmts []jomini.Statement) {
+		for _, st := range stmts {
+			a, ok := st.(*jomini.Assignment)
+			if !ok {
+				if vs, ok := st.(*jomini.ValueStmt); ok {
+					if b := jomini.BlockOf(vs.Value); b != nil {
+						walk(b.Statements)
+					}
+				}
+				continue
+			}
+			if !a.Key.Quoted && game.FireKind(a.Key.Text) == "" &&
+				loc.Classify(a.Key.Text) == loc.PropNone {
+				if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted &&
+					sc.Text != "" && loc.LooksLikeKey(sc.Text) {
+					m := out[a.Key.Text]
+					if m == nil {
+						m = map[string]bool{}
+						out[a.Key.Text] = m
+					}
+					m[sc.Text] = true
+				}
+			}
+			if b := jomini.BlockOf(a.Value); b != nil {
+				walk(b.Statements)
+			}
+		}
+	}
+	walk(root.Statements)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// VoteFieldValueKinds keeps field→def type when every RHS that hits a def
+// shares exactly one CanonicalKind.
+func VoteFieldValueKinds(rhs map[string]map[string]bool, defs []Def) map[string]string {
+	kindsByKey := map[string][]string{}
+	for _, d := range defs {
+		k := game.CanonicalKind(d.Type)
+		if k == "" || d.Key == "" {
+			continue
+		}
+		seen := false
+		for _, have := range kindsByKey[d.Key] {
+			if have == k {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			kindsByKey[d.Key] = append(kindsByKey[d.Key], k)
+		}
+	}
+	out := map[string]string{}
+	for field, vals := range rhs {
+		var kind string
+		ok, conflict := false, false
+		for v := range vals {
+			kinds := kindsByKey[v]
+			if len(kinds) == 0 {
+				continue
+			}
+			if len(kinds) > 1 {
+				conflict = true
+				break
+			}
+			if !ok {
+				kind, ok = kinds[0], true
+				continue
+			}
+			if kinds[0] != kind {
+				conflict = true
+				break
+			}
+		}
+		if ok && !conflict {
+			out[field] = kind
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// MergeFieldValueKinds overlays mods on vanilla; a type conflict drops the field.
+func MergeFieldValueKinds(vanilla, mods map[string]string) map[string]string {
+	if len(vanilla) == 0 && len(mods) == 0 {
+		return nil
+	}
+	out := maps.Clone(vanilla)
+	if out == nil {
+		out = map[string]string{}
+	}
+	for k, v := range mods {
+		if prev, ok := out[k]; ok && prev != v {
+			delete(out, k)
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+const fieldEnumMin, fieldEnumMax = 2, 64
+
+// VoteFieldEnums keeps unique scalar RHS per kind+field when the field did not
+// vote a def type and the unique count is a small enum (2–64).
+func VoteFieldEnums(
+	byKind map[string]map[string]map[string]bool,
+	voted map[string]string,
+) map[string]map[string][]string {
+	votedL := map[string]bool{}
+	for k := range voted {
+		votedL[strings.ToLower(k)] = true
+	}
+	var out map[string]map[string][]string
+	for kind, fields := range byKind {
+		for field, vals := range fields {
+			if votedL[strings.ToLower(field)] {
+				continue
+			}
+			if n := len(vals); n < fieldEnumMin || n > fieldEnumMax {
+				continue
+			}
+			keys := make([]string, 0, len(vals))
+			for v := range vals {
+				keys = append(keys, v)
+			}
+			slices.Sort(keys)
+			if out == nil {
+				out = map[string]map[string][]string{}
+			}
+			m := out[kind]
+			if m == nil {
+				m = map[string][]string{}
+				out[kind] = m
+			}
+			m[strings.ToLower(field)] = keys
+		}
+	}
+	return out
+}
+
+// MergeFieldEnums overlays mod enums on vanilla per kind+field.
+func MergeFieldEnums(
+	vanilla, mods map[string]map[string][]string,
+) map[string]map[string][]string {
+	if len(vanilla) == 0 && len(mods) == 0 {
+		return nil
+	}
+	out := cloneFieldEnums(vanilla)
+	if out == nil {
+		out = map[string]map[string][]string{}
+	}
+	for kind, fields := range mods {
+		dst := out[kind]
+		if dst == nil {
+			dst = map[string][]string{}
+			out[kind] = dst
+		}
+		for field, vals := range fields {
+			dst[strings.ToLower(field)] = slices.Clone(vals)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func cloneFieldEnums(
+	in map[string]map[string][]string,
+) map[string]map[string][]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string][]string, len(in))
+	for kind, fields := range in {
+		m := make(map[string][]string, len(fields))
+		for field, vals := range fields {
+			m[field] = slices.Clone(vals)
+		}
+		out[kind] = m
+	}
+	return out
+}
+
+func locKindRefs(refs []Ref) []Ref {
+	var out []Ref
+	for _, r := range refs {
+		if r.Kind == "loc" || r.Kind == "loc-broad" {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func fireSiteKind(stack []edgeFrame, fireKey string) (kind, nameKey string) {
@@ -613,11 +897,13 @@ func DeriveVia(stored []Edge, cache *VanillaCache, effectSet map[string]bool, mo
 
 // Harvest is the in-memory result of indexing a workspace's mods.
 type Harvest struct {
-	Defs  []Def
-	Refs  []Ref
-	Edges []Edge
-	Loc   map[string]map[string]LocEntry
-	Order []string
+	Defs            []Def
+	Refs            []Ref
+	Edges           []Edge
+	Loc             map[string]map[string]LocEntry
+	Order           []string
+	FieldValueKinds map[string]string
+	FieldEnumsByKind map[string]map[string][]string
 }
 
 func ingestFile(gameID string, f fileRef, harvestBodies bool) FileExtract {
@@ -643,7 +929,16 @@ func BuildIndex(gameID string, mods []ModInput, cache *VanillaCache) Harvest {
 		}
 	}
 	acc, _ := collectExtracts(context.Background(), gameID, files, false, cache)
-	return Harvest{Defs: acc.defs, Refs: acc.refs, Edges: acc.edges, Loc: acc.loc, Order: lo.Uniq(order)}
+	defs := acc.defs
+	if cache != nil && len(cache.Defs) > 0 {
+		defs = append(append([]Def{}, cache.Defs...), acc.defs...)
+	}
+	kinds := VoteFieldValueKinds(acc.fieldRHS, defs)
+	return Harvest{
+		Defs: acc.defs, Refs: acc.refs, Edges: acc.edges, Loc: acc.loc,
+		Order: lo.Uniq(order), FieldValueKinds: kinds,
+		FieldEnumsByKind: VoteFieldEnums(acc.fieldRHSByKind, kinds),
+	}
 }
 
 // MergeLoc copies locd into dst, allocating maps as needed.
@@ -691,10 +986,22 @@ func enrichScriptDocs(dir, format string, c *VanillaCache) {
 	if c.FieldDocs == nil {
 		c.FieldDocs = map[string]string{}
 	}
+	if c.TokenUsage == nil {
+		c.TokenUsage = map[string]string{}
+	}
+	if c.TokenScopes == nil {
+		c.TokenScopes = map[string]string{}
+	}
 	for _, e := range entries {
 		vocab[e.name] = true
 		if e.doc != "" && c.FieldDocs[e.name] == "" {
 			c.FieldDocs[e.name] = e.doc
+		}
+		if e.usage != "" {
+			c.TokenUsage[strings.ToLower(e.name)] = e.usage
+		}
+		if e.scopes != "" {
+			c.TokenScopes[strings.ToLower(e.name)] = e.scopes
 		}
 		switch e.kind {
 		case "effect":
@@ -706,7 +1013,7 @@ func enrichScriptDocs(dir, format string, c *VanillaCache) {
 	c.Vocabulary, c.Effects, c.Triggers = sortedKeys(vocab), sortedKeys(effects), sortedKeys(triggers)
 }
 
-type docToken struct{ name, kind, doc string }
+type docToken struct{ name, kind, doc, usage, scopes string }
 
 func parseScriptDocs(dir, format string) []docToken {
 	entries, err := os.ReadDir(dir)
@@ -755,6 +1062,23 @@ func prose(parts []string) string {
 	return strings.TrimSpace(strings.Join(strings.Fields(strings.Join(parts, " ")), " "))
 }
 
+func splitDocMeta(parts []string) (doc, usage, scopes string) {
+	var body []string
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		low := strings.ToLower(t)
+		switch {
+		case strings.HasPrefix(low, "usage:"):
+			usage = strings.TrimSpace(t[len("usage:"):])
+		case strings.HasPrefix(low, "supported scopes:"):
+			scopes = strings.TrimSpace(t[len("supported scopes:"):])
+		default:
+			body = append(body, p)
+		}
+	}
+	return prose(body), usage, scopes
+}
+
 func parseMarkdownDocs(text, kind string) []docToken {
 	var out []docToken
 	var cur *docToken
@@ -763,7 +1087,7 @@ func parseMarkdownDocs(text, kind string) []docToken {
 		if cur == nil {
 			return
 		}
-		cur.doc = prose(body)
+		cur.doc, cur.usage, cur.scopes = splitDocMeta(body)
 		out = append(out, *cur)
 		cur, body = nil, body[:0]
 	}
@@ -791,7 +1115,7 @@ func parseClassicDocs(text, kind string) []docToken {
 		if cur == nil {
 			return
 		}
-		cur.doc = prose(parts)
+		cur.doc, cur.usage, cur.scopes = splitDocMeta(parts)
 		out = append(out, *cur)
 		cur, parts = nil, nil
 	}

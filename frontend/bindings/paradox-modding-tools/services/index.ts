@@ -24,6 +24,9 @@ export type {
     DirEntry,
     FileBytes,
     FileMergeResult,
+    FileSearchHit,
+    FileSearchQuery,
+    FileSearchResult,
     GameInstall,
     IdeRoot,
     InstallCacheInfo,
@@ -37,6 +40,10 @@ export type {
     PathStat,
     PreviewItem,
     ResolvedConflict,
+    TextSearchFolder,
+    TextSearchHit,
+    TextSearchQuery,
+    TextSearchResult,
     Workspace,
     WorkspaceMod
 } from "./models.js";

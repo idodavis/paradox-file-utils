@@ -10,6 +10,7 @@ export interface EventDetail {
     "file": string;
     "rel"?: string;
     "origin"?: string;
+    "originName"?: string;
     "line": number;
     "fields": EventFieldInfo[] | null;
     "type"?: string;
@@ -57,7 +58,7 @@ export interface EventGraphEdge {
 }
 
 /**
- * EventGraphNode is one graph card. There is no x/y: layout is frontend/elkjs.
+ * EventGraphNode is one graph card. There is no x/y: layout is frontend dagre.
  */
 export interface EventGraphNode {
     "id": string;

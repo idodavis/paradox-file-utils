@@ -1,8 +1,8 @@
 /**
  * Register Paradox languages, PMT color themes, and Material+Paradox file icons.
  *
- * Language configuration supplies `#` line comments so Ctrl+/ (Toggle Line
- * Comment) works for script, GUI, loc, info, and .mod files.
+ * Language configuration supplies `#` line comments, bracket pairs, auto-close,
+ * and a word pattern that keeps dotted ids as one word.
  */
 import { registerExtension } from "@codingame/monaco-vscode-api/extensions";
 import { ExtensionHostKind } from "@codingame/monaco-vscode-extensions-service-override";
@@ -110,10 +110,32 @@ export async function registerParadoxLanguages(): Promise<void> {
 
   await whenReady();
   const vscode = await getApi();
+  const pairs = [
+    { open: "{", close: "}" },
+    { open: "[", close: "]" },
+    { open: "(", close: ")" },
+    { open: '"', close: '"' },
+  ];
+  const brackets: [string, string][] = [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+  ];
+  const scriptWord = /[A-Za-z0-9_.\-]+/;
+  const locWord = /[A-Za-z0-9_$.\-]+/;
   for (const id of PARADOX_LANGUAGE_IDS) {
+    // monaco-vscode LanguageConfiguration omits surroundingPairs; VS Code honors it.
     vscode.languages.setLanguageConfiguration(id, {
       comments: { lineComment: "#" },
-    });
+      brackets,
+      autoClosingPairs: pairs,
+      surroundingPairs: pairs,
+      colorizedBracketPairs: [
+        ["{", "}"],
+        ["[", "]"],
+      ],
+      wordPattern: id === "paradox-loc" ? locWord : scriptWord,
+    } as Parameters<typeof vscode.languages.setLanguageConfiguration>[1]);
   }
   await registerPmtColorThemes();
   await registerPmtFileIcons();

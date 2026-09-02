@@ -29,6 +29,11 @@ func Hover(s *session.Session, path string, line, col int) *HoverResult {
 		if h := namedHoverAllow(s, a.Key.Text, false); h != nil {
 			return h
 		}
+		if ck := game.CanonicalKind(a.Key.Text); game.IsCallKind(ck) {
+			return &HoverResult{
+				Contents: hoverCard(kindLabel(ck), a.Key.Text, "", hoverExtra(s, a.Key.Text, ck)),
+			}
+		}
 		docs := s.FieldDoc(a.Key.Text, at.kind)
 		m := memberSetsFor(s, at.kind)
 		if docs == "" && !m.structKeys[a.Key.Text] && !m.structKeys[strings.ToLower(a.Key.Text)] {
@@ -65,7 +70,7 @@ func namedHoverAllow(s *session.Session, word string, allowLoc bool) *HoverResul
 			return savedScopeHover(word)
 		}
 		h := &HoverResult{
-			Contents: hoverCard(kindLabel(d.Type), d.Key, "", s.FieldDoc(word, d.Type)),
+			Contents: hoverCard(kindLabel(d.Type), d.Key, "", hoverExtra(s, word, d.Type)),
 		}
 		attachSite(h, s, d.Path, d.Line, d.Origin, d.Start)
 		return h
@@ -75,10 +80,39 @@ func namedHoverAllow(s *session.Session, word string, allowLoc bool) *HoverResul
 	}
 	if ck := memberSetsFor(s, "").catalogKind(word); ck != "" {
 		return &HoverResult{
-			Contents: hoverCard(ck, word, "", s.FieldDoc(word, "")),
+			Contents: hoverCard(ck, word, "", hoverExtra(s, word, "")),
+		}
+	}
+	for _, k := range s.Vocab("datafunction") {
+		if k == word {
+			return &HoverResult{
+				Contents: hoverCard("data function", word, "", hoverExtra(s, word, "")),
+			}
+		}
+	}
+	if ck := game.CanonicalKind(word); game.IsCallKind(ck) {
+		return &HoverResult{
+			Contents: hoverCard(kindLabel(ck), word, "", hoverExtra(s, word, ck)),
 		}
 	}
 	return nil
+}
+
+func hoverExtra(s *session.Session, word, kind string) string {
+	doc := s.FieldDoc(word, kind)
+	if sc := s.TokenScopes(word); sc != "" {
+		if doc != "" {
+			doc += "\n\n"
+		}
+		doc += "Scope here: " + sc
+	}
+	if u := s.TokenUsage(word); u != "" {
+		if doc != "" {
+			doc += "\n\n"
+		}
+		doc += "```\n" + u + "\n```"
+	}
+	return doc
 }
 
 func locHover(s *session.Session, key string) *HoverResult {

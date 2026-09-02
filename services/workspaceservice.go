@@ -383,9 +383,9 @@ var legalDefaultTools = map[string]bool{
 	"patcher":       true,
 }
 
-// UpdateWorkspacePrefs sets IDE persist and default landing page.
+// UpdateWorkspacePrefs sets IDE persist, default landing page, and origin colors.
 func (w *WorkspaceService) UpdateWorkspacePrefs(
-	workspaceID string, resetIdeOnOpen bool, defaultTool string,
+	workspaceID string, resetIdeOnOpen bool, defaultTool, gameColor, stagingColor string,
 ) error {
 	if !legalDefaultTools[defaultTool] {
 		return fmt.Errorf("invalid default tool")
@@ -397,6 +397,8 @@ func (w *WorkspaceService) UpdateWorkspacePrefs(
 		}
 		ws.ResetIdeOnOpen = resetIdeOnOpen
 		ws.DefaultTool = defaultTool
+		ws.GameColor = gameColor
+		ws.StagingColor = stagingColor
 		return nil
 	})
 }

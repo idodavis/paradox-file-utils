@@ -89,9 +89,9 @@
       "match": "\\b(if|else_if|else|limit|AND|OR|NOT|NOR|NAND)\\b"
     },
     "block-type": {
-      "comment": "HCL-style: ident = { opens a block (type name)",
+      "comment": "HCL-style: ident = { opens a block (type name); { is left for #braces",
       "name": "entity.name.type.paradox",
-      "match": "\\b([A-Za-z_][A-Za-z0-9_.\\-]*)\\s*(\\??=)\\s*\\{",
+      "match": "\\b([A-Za-z_][A-Za-z0-9_.\\-]*)\\s*(\\??=)\\s*(?=\\{)",
       "captures": {
         "1": { "name": "entity.name.type.paradox" },
         "2": { "name": "keyword.operator.comparison.paradox" }

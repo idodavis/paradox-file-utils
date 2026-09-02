@@ -1,7 +1,8 @@
 /**
  * Explorer color tags for Game / Mod / Staging workspace roots.
  *
- * Uses FileDecoration color dots + contributed theme colors (subtle).
+ * Accent hex comes from Settings (`originHex`) via injected CSS, not
+ * static ThemeColor ids.
  */
 import * as vscode from "vscode";
 import { registerExtension, ExtensionHostKind } from "@codingame/monaco-vscode-api/extensions";
@@ -63,7 +64,7 @@ function normPath(path: string): string {
   return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
-/** Normalize path for root identity comparison. */
+/** Hex for a root or origin: custom #RRGGBB, else game/staging default, else palette. */
 export function originHex(origin: {
   kind: IdeRootKind;
   path: string;
@@ -71,9 +72,9 @@ export function originHex(origin: {
   color?: string;
   wrapIndex?: number;
 }): string {
+  if (origin.color && /^#[0-9A-Fa-f]{6}$/.test(origin.color)) return origin.color;
   if (origin.kind === "game") return COLOR_DEFAULTS[GAME_COLOR_ID]!;
   if (origin.kind === "staging") return COLOR_DEFAULTS[STAGING_COLOR_ID]!;
-  if (origin.color && /^#[0-9A-Fa-f]{6}$/.test(origin.color)) return origin.color;
   const i = wrapIndexFor(origin);
   return COLOR_DEFAULTS[MOD_COLOR_IDS[i]!] ?? COLOR_DEFAULTS[MOD_COLOR_IDS[0]]!;
 }
@@ -81,35 +82,36 @@ export function originHex(origin: {
 /** Hex for a Go origin id (`vanilla`, mod id, `staging`). Fallback teal. */
 export function originHexByOriginId(id: string): string {
   const key = id || "vanilla";
-  const root = roots.find((r) => r.originId === key);
-  if (root) return originHex(root);
+  const store = useWorkspaceStore();
   if (key === "vanilla") {
-    const game = roots.find((r) => r.kind === "game");
-    if (game) return originHex(game);
-    return COLOR_DEFAULTS[GAME_COLOR_ID]!;
+    return originHex({
+      kind: "game",
+      path: "",
+      color: store.activeWorkspace?.gameColor,
+    });
   }
   if (key === "staging") {
-    const staging = roots.find((r) => r.kind === "staging");
-    if (staging) return originHex(staging);
-    return COLOR_DEFAULTS[STAGING_COLOR_ID]!;
+    return originHex({
+      kind: "staging",
+      path: "",
+      color: store.activeWorkspace?.stagingColor,
+    });
   }
+  const mods = store.workspaceMods;
+  const i = mods.findIndex((m) => m.id === key);
+  const mod = i >= 0 ? mods[i] : undefined;
+  if (mod) {
+    return originHex({
+      kind: "mod",
+      path: mod.path,
+      originId: mod.id,
+      color: mod.color,
+      wrapIndex: i,
+    });
+  }
+  const root = roots.find((r) => r.originId === key);
+  if (root) return originHex(root);
   return COLOR_DEFAULTS[GAME_COLOR_ID]!;
-}
-
-/** Theme color id for a root. */
-function colorIdFor(root: IdeRoot): string {
-  switch (root.kind) {
-    case "game":
-      return GAME_COLOR_ID;
-    case "staging":
-      return STAGING_COLOR_ID;
-    case "mod":
-      return MOD_COLOR_IDS[wrapIndexFor(root)]!;
-    default: {
-      const _exhaustive: never = root.kind;
-      return _exhaustive;
-    }
-  }
 }
 
 function wrapIndexFor(root: {
@@ -173,11 +175,7 @@ class RootDecorationProvider implements vscode.FileDecorationProvider {
     const path = normPath(uri.fsPath || uri.path);
     const root = roots.find((r) => normPath(r.path) === path);
     if (!root) return undefined;
-    const deco = new vscode.FileDecoration(
-      undefined,
-      tooltipFor(root),
-      new vscode.ThemeColor(colorIdFor(root)),
-    );
+    const deco = new vscode.FileDecoration(undefined, tooltipFor(root));
     deco.propagate = false;
     return deco;
   }
@@ -197,8 +195,16 @@ export function registerRootDecorations(): vscode.Disposable {
   return vscode.window.registerFileDecorationProvider(provider);
 }
 
+/** CSS selector for an explorer root row by aria-label prefix. */
+function explorerRootSel(label: string): string {
+  return (
+    ".monaco-workbench .explorer-folders-view " +
+    `.monaco-list-row[aria-level="1"][aria-label^="${CSS.escape(label)}"]`
+  );
+}
+
 function iconRule(label: string, url: string): string {
-  const sel = `.monaco-workbench .explorer-folders-view .monaco-list-row[aria-level="1"][aria-label^="${CSS.escape(label)}"] .monaco-icon-label::before`;
+  const sel = `${explorerRootSel(label)} .monaco-icon-label::before`;
   return `${sel} { background-image: url("${url}") !important; }`;
 }
 
@@ -217,6 +223,24 @@ function thumbMime(path: string): string {
   }
 }
 
+function dotRule(label: string, hex: string): string {
+  const row = explorerRootSel(label);
+  const after = `${row} .monaco-icon-label::after`;
+  const name = `${row} .monaco-icon-name-container`;
+  return [
+    `${after} {`,
+    '  content: "";',
+    "  display: inline-block;",
+    "  width: 8px;",
+    "  height: 8px;",
+    "  border-radius: 50%;",
+    "  margin-left: 6px;",
+    `  background: ${hex};`,
+    "}",
+    `${name} { color: ${hex} !important; }`,
+  ].join("\n");
+}
+
 async function paintRootThumbs(next: IdeRoot[]): Promise<void> {
   if (!thumbStyle) {
     thumbStyle = document.createElement("style");
@@ -226,6 +250,7 @@ async function paintRootThumbs(next: IdeRoot[]): Promise<void> {
   const gameUrl = GAME_ICONS[useWorkspaceStore().currentGameId];
   const rules: string[] = [];
   for (const r of next) {
+    rules.push(dotRule(r.label, originHex(r)));
     if (r.kind === "game" && gameUrl) {
       rules.push(iconRule(r.label, gameUrl));
       continue;
@@ -248,4 +273,9 @@ export function setDecoratedRoots(next: IdeRoot[]): void {
   const uris = next.map((r) => vscode.Uri.file(r.path));
   changeEmitter.fire(uris.length ? uris : undefined);
   void paintRootThumbs(next);
+}
+
+/** Re-paint explorer accents without remounting folders. */
+export function repaintDecoratedRoots(): void {
+  if (roots.length) setDecoratedRoots(roots);
 }

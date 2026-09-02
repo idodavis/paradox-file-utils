@@ -28,6 +28,8 @@ func Diagnose(s *session.Session, path string) []Diagnostic {
 		out = append(out, scriptDiags(s, path)...)
 	}
 	out = append(out, missingLocDiags(s, path)...)
+	out = append(out, requiredLocDiags(s, path)...)
+	out = append(out, unknownEventDiags(s, path)...)
 	out = append(out, descriptorDiags(s, path)...)
 	filtered := out[:0]
 	for _, d := range out {
@@ -117,6 +119,59 @@ func missingLocDiags(s *session.Session, path string) []Diagnostic {
 			"Missing localization key \""+r.Key+"\".", "missing-required-loc"))
 	}
 	return out
+}
+
+func requiredLocDiags(s *session.Session, path string) []Diagnostic {
+	src := s.FileText(path)
+	if src == "" {
+		return nil
+	}
+	li := s.Parsed(path).Lines()
+	var out []Diagnostic
+	for _, d := range s.DefsInFile(path) {
+		for _, key := range game.RequiredLocKeys(d.Type, d.Key) {
+			if locDefined(s, key) {
+				continue
+			}
+			out = append(out, diag(byteRange(li, d.Start, d.End), sevWarning,
+				"Missing localization key \""+key+"\".", "required-loc"))
+		}
+	}
+	return out
+}
+
+func unknownEventDiags(s *session.Session, path string) []Diagnostic {
+	src := s.FileText(path)
+	if src == "" {
+		return nil
+	}
+	li := s.Parsed(path).Lines()
+	var out []Diagnostic
+	for _, r := range s.RefsInFile(path) {
+		if r.Kind != "event" || s.Resolve(r.Key) != nil {
+			continue
+		}
+		ns, rest, ok := strings.Cut(r.Key, ".")
+		if !ok || rest == "" || !modDeclaresNamespace(s, ns) {
+			continue
+		}
+		out = append(out, diag(byteRange(li, r.Start, r.End), sevWarning,
+			"Unknown event \""+r.Key+"\".", "unknown-event"))
+	}
+	return out
+}
+
+func modDeclaresNamespace(s *session.Session, ns string) bool {
+	if ns == "" {
+		return false
+	}
+	for _, d := range s.FindDefs(ns+".", 8, true, false) {
+		if game.CanonicalKind(d.Type) == "event" &&
+			strings.HasPrefix(d.Key, ns+".") {
+			return true
+		}
+	}
+	return false
 }
 
 func descriptorDiags(s *session.Session, path string) []Diagnostic {

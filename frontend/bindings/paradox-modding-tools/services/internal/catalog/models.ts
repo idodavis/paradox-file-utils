@@ -28,6 +28,19 @@ export interface Edge {
 }
 
 /**
+ * Ref is a use-site. Kind is "loc", "loc-broad", "loc-convention",
+ * "event", or "on_action".
+ */
+export interface Ref {
+    "key": string;
+    "kind": string;
+    "path": string;
+    "line": number;
+    "start": number;
+    "end": number;
+}
+
+/**
  * VanillaCache is the vanilla script model for one install + version.
  */
 export interface VanillaCache {
@@ -41,6 +54,7 @@ export interface VanillaCache {
     "fieldDocs": { [_ in string]?: string } | null;
     "fieldDocsByKind": { [_ in string]?: { [_ in string]?: string } | null } | null;
     "structures": { [_ in string]?: string[] | null } | null;
+    "structureBlocks"?: { [_ in string]?: string[] | null } | null;
     "vocabulary": string[] | null;
     "effects": string[] | null;
     "triggers": string[] | null;
@@ -48,4 +62,10 @@ export interface VanillaCache {
     "guiProps": string[] | null;
     "metaKeys": string[] | null;
     "edges"?: Edge[] | null;
+    "locRefs"?: Ref[] | null;
+    "fieldValueKinds"?: { [_ in string]?: string } | null;
+    "fieldEnumsByKind"?: { [_ in string]?: { [_ in string]?: string[] | null } | null } | null;
+    "tokenUsage"?: { [_ in string]?: string } | null;
+    "tokenScopes"?: { [_ in string]?: string } | null;
+    "dataFunctions"?: string[] | null;
 }

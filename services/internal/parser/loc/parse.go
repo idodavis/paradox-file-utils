@@ -30,6 +30,13 @@ type Entry struct {
 	Line       int // 0-based
 }
 
+// Interp is a `$key$` (optional `|filter`) reuse inside a loc value.
+type Interp struct {
+	Key       string
+	KeyRange  Range // inner key, not `$` or `|filter`
+	WrapRange Range // opening `$` through closing `$` (exclusive end)
+}
+
 // ErrorCode classifies a localization parse error.
 type ErrorCode string
 
@@ -73,7 +80,8 @@ func isKeyChar(c byte) bool {
 	}
 }
 
-// Parse parses decoded localization text (BOM already stripped). Never panics.
+// Parse parses localization text. A leading UTF-8 BOM is skipped; ranges stay
+// in the original string. Never panics.
 func Parse(text string) Result {
 	s := &scanner{}
 	length := len(text)
@@ -114,7 +122,49 @@ func Parse(text string) Result {
 		HeaderRange: s.headerRange,
 		Entries:     s.entries,
 		Errors:      s.errs,
+		HadBOM:      s.hadBOM,
 	}
+}
+
+// Interps finds `$key$` / `$key|filter$` interpolations in a loc value.
+// valueStart is the UTF-8 offset of value[0] in the file text.
+func Interps(value string, valueStart int) []Interp {
+	var out []Interp
+	for i := 0; i < len(value); {
+		if value[i] != '$' {
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(value) && isKeyChar(value[j]) {
+			j++
+		}
+		if j == i+1 {
+			i++
+			continue
+		}
+		closeAt := j
+		if closeAt < len(value) && value[closeAt] == '|' {
+			closeAt++
+			for closeAt < len(value) && value[closeAt] != '$' {
+				closeAt++
+			}
+		}
+		if closeAt >= len(value) || value[closeAt] != '$' {
+			i++
+			continue
+		}
+		key := value[i+1 : j]
+		if LooksLikeKey(key) {
+			out = append(out, Interp{
+				Key:       key,
+				KeyRange:  Range{Start: valueStart + i + 1, End: valueStart + j},
+				WrapRange: Range{Start: valueStart + i, End: valueStart + closeAt + 1},
+			})
+		}
+		i = closeAt + 1
+	}
+	return out
 }
 
 // ParseFile reads, decodes, and parses a loc file, recording whether it had a BOM.
@@ -136,11 +186,17 @@ type scanner struct {
 	language    string
 	headerRange *Range
 	headerFound bool
+	hadBOM      bool
 	lineNo      int
 }
 
 // processLine handles one line; base is the byte offset in text of line[0].
 func (s *scanner) processLine(line string, base int) {
+	if s.lineNo == 0 && strings.HasPrefix(line, "\ufeff") {
+		s.hadBOM = true
+		line = line[len("\ufeff"):]
+		base += len("\ufeff")
+	}
 	i := 0
 	sawTab := false
 	for i < len(line) {

@@ -36,6 +36,40 @@ func TestParseBasicEntries(t *testing.T) {
 	}
 }
 
+func TestParseBOM(t *testing.T) {
+	src := "\ufeffl_english:\n k:0 \"Hi\"\n"
+	r := Parse(src)
+	if !r.HadBOM {
+		t.Fatal("HadBOM")
+	}
+	if r.Language != "english" || len(r.Entries) != 1 {
+		t.Fatalf("parsed %+v", r)
+	}
+	e := r.Entries[0]
+	if src[e.KeyRange.Start:e.KeyRange.End] != "k" ||
+		src[e.ValueRange.Start:e.ValueRange.End] != "Hi" {
+		t.Fatalf("BOM ranges key=%q val=%q",
+			src[e.KeyRange.Start:e.KeyRange.End], src[e.ValueRange.Start:e.ValueRange.End])
+	}
+}
+
+func TestInterps(t *testing.T) {
+	src := "l_english:\n a:0 \"see $used$ and $used|U$\"\n"
+	e := Parse(src).Entries[0]
+	got := Interps(e.Value, e.ValueRange.Start)
+	if len(got) != 2 || got[0].Key != "used" || got[1].Key != "used" {
+		t.Fatalf("interps=%+v", got)
+	}
+	if src[got[0].KeyRange.Start:got[0].KeyRange.End] != "used" ||
+		src[got[0].WrapRange.Start:got[0].WrapRange.End] != "$used$" ||
+		src[got[1].WrapRange.Start:got[1].WrapRange.End] != "$used|U$" {
+		t.Fatalf("interp ranges %+v", got)
+	}
+	if len(Interps("plain $notclosed", 0)) != 0 {
+		t.Fatal("unterminated interpolations are not keys")
+	}
+}
+
 func TestParseErrors(t *testing.T) {
 	tests := []struct {
 		name, src string

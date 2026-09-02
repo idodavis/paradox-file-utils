@@ -37,6 +37,30 @@ export interface FileMergeResult {
 }
 
 /**
+ * FileSearchHit is one path from FileSearch.
+ */
+export interface FileSearchHit {
+    "path": string;
+}
+
+/**
+ * FileSearchQuery is a filename search across workspace folders.
+ */
+export interface FileSearchQuery {
+    "filePattern": string;
+    "maxResults": number;
+    "folders": TextSearchFolder[] | null;
+}
+
+/**
+ * FileSearchResult is the capped path list from FileSearch.
+ */
+export interface FileSearchResult {
+    "hits": FileSearchHit[] | null;
+    "limitHit": boolean;
+}
+
+/**
  * GameInstall is a user-configured game installation.
  */
 export interface GameInstall {
@@ -192,6 +216,47 @@ export interface ResolvedConflict {
 }
 
 /**
+ * TextSearchFolder is one workspace folder plus optional glob filters.
+ */
+export interface TextSearchFolder {
+    "path": string;
+    "includes"?: string[] | null;
+    "excludes"?: string[] | null;
+    "disregardIgnoreFiles"?: boolean;
+}
+
+/**
+ * TextSearchHit is one match line mapped for monaco (0-based columns).
+ */
+export interface TextSearchHit {
+    "path": string;
+    "line": number;
+    "col": number;
+    "endCol": number;
+    "preview": string;
+}
+
+/**
+ * TextSearchQuery is a Find-in-Files request from the workbench.
+ */
+export interface TextSearchQuery {
+    "pattern": string;
+    "isRegexp": boolean;
+    "isCaseSensitive": boolean;
+    "isWordMatch": boolean;
+    "maxResults": number;
+    "folders": TextSearchFolder[] | null;
+}
+
+/**
+ * TextSearchResult is the capped hit list from TextSearch.
+ */
+export interface TextSearchResult {
+    "hits": TextSearchHit[] | null;
+    "limitHit": boolean;
+}
+
+/**
  * Workspace is a user-defined mod working environment tied to a game.
  */
 export interface Workspace {
@@ -202,6 +267,8 @@ export interface Workspace {
     "stagingDir": string;
     "tags": string[] | null;
     "defaultLocLang": string;
+    "gameColor"?: string;
+    "stagingColor"?: string;
     "resetIdeOnOpen": boolean;
     "defaultTool"?: string;
     "ideOpenFiles"?: string[] | null;

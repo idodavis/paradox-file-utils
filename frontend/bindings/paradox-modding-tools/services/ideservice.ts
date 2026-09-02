@@ -113,6 +113,13 @@ export function Rename(workspaceID: string, path: string, line: number, characte
 }
 
 /**
+ * SignatureHelp returns usage-based signature help at a 0-based UTF-8 position.
+ */
+export function SignatureHelp(workspaceID: string, path: string, line: number, character: number): $CancellablePromise<lsp$0.SignatureHelpResult | null> {
+    return $Call.ByID(4126214260, workspaceID, path, line, character);
+}
+
+/**
  * WorkspaceSymbols searches definitions in the session.
  */
 export function WorkspaceSymbols(workspaceID: string, query: string): $CancellablePromise<lsp$0.SymbolInformation[] | null> {

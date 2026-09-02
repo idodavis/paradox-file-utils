@@ -28,7 +28,8 @@ export interface GameInfo {
 
     /**
      * ScriptRoot is the install-relative folder holding script (e.g. "game").
-     * Empty for EU5, whose content is split across StageRoots.
+     * EU5 still uses this: stages live under game/{in_game,main_menu,loading_screen}.
+     * Mods omit game/ and put StageRoots at the mod root.
      */
     "scriptRoot"?: string;
     "stageRoots"?: string[] | null;

@@ -19,6 +19,7 @@ type ScanState = {
 
 const scanByInstall = new Map<string, ScanState>();
 let scanListening = false;
+let sessionQueryCache: ReturnType<typeof useQueryCache> | null = null;
 
 function scanState(id: string): ScanState {
   let s = scanByInstall.get(id);
@@ -41,12 +42,16 @@ function ensureScanListener(): void {
     if (typeof row.pct === "number") s.pct = row.pct;
     if (typeof row.msg === "string") s.msg = row.msg;
   });
+  Events.On("lang:ready", () => {
+    void sessionQueryCache?.invalidateQueries({ key: ["session"] });
+  });
 }
 
 /** Health payload, rescan action, and shared scan progress for a workspace. */
 export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
   ensureScanListener();
   const queryCache = useQueryCache();
+  sessionQueryCache = queryCache;
   const id = computed(() => toValue(workspaceId));
   const { data: health, refetch } = useQuery({
     key: () => ["session", "health", id.value],

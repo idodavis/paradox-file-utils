@@ -166,7 +166,7 @@ t.1 = { title = k.t }
 t.2 = { title = k.t }
 `
 	s, root := buildSession(t, "ck3", map[string]string{
-		"events/x.txt": body,
+		"events/x.txt":                    body,
 		"localization/english/events.yml": "l_english:\n test.1.t:0 \"Hello\"\n",
 		"common/scripted_triggers/t.txt":  "my_trig = { always = yes }\n",
 		"common/traits/00.txt":            "brave = { category = personality }\n",
@@ -227,6 +227,119 @@ t.2 = { title = k.t }
 	if locs := Definition(s, tf, 0, 1); len(locs) != 1 || locs[0].URI != tf {
 		t.Fatalf("mod F12=%v", locs)
 	}
+}
+
+func TestHoverCallKindAndPortrait(t *testing.T) {
+	trig := "scripted_trigger my_name = { always = yes }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_triggers/x.txt": trig,
+		"events/p.txt":                   "ns.1 = {\n\tright_portrait = none\n}\n",
+	}, &catalog.VanillaCache{
+		FieldDocs: map[string]string{"left_portrait": "Left side portrait."},
+	}, nil)
+	tf := filepath.Join(root, "common", "scripted_triggers", "x.txt")
+	line, col := lineCol(trig, "scripted_trigger")
+	wantHover(t, s, tf, line, col, "scripted trigger")
+	ev := filepath.Join(root, "events", "p.txt")
+	src := "ns.1 = {\n\tright_portrait = none\n}\n"
+	line, col = lineCol(src, "right_portrait")
+	wantHover(t, s, ev, line, col, "Left side portrait.")
+}
+
+func TestDefinitionDottedEvent(t *testing.T) {
+	src := "ns.3002 = { type = character_event }\n" +
+		"ns.1 = {\n\ttrigger_event = ns.3002\n}\n"
+	s, f := ck3Sess(t, src)
+	line, col := lineCol(src, "trigger_event = ns.3002")
+	col += len("trigger_event = ")
+	locs := Definition(s, f, line, col)
+	if len(locs) == 0 {
+		t.Fatal("Definition on ns of ns.3002")
+	}
+	col += len("ns.")
+	if locs := Definition(s, f, line, col); len(locs) == 0 {
+		t.Fatal("Definition on 3002 of ns.3002")
+	}
+}
+
+func TestLocFileReferences(t *testing.T) {
+	locBody := "l_english:\n used_key:0 \"Hello\"\n other_key:0 \"see $used_key$\"\n" +
+		" only_loc:0 \"x\"\n ref_loc:0 \"see $only_loc|U$\"\n"
+	script := "ns.1 = {\n\ttitle = used_key\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt":                         script,
+		"localization/english/a_l_english.yml": locBody,
+	}, nil, nil)
+	locFile := filepath.Join(root, "localization", "english", "a_l_english.yml")
+	line, col := lineCol(locBody, "used_key")
+	locs := References(s, locFile, line, col)
+	found := false
+	for _, loc := range locs {
+		if strings.Contains(loc.URI, "events") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("loc key refs=%v", locs)
+	}
+	if locs := Definition(s, locFile, line, col); len(locs) == 0 {
+		t.Fatal("loc-file Definition at key")
+	}
+	endCol := col + len("used_key")
+	if locs := References(s, locFile, line, endCol); len(locs) == 0 {
+		t.Fatal("cursor at end of loc key should still find usages")
+	}
+	if locs := Definition(s, locFile, line, endCol); len(locs) == 0 {
+		t.Fatal("loc-file Definition at end of key")
+	}
+	line, col = lineCol(locBody, "Hello")
+	if locs := References(s, locFile, line, col); len(locs) != 0 {
+		t.Fatalf("value should not steal key refs: %v", locs)
+	}
+	line, col = lineCol(locBody, "$used_key$")
+	col++ // inner key
+	if locs := References(s, locFile, line, col); len(locs) == 0 {
+		t.Fatal("$used_key$ should resolve as a reference")
+	}
+	if locs := Definition(s, locFile, line, col); len(locs) == 0 {
+		t.Fatal("$used_key$ Definition")
+	}
+	line, col = lineCol(locBody, "only_loc")
+	interpLine, interpCol := lineCol(locBody, "$only_loc|U$")
+	if !hasRefSite(References(s, locFile, line, col), interpLine, interpCol+1) {
+		t.Fatal("loc-only key should find $only_loc$ reuse")
+	}
+
+	bomBody := "\ufeff" + locBody
+	s.DidOpen(locFile, bomBody)
+	line, col = lineCol(bomBody, "used_key")
+	if locs := References(s, locFile, line, col); len(locs) == 0 {
+		t.Fatal("BOM loc buffer should still find usages")
+	}
+	if locs := Definition(s, locFile, line, col); len(locs) == 0 {
+		t.Fatal("loc-file Definition at key")
+	}
+	endCol = col + len("used_key")
+	if locs := Definition(s, locFile, line, endCol); len(locs) == 0 {
+		t.Fatal("loc-file Definition at end of key")
+	}
+	line, col = lineCol(bomBody, "only_loc")
+	interpLine, interpCol = lineCol(bomBody, "$only_loc|U$")
+	if !hasRefSite(References(s, locFile, line, col), interpLine, interpCol+1) {
+		t.Fatal("BOM loc-only key should keep $only_loc$ reuse")
+	}
+	if locs := References(s, locFile, interpLine, interpCol); len(locs) == 0 {
+		t.Fatal("cursor on $ of $only_loc|U$ should resolve")
+	}
+}
+
+func hasRefSite(locs []Location, line, col int) bool {
+	for _, loc := range locs {
+		if loc.Range.Start.Line == line && loc.Range.Start.Character == col {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCompleteActionsSymbols(t *testing.T) {
@@ -375,6 +488,99 @@ func TestCompleteSlots(t *testing.T) {
 	if items[0].Documentation != "runs first" {
 		t.Fatalf("FieldDoc: %#v", items[0].Documentation)
 	}
+	if items[0].InsertText != "immediate = " {
+		t.Fatalf("scalar insert=%q", items[0].InsertText)
+	}
+	if items[0].Range.Start.Line != line {
+		t.Fatalf("range=%v want line %d", items[0].Range, line)
+	}
+
+	theme := "test.1 = {\n\ttheme = s\n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{
+		"events/x.txt":               theme,
+		"common/event_themes/00.txt": "seduction = { }\n",
+	}, &catalog.VanillaCache{
+		FieldValueKinds: map[string]string{"theme": "event_themes"},
+		Defs: []catalog.Def{
+			{Type: "event_themes", Key: "seduction", Path: "t.txt", Line: 0},
+		},
+	}, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(theme, "theme = s")
+	items = Complete(s, f, line, col+len("theme = s"))
+	if !hasComplete(items, "seduction") {
+		t.Fatalf("theme value: %v", labels(items))
+	}
+	if hasComplete(items, "add_gold") {
+		t.Fatalf("theme leaked effect: %v", labels(items))
+	}
+}
+
+func TestCompleteEmptyPrefixAndFallback(t *testing.T) {
+	cache := &catalog.VanillaCache{
+		Structures: map[string][]string{"event": {"immediate", "option"}},
+		Defs: []catalog.Def{
+			{Type: "trait", Key: "ambitious", Path: "t.txt", Line: 0},
+		},
+	}
+	vloc := &catalog.VanillaLoc{Sites: map[string]catalog.LocEntry{
+		"test.1.t": {Value: "Hi"},
+	}}
+
+	title := "test.1 = {\n\ttitle = \n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": title}, cache, vloc)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(title, "title = ")
+	items := Complete(s, f, line, col+len("title = "))
+	if !hasComplete(items, "test.1.t") {
+		t.Fatalf("empty title loc: %v", labels(items))
+	}
+
+	body := "test.1 = { \n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": body}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(body, "{ ")
+	items = Complete(s, f, line, col+len("{ "))
+	if !hasComplete(items, "immediate") {
+		t.Fatalf("structure key after space: %v", labels(items))
+	}
+
+	unk := "test.1 = {\n\tunknown_field = \n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": unk}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(unk, "unknown_field = ")
+	items = Complete(s, f, line, col+len("unknown_field = "))
+	if len(items) == 0 || !hasComplete(items, "yes") {
+		t.Fatalf("unknown field value: %v", labels(items))
+	}
+}
+
+func TestSignatureHelpAndSchemaDiags(t *testing.T) {
+	cache := &catalog.VanillaCache{
+		TokenUsage: map[string]string{"add_gold": "add_gold = { $VALUE$ }"},
+		FieldDocs:  map[string]string{"add_gold": "gold"},
+	}
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt":         "namespace = ns\nns.1 = {\n\timmediate = { add_gold = {  trigger_event = ns.99 }\n}\n",
+		"common/traits/00.txt": "ambitious = { }\n",
+	}, cache, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(
+		"namespace = ns\nns.1 = {\n\timmediate = { add_gold = {  trigger_event = ns.99 }\n}\n",
+		"add_gold = {",
+	)
+	h := SignatureHelp(s, f, line, col+len("add_gold = {"))
+	if h == nil || !strings.Contains(h.Label, "add_gold") {
+		t.Fatalf("signature: %#v", h)
+	}
+
+	tf := filepath.Join(root, "common", "traits", "00.txt")
+	if !hasDiag(Diagnose(s, tf), "required-loc") {
+		t.Fatal("trait required-loc missing")
+	}
+	if !hasDiag(Diagnose(s, f), "unknown-event") {
+		t.Fatal("unknown-event missing")
+	}
 }
 
 func labels(items []CompletionItem) []string {
@@ -383,4 +589,124 @@ func labels(items []CompletionItem) []string {
 		out[i] = it.Label
 	}
 	return out
+}
+
+func TestCompleteRangeAndInsert(t *testing.T) {
+	cache := &catalog.VanillaCache{
+		Structures: map[string][]string{
+			"event": {"title", "immediate", "rare_flag"},
+		},
+		StructureBlocks: map[string][]string{"event": {"immediate"}},
+	}
+	body := "test.1 = {\n\t\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body}, cache, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	items := Complete(s, f, 1, 1)
+	if len(items) < 3 || items[0].Label != "title" || items[2].Label != "rare_flag" {
+		t.Fatalf("freq order: %v", labels(items))
+	}
+	var imm, title CompletionItem
+	for _, it := range items {
+		switch it.Label {
+		case "immediate":
+			imm = it
+		case "title":
+			title = it
+		}
+	}
+	if imm.InsertText != "immediate = { $0 }" {
+		t.Fatalf("block insert=%q", imm.InsertText)
+	}
+	if title.InsertText != "title = " {
+		t.Fatalf("scalar insert=%q", title.InsertText)
+	}
+}
+
+func TestCompleteDottedReplace(t *testing.T) {
+	src := "namespace = hostile_scheme_discovery\n" +
+		"hostile_scheme_discovery.3002 = { type = character_event }\n" +
+		"hostile_scheme_discovery.1 = {\n" +
+		"	trigger_event = hostile_scheme_discovery.3\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": src}, nil, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(src, "trigger_event = hostile_scheme_discovery.3")
+	col += len("trigger_event = ")
+	items := Complete(s, f, line, col+len("hostile_scheme_discovery.3"))
+	var hit CompletionItem
+	for _, it := range items {
+		if it.Label == "hostile_scheme_discovery.3002" {
+			hit = it
+			break
+		}
+	}
+	if hit.Label == "" {
+		t.Fatalf("missing 3002: %v", labels(items))
+	}
+	if hit.Range.Start.Line != line || hit.Range.Start.Character != col {
+		t.Fatalf("range start=%v want %d:%d", hit.Range.Start, line, col)
+	}
+	end := col + len("hostile_scheme_discovery.3")
+	if hit.Range.End.Line != line || hit.Range.End.Character != end {
+		t.Fatalf("range end=%v want %d:%d", hit.Range.End, line, end)
+	}
+}
+
+func TestDiagnoseMessageConventionNotMissing(t *testing.T) {
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/messages/x.txt": "quieter_events_neutral = {\n" +
+			"	title = event_message_title\n}\n",
+		"localization/english/a_l_english.yml": "l_english:\n event_message_title:0 \"T\"\n",
+	}, nil, nil)
+	f := filepath.Join(root, "common", "messages", "x.txt")
+	for _, d := range Diagnose(s, f) {
+		if strings.Contains(d.Message, "quieter_events_neutral") ||
+			strings.Contains(d.Message, "rule_quieter") ||
+			strings.Contains(d.Message, "setting_quieter") {
+			t.Fatalf("invented loc diag: %+v", d)
+		}
+	}
+}
+
+func TestCompleteRootAndEnums(t *testing.T) {
+	src := "script"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_triggers/x.txt": src,
+	}, nil, nil)
+	f := filepath.Join(root, "common", "scripted_triggers", "x.txt")
+	items := Complete(s, f, 0, len("script"))
+	if !hasComplete(items, "scripted_trigger") {
+		t.Fatalf("root scripted_trigger: %v", labels(items))
+	}
+
+	cache := &catalog.VanillaCache{
+		Structures: map[string][]string{"event": {"type", "immediate"}},
+		FieldEnumsByKind: map[string]map[string][]string{
+			"event": {"type": {"character_event", "letter_event"}},
+		},
+	}
+	body := "test.1 = {\n\ttype = c\n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": body}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(body, "type = c")
+	items = Complete(s, f, line, col+len("type = c"))
+	if !hasComplete(items, "character_event") {
+		t.Fatalf("type enum: %v", labels(items))
+	}
+
+	unk := "test.1 = {\n\tunknown_field = \n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{
+		"events/x.txt": unk,
+		"events/y.txt": "other.1 = { type = character_event }\n",
+	}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(unk, "unknown_field = ")
+	items = Complete(s, f, line, col+len("unknown_field = "))
+	if !hasComplete(items, "yes") {
+		t.Fatalf("unknown_field yes: %v", labels(items))
+	}
+	for _, it := range items {
+		if it.Label != "yes" && it.Label != "no" {
+			t.Fatalf("unknown_field dumped %q: %v", it.Label, labels(items))
+		}
+	}
 }

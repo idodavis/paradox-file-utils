@@ -10,6 +10,7 @@ export type {
     Location,
     Position,
     Range,
+    SignatureHelpResult,
     SymbolInformation,
     TextEdit,
     WorkspaceEdit

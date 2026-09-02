@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Event graph page: GetEventGraph + GetEventDetail. Layout is elkjs in GraphCanvas.
+ * Event graph page: GetEventGraph + GetEventDetail. Layout is dagre in GraphCanvas.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
@@ -55,7 +55,11 @@ const originsNarrowed = computed(
 );
 const originColors = computed((): Record<string, string> =>
   Object.fromEntries([
-    [vanilla.value, originHex({ kind: "game", path: "" })],
+    [vanilla.value, originHex({
+      kind: "game",
+      path: "",
+      color: ws.activeWorkspace?.gameColor,
+    })],
     ...liveMods.value.map((m, i) => [
       m.id,
       originHex({
@@ -120,8 +124,8 @@ const loading = computed(() => graphPending.value && !graph.value);
 
 /** Click: select; more-stubs append their parent to Expand. */
 function onSelect(id: string): void {
-  if (id.startsWith("more:")) {
-    const parent = id.slice(5);
+  if (id.startsWith("more-in:") || id.startsWith("more:")) {
+    const parent = id.startsWith("more-in:") ? id.slice(8) : id.slice(5);
     if (parent && !expand.value.includes(parent)) {
       expand.value = [...expand.value, parent];
     }
@@ -132,7 +136,7 @@ function onSelect(id: string): void {
 
 /** Double-click or event chip: re-root; align namespace so load keeps this id. */
 function onReroot(id: string): void {
-  if (id.startsWith("more:")) {
+  if (id.startsWith("more:") || id.startsWith("more-in:")) {
     onSelect(id);
     return;
   }
@@ -285,7 +289,7 @@ watch(workspaceId, () => {
           size="md"
           color="neutral"
           variant="ghost"
-          :disabled="!selectedId || selectedId.startsWith('more:')"
+          :disabled="!selectedId || selectedId.startsWith('more:') || selectedId.startsWith('more-in:')"
           @click="onShowMore"
         />
         <span
@@ -340,7 +344,6 @@ watch(workspaceId, () => {
           :layout="layout"
           :selected-id="selectedId"
           :root-id="root"
-          :origin-colors="originColors"
           @select="onSelect"
           @reroot="onReroot"
           @clear-selection="selectedId = ''"

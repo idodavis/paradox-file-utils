@@ -4,5 +4,6 @@
 export type {
     Def,
     Edge,
+    Ref,
     VanillaCache
 } from "./models.js";

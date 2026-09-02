@@ -39,7 +39,7 @@ type SuggestionItem struct {
 	Origin string `json:"origin"`
 }
 
-// EventGraphNode is one graph card. There is no x/y: layout is frontend/elkjs.
+// EventGraphNode is one graph card. There is no x/y: layout is frontend dagre.
 type EventGraphNode struct {
 	ID         string `json:"id"`
 	Kind       string `json:"kind"`
@@ -123,10 +123,11 @@ type RefKindGroup struct {
 type EventDetail struct {
 	ID        string             `json:"id"`
 	Kind      string             `json:"kind,omitempty"`
-	File      string             `json:"file"`
-	Rel       string             `json:"rel,omitempty"`
-	Origin    string             `json:"origin,omitempty"`
-	Line      int                `json:"line"`
+	File       string             `json:"file"`
+	Rel        string             `json:"rel,omitempty"`
+	Origin     string             `json:"origin,omitempty"`
+	OriginName string             `json:"originName,omitempty"`
+	Line       int                `json:"line"`
 	Fields    []EventFieldInfo   `json:"fields"`
 	Type      string             `json:"type,omitempty"`
 	Hidden    bool               `json:"hidden,omitempty"`

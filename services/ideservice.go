@@ -68,6 +68,13 @@ func (s *IdeService) Complete(workspaceID, path string, line, character int) ([]
 	})
 }
 
+// SignatureHelp returns usage-based signature help at a 0-based UTF-8 position.
+func (s *IdeService) SignatureHelp(workspaceID, path string, line, character int) (*lsp.SignatureHelpResult, error) {
+	return withSession(s.Session, workspaceID, func(sess *session.Session) *lsp.SignatureHelpResult {
+		return lsp.SignatureHelp(sess, path, line, character)
+	})
+}
+
 // Definition returns go-to-definition locations.
 func (s *IdeService) Definition(workspaceID, path string, line, character int) ([]lsp.Location, error) {
 	return withSession(s.Session, workspaceID, func(sess *session.Session) []lsp.Location {
@@ -143,13 +150,13 @@ func (w *WorkspaceService) getScriptRoot(installID string) (string, error) {
 
 // IdeRoot is one folder in the workspace IDE multi-root set.
 type IdeRoot struct {
-	Label    string `json:"label"`
-	Path     string `json:"path"`
-	ReadOnly bool   `json:"readOnly"`
-	Kind     string `json:"kind"`
-	OriginId   string `json:"originId,omitempty"`
-	Color      string `json:"color,omitempty"`
-	Thumbnail  string `json:"thumbnail,omitempty"`
+	Label     string `json:"label"`
+	Path      string `json:"path"`
+	ReadOnly  bool   `json:"readOnly"`
+	Kind      string `json:"kind"`
+	OriginId  string `json:"originId,omitempty"`
+	Color     string `json:"color,omitempty"`
+	Thumbnail string `json:"thumbnail,omitempty"`
 }
 
 // gameFilesLabel is the explorer folder name for the install (registry Name).
@@ -187,13 +194,15 @@ func (w *WorkspaceService) GetIdeRoots(workspaceID string) ([]IdeRoot, error) {
 	}
 	if ws.StagingDir != "" {
 		roots = append(roots, IdeRoot{
-			Label: "Staging", Path: ws.StagingDir, Kind: "staging", OriginId: "staging",
+			Label: "Staging", Path: ws.StagingDir, Kind: "staging",
+			OriginId: "staging", Color: ws.StagingColor,
 		})
 	}
 	if root, e := w.getScriptRoot(ws.InstallID); e == nil && root != "" {
 		roots = append(roots, IdeRoot{
 			Label: gameFilesLabel(ws.GameID), Path: root,
 			ReadOnly: true, Kind: "game", OriginId: game.OriginVanilla,
+			Color: ws.GameColor,
 		})
 	}
 	return roots, nil

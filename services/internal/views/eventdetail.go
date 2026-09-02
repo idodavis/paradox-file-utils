@@ -43,7 +43,8 @@ func Detail(s *session.Session, id string) *EventDetail {
 		}
 		return &EventDetail{
 			ID: id, Kind: kind, File: d.Path, Rel: s.DisplayRel(d.Path),
-			Origin: d.Origin, Line: d.Line, Title: locIfAny(s, id),
+			Origin: d.Origin, OriginName: s.OriginName(d.Origin),
+			Line: d.Line, Title: locIfAny(s, id),
 			RefGroups: refGroups(s, d.Path), Incoming: incomingEdges(s, id),
 		}
 	}
@@ -63,14 +64,16 @@ func Detail(s *session.Session, id string) *EventDetail {
 		}
 		return &EventDetail{
 			ID: id, Kind: kind, File: d.Path, Rel: s.DisplayRel(d.Path),
-			Origin: d.Origin, Line: d.Line, Title: locIfAny(s, id),
+			Origin: d.Origin, OriginName: s.OriginName(d.Origin),
+			Line: d.Line, Title: locIfAny(s, id),
 			RefGroups: refGroups(s, d.Path), Incoming: incomingEdges(s, id),
 		}
 	}
 	block := jomini.BlockOf(stmt.Value)
 	_, _, fields := inspectBlock(block, lineOf, nil)
 	detail := &EventDetail{
-		ID: id, Kind: kind, File: d.Path, Rel: s.DisplayRel(d.Path), Origin: d.Origin,
+		ID: id, Kind: kind, File: d.Path, Rel: s.DisplayRel(d.Path),
+		Origin: d.Origin, OriginName: s.OriginName(d.Origin),
 		Line: lineOf(stmt.Key.Range.Start), Fields: fields,
 		RefGroups: refGroups(s, d.Path), Incoming: incomingEdges(s, id),
 	}

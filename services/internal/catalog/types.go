@@ -6,7 +6,7 @@ package catalog
 import "strings"
 
 // CacheFormatVersion is the on-disk schema of VanillaCache.
-const CacheFormatVersion = 7
+const CacheFormatVersion = 11
 
 // LocFormatVersion is the on-disk schema of a vanilla loc sidecar.
 const LocFormatVersion = 2
@@ -22,7 +22,8 @@ type Def struct {
 	Origin string `json:"origin,omitempty"`
 }
 
-// Ref is a use-site. Kind is "loc", "loc-broad", "event", or "on_action".
+// Ref is a use-site. Kind is "loc", "loc-broad", "loc-convention",
+// "event", or "on_action".
 type Ref struct {
 	Key   string `json:"key"`
 	Kind  string `json:"kind"`
@@ -77,6 +78,7 @@ type VanillaCache struct {
 	FieldDocs       map[string]string            `json:"fieldDocs"`
 	FieldDocsByKind map[string]map[string]string `json:"fieldDocsByKind"`
 	Structures      map[string][]string          `json:"structures"`
+	StructureBlocks map[string][]string          `json:"structureBlocks,omitempty"`
 	Vocabulary      []string                     `json:"vocabulary"`
 	Effects         []string                     `json:"effects"`
 	Triggers        []string                     `json:"triggers"`
@@ -84,6 +86,12 @@ type VanillaCache struct {
 	GUIProps        []string                     `json:"guiProps"`
 	MetaKeys        []string                     `json:"metaKeys"`
 	Edges           []Edge                       `json:"edges,omitempty"`
+	LocRefs         []Ref                        `json:"locRefs,omitempty"`
+	FieldValueKinds   map[string]string              `json:"fieldValueKinds,omitempty"`
+	FieldEnumsByKind  map[string]map[string][]string `json:"fieldEnumsByKind,omitempty"`
+	TokenUsage        map[string]string              `json:"tokenUsage,omitempty"`
+	TokenScopes     map[string]string            `json:"tokenScopes,omitempty"`
+	DataFunctions   []string                     `json:"dataFunctions,omitempty"`
 
 	// Built by PrepareCache on load/scan; not persisted.
 	effectSet     map[string]bool            `json:"-"`
@@ -92,7 +100,8 @@ type VanillaCache struct {
 	guiTypesSet   map[string]bool            `json:"-"`
 	guiPropsSet   map[string]bool            `json:"-"`
 	metaKeysSet   map[string]bool            `json:"-"`
-	structureSets map[string]map[string]bool `json:"-"`
+	structureSets      map[string]map[string]bool `json:"-"`
+	structureBlockSets map[string]map[string]bool `json:"-"`
 }
 
 // VanillaLoc is the default-language loc sidecar for one install + version + lang.
@@ -115,6 +124,15 @@ func PrepareCache(c *VanillaCache) {
 	if c.Structures == nil {
 		c.Structures = map[string][]string{}
 	}
+	if c.StructureBlocks == nil {
+		c.StructureBlocks = map[string][]string{}
+	}
+	if c.FieldValueKinds == nil {
+		c.FieldValueKinds = map[string]string{}
+	}
+	if c.FieldEnumsByKind == nil {
+		c.FieldEnumsByKind = map[string]map[string][]string{}
+	}
 	c.FieldDocs = normalizeDocMap(c.FieldDocs)
 	for kind, m := range c.FieldDocsByKind {
 		c.FieldDocsByKind[kind] = normalizeDocMap(m)
@@ -126,6 +144,19 @@ func PrepareCache(c *VanillaCache) {
 	for kind, keys := range c.Structures {
 		c.structureSets[kind] = sliceSet(keys)
 	}
+	c.structureBlockSets = map[string]map[string]bool{}
+	for kind, keys := range c.StructureBlocks {
+		c.structureBlockSets[kind] = sliceSet(keys)
+	}
+}
+
+// StructureBlock reports whether key is usually a block under kind.
+func (c *VanillaCache) StructureBlock(kind, key string) bool {
+	if c == nil || key == "" {
+		return false
+	}
+	set := c.structureBlockSets[kind]
+	return set[key] || set[strings.ToLower(key)]
 }
 
 // MemberSets returns pre-built structure/effect/trigger maps for LSP rank.

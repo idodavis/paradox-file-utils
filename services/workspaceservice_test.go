@@ -96,10 +96,10 @@ func TestWorkspaceService_PrefsAndIdeSession(t *testing.T) {
 	svc := testWorkspaceService(t)
 	seedWorkspace(t, svc.Store, "ws1", "inst1")
 
-	if err := svc.UpdateWorkspacePrefs("ws1", true, "event-graph"); err != nil {
+	if err := svc.UpdateWorkspacePrefs("ws1", true, "event-graph", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.UpdateWorkspacePrefs("ws1", false, "not-a-tool"); err == nil {
+	if err := svc.UpdateWorkspacePrefs("ws1", false, "not-a-tool", "", ""); err == nil {
 		t.Fatal("want invalid default tool")
 	}
 	if err := svc.SaveIdeSession("ws1", []string{"/a.txt"}, "/a.txt"); err != nil {

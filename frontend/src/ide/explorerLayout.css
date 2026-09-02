@@ -19,9 +19,7 @@
   align-items: center;
 }
 
-.monaco-workbench .part.sidebar,
-.monaco-workbench .part.panel,
-.monaco-workbench .monaco-menu {
+.monaco-workbench .explorer-folders-view .monaco-menu {
   font-size: var(--pmt-ide-ui-font, 13px);
 }
 
@@ -49,13 +47,19 @@
   min-height: calc(var(--pmt-ide-ui-font, 13px) + 17px);
 }
 
-/* Hide Accounts and Manage. VS Code uses aria-label, not id, on these items. */
+/* Hide Menu / Accounts / Manage. VS Code uses aria-label, not id. */
+.ide-activity-bar .action-item[aria-label="Menu"],
+.ide-activity-bar .action-item[aria-label="Application Menu"],
 .ide-activity-bar .action-item[aria-label="Accounts"],
 .ide-activity-bar .action-item[aria-label="Manage"],
+.ide-activity-bar .action-item:has(.codicon-menu),
 .ide-activity-bar .action-item:has(.codicon-accounts-view-bar-icon),
 .ide-activity-bar .action-item:has(.codicon-settings-view-bar-icon),
+.monaco-workbench .part.activitybar .action-item[aria-label="Menu"],
+.monaco-workbench .part.activitybar .action-item[aria-label="Application Menu"],
 .monaco-workbench .part.activitybar .action-item[aria-label="Accounts"],
 .monaco-workbench .part.activitybar .action-item[aria-label="Manage"],
+.monaco-workbench .part.activitybar .action-item:has(.codicon-menu),
 .monaco-workbench .part.activitybar .action-item:has(.codicon-accounts-view-bar-icon),
 .monaco-workbench .part.activitybar .action-item:has(.codicon-settings-view-bar-icon) {
   display: none !important;

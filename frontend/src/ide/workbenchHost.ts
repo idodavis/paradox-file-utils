@@ -14,6 +14,7 @@
  */
 import {
   initialize as initializeMonacoService,
+  SyncDescriptor,
   type IEditorOverrideServices,
   type IWorkbenchConstructionOptions,
   LogLevel,
@@ -23,6 +24,7 @@ import * as monacoLifecycle from "@codingame/monaco-vscode-api/lifecycle";
 import getViewsServiceOverride, {
   attachPart,
   setPartVisibility,
+  onPartVisibilityChange,
   Parts,
 } from "@codingame/monaco-vscode-views-service-override";
 import getQuickAccessServiceOverride from "@codingame/monaco-vscode-quickaccess-service-override";
@@ -66,8 +68,14 @@ import {
   setModRootDeletedHook,
   type IdeRoot,
 } from "./fsBridge";
-import { applyWorkbenchTheme, workbenchSettingsForTheme, lockWorkbenchTheme } from "./themeBridge";
-import { currentWorkbenchTheme } from "./colorThemes";
+import {
+  applyWorkbenchTheme,
+  EDITOR_BRACKET_DEFAULTS,
+  workbenchSettingsForTheme,
+  lockWorkbenchTheme,
+} from "./themeBridge";
+import { currentWorkbenchTheme, workbenchThemeId, normalizeThemeFamily } from "./colorThemes";
+import { useColorMode } from "@vueuse/core";
 import { registerParadoxLanguages } from "./paradoxLanguages";
 import { registerLanguageClient } from "./languageClient";
 import { registerRootDecorations, setDecoratedRoots } from "./rootDecorations";
@@ -78,6 +86,9 @@ import {
   RemoveWorkspaceMod,
   SaveIdeSession,
 } from "@services/workspaceservice";
+import { ISearchService } from "@codingame/monaco-vscode-api/vscode/vs/workbench/services/search/common/search.service";
+import { SearchService } from "@codingame/monaco-vscode-search-service-override/vscode/vs/workbench/services/search/common/searchService";
+import { registerRipgrepSearch } from "./searchProvider";
 import "./explorerLayout.css";
 
 let workbenchReady = false;
@@ -173,6 +184,7 @@ const ATTACHED_PARTS = [
 ] as const;
 
 let initPromise: Promise<void> | null = null;
+let workspaceMemFile: RegisteredMemoryFile | null = null;
 let containerEl: HTMLElement | null = null;
 let partRefs: IdePartRefs | null = null;
 let refsResolve: () => void = () => undefined;
@@ -194,6 +206,10 @@ let persistTabsForMounted = false;
 let restoringTabs = false;
 let saveTabsTimer: ReturnType<typeof setTimeout> | null = null;
 let persistHooked = false;
+let editorHooked = false;
+let searchRegistered = false;
+let langsRegistered = false;
+let menusRegistered = false;
 
 setModRootDeletedHook(async (originId) => {
   const wsId = mountedWorkspaceId || useWorkspaceStore().activeWorkspaceId;
@@ -245,6 +261,7 @@ function leanServices(): IEditorOverrideServices {
     ...getThemeServiceOverride(),
     ...getLanguagesServiceOverride(),
     ...getSearchServiceOverride(),
+    [ISearchService.toString()]: new SyncDescriptor(SearchService, [], true),
     ...getMarkersServiceOverride(),
     ...getLifecycleServiceOverride(),
     ...getEnvironmentServiceOverride(),
@@ -286,6 +303,7 @@ function constructOptions(): IWorkbenchConstructionOptions {
     },
     configurationDefaults: {
       "window.titleBarStyle": "native",
+      "window.menuBarVisibility": "hidden",
       "workbench.activityBar.location": "default",
       "workbench.startupEditor": "none",
       "workbench.colorTheme": "pmt-dark",
@@ -307,12 +325,45 @@ function constructOptions(): IWorkbenchConstructionOptions {
       "editor.semanticHighlighting.enabled": false,
       "editor.wordBasedSuggestions": "off",
       "editor.acceptSuggestionOnCommitCharacter": false,
+      "editor.quickSuggestions": {
+        other: "on",
+        comments: "off",
+        strings: "on",
+      },
+      ...EDITOR_BRACKET_DEFAULTS,
+      "files.exclude": SEARCH_EXCLUDES,
+      "search.exclude": SEARCH_EXCLUDES,
     },
   };
 }
 
+/** Heavy binaries the Search view should skip (VS Code exclude settings). */
+const SEARCH_EXCLUDES: Record<string, boolean> = {
+  "**/*.dds": true,
+  "**/*.png": true,
+  "**/*.jpg": true,
+  "**/*.jpeg": true,
+  "**/*.tga": true,
+  "**/*.fbx": true,
+  "**/*.mesh": true,
+  "**/*.anim": true,
+  "**/*.asset": true,
+  "**/*.bank": true,
+  "**/*.wem": true,
+  "**/*.ogg": true,
+  "**/*.wav": true,
+  "**/*.mp3": true,
+  "**/*.dll": true,
+  "**/*.exe": true,
+  "**/*.pdb": true,
+};
+
 const envOpts = { userHome: monaco.Uri.file("/") };
 
+/** Resolves once IdeWorkbenchLayout has registered attachPart refs. */
+export function whenLayoutRefs(): Promise<void> {
+  return refsPromise;
+}
 /** Store attachPart DOM refs from IdeWorkbenchLayout. Does not initialize. */
 export function registerIdeParts(refs: IdePartRefs): void {
   containerEl = refs.root;
@@ -332,7 +383,14 @@ function attachIdeParts(): void {
     [Parts.PANEL_PART]: partRefs.panel,
   };
   for (const part of ATTACHED_PARTS) {
-    partDisposables.push(attachPart(part, containers[part]));
+    const el = containers[part];
+    partDisposables.push(attachPart(part, el));
+    partDisposables.push(
+      onPartVisibilityChange(part, (visible) => {
+        el.style.display = visible ? "" : "none";
+        el.classList.toggle("ide-part-hidden", !visible);
+      }),
+    );
   }
 }
 
@@ -361,22 +419,24 @@ export function setMergeChrome(hidden: boolean): void {
 /** Re-open Explorer and Problems after a folder remount. */
 async function restoreIdeViews(): Promise<void> {
   if (useIdeShellStore().mergeReview) return;
-  setPartVisibility(Parts.ACTIVITYBAR_PART, true);
-  setPartVisibility(Parts.SIDEBAR_PART, true);
-  setPartVisibility(Parts.EDITOR_PART, true);
-  setPartVisibility(Parts.PANEL_PART, true);
   try {
     await vscode.commands.executeCommand("workbench.view.explorer");
   } catch {
     /* command missing in this monaco-vscode build */
   }
+  await showProblemsPanel();
+}
+
+/** Show the Problems panel (restores it if the user closed it). */
+export async function showProblemsPanel(): Promise<void> {
+  setPartVisibility(Parts.PANEL_PART, true);
   try {
     await vscode.commands.executeCommand("workbench.actions.view.problems");
   } catch {
     try {
       await vscode.commands.executeCommand("workbench.panel.markers");
     } catch {
-      /* ignore */
+      /* command missing in this monaco-vscode build */
     }
   }
 }
@@ -407,9 +467,15 @@ function syncMountedEditors(): void {
   for (const ed of monaco.editor.getEditors()) syncEditorReadOnly(ed);
 }
 
-/** monaco-vscode initialize() throws this if StandaloneServices already exist. */
+/** monaco-vscode initialize()/initFile throw this after StandaloneServices exist. */
 function isAlreadyInitialized(err: unknown): boolean {
-  return err instanceof Error && err.message === "Services are already initialized";
+  const msg =
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : "";
+  return msg.includes("already initialized");
 }
 
 /** Serialize roots into a VS Code multi-root workspace file body. */
@@ -432,7 +498,12 @@ async function writeWorkspaceFolders(roots: IdeRoot[]): Promise<void> {
   return enqueueFolderWrite(async () => {
     mutatingFolders = true;
     try {
-      await initFile(WS_FILE, workspaceFileJson(roots), { overwrite: true });
+      const body = workspaceFileJson(roots);
+      if (!monacoLifecycle.servicesInitialized) {
+        await initFile(WS_FILE, body, { overwrite: true });
+      } else if (workspaceMemFile) {
+        await workspaceMemFile.write(new TextEncoder().encode(body));
+      }
       const existing = vscode.workspace.workspaceFolders ?? [];
       vscode.workspace.updateWorkspaceFolders(
         0,
@@ -589,9 +660,17 @@ function syncEditorReadOnly(ed: monaco.editor.ICodeEditor): void {
 }
 
 function hookEditorReadOnly(): void {
+  if (editorHooked) return;
+  editorHooked = true;
   monaco.editor.onDidCreateEditor((ed) => {
     syncEditorReadOnly(ed);
     ed.onDidChangeModel(() => syncEditorReadOnly(ed));
+  });
+  vscode.window.onDidChangeActiveTextEditor(() => {
+    for (const ed of monaco.editor.getEditors()) syncEditorReadOnly(ed);
+  });
+  vscode.workspace.onDidOpenTextDocument(() => {
+    for (const ed of monaco.editor.getEditors()) syncEditorReadOnly(ed);
   });
 }
 
@@ -614,6 +693,8 @@ function lockKeybindingsJson(): string {
   return JSON.stringify([
     { key: "space", command: "-list.toggleExpand" },
     { key: "space", command: "-list.stickyScrolltoggleExpand" },
+    { key: "space", command: "-acceptSelectedSuggestion" },
+    { key: "space", command: "-acceptAlternativeSelectedSuggestion" },
     unbind("ctrl+o", "workbench.action.files.openFile"),
     unbind("cmd+o", "workbench.action.files.openFile"),
     unbind("ctrl+o", "workbench.action.files.openFileFolder"),
@@ -633,6 +714,19 @@ function lockKeybindingsJson(): string {
   ]);
 }
 
+/** Workbench color-theme id from colorMode + family, not html.dark. */
+function chromeTheme(): string {
+  try {
+    const mode = useColorMode().value === "dark" ? "dark" : "light";
+    return workbenchThemeId(
+      normalizeThemeFamily(document.documentElement.dataset.theme),
+      mode,
+    );
+  } catch {
+    return currentWorkbenchTheme();
+  }
+}
+
 async function runInitialize(theme: string): Promise<void> {
   if (!containerEl || !partRefs) {
     throw new Error("Workbench layout refs not set");
@@ -640,67 +734,100 @@ async function runInitialize(theme: string): Promise<void> {
   if (!currentRoots.length) {
     throw new Error("Workbench init requires at least one workspace folder");
   }
-  setupWorkers();
-  await createIndexedDBProviders();
-
-  const mem = new RegisteredFileSystemProvider(false);
-  mem.registerFile(new RegisteredMemoryFile(WS_FILE, workspaceFileJson(currentRoots)));
-  registerFileSystemOverlay(1, mem);
-  registerFileSystemOverlay(2, fsProvider);
-
-  await initUserConfiguration(
-    JSON.stringify(
-      {
-        ...workbenchSettingsForTheme(theme),
-        "workbench.startupEditor": "none",
-        "workbench.activity.showAccounts": false,
-        "window.title": "PMT${separator}${activeEditorShort}",
-        "files.autoSave": "off",
-        "editor.acceptSuggestionOnCommitCharacter": false,
-      },
-      null,
-      2,
-    ),
-  );
-  if (!monacoLifecycle.servicesInitialized) {
-    await initUserKeybindings(lockKeybindingsJson());
-  }
-
-  const options = constructOptions();
-  if (!monacoLifecycle.serviceInitializedBarrier.isOpen()) {
-    try {
-      await initializeMonacoService(
-        leanServices(), containerEl, options, envOpts,
+  const already = monacoLifecycle.servicesInitialized || workbenchReady;
+  try {
+    if (!already) {
+      setupWorkers();
+      try {
+        await createIndexedDBProviders();
+      } catch (err) {
+        if (!isAlreadyInitialized(err)) throw err;
+      }
+      const mem = new RegisteredFileSystemProvider(false);
+      workspaceMemFile = new RegisteredMemoryFile(
+        WS_FILE,
+        workspaceFileJson(currentRoots),
       );
-    } catch (err) {
-      if (!isAlreadyInitialized(err)) throw err;
+      mem.registerFile(workspaceMemFile);
+      registerFileSystemOverlay(1, mem);
+      registerFileSystemOverlay(2, fsProvider);
+      await initUserConfiguration(
+        JSON.stringify(
+          {
+            ...workbenchSettingsForTheme(theme),
+            "workbench.startupEditor": "none",
+            "workbench.activity.showAccounts": false,
+            "window.menuBarVisibility": "hidden",
+            "window.title": "PMT${separator}${activeEditorShort}",
+            "files.autoSave": "off",
+            "editor.acceptSuggestionOnCommitCharacter": false,
+            "editor.quickSuggestions": {
+              other: "on",
+              comments: "off",
+              strings: "on",
+            },
+            ...EDITOR_BRACKET_DEFAULTS,
+          },
+          null,
+          2,
+        ),
+      );
+      await initUserKeybindings(lockKeybindingsJson());
+      const options = constructOptions();
+      if (!monacoLifecycle.serviceInitializedBarrier.isOpen()) {
+        try {
+          await initializeMonacoService(
+            leanServices(), containerEl, options, envOpts,
+          );
+        } catch (err) {
+          if (!isAlreadyInitialized(err)) throw err;
+        }
+      }
     }
+    attachIdeParts();
+    await monacoLifecycle.waitServicesReady();
+    if (!searchRegistered) {
+      await registerRipgrepSearch();
+      searchRegistered = true;
+    }
+    if (!menusRegistered) {
+      registerWorkbenchLockMenus();
+      menusRegistered = true;
+    }
+    hookEditorReadOnly();
+    hookIdeSessionPersist();
+    if (!langsRegistered) {
+      await registerParadoxLanguages();
+      langsRegistered = true;
+    }
+    langClient?.dispose();
+    langClient = registerLanguageClient(
+      () => useWorkspaceStore().activeWorkspaceId ?? "",
+    );
+    themeLock?.dispose();
+    themeLock = lockWorkbenchTheme(() => chromeTheme());
+    if (!rootDeco) {
+      rootDeco = registerRootDecorations();
+    }
+    setDecoratedRoots(currentRoots);
+    await applyWorkbenchTheme(theme);
+    if (!foldersMatch(currentRoots)) {
+      await writeWorkspaceFolders(currentRoots);
+    }
+    folderLock?.dispose();
+    folderLock = lockWorkbenchFolders();
+    await restoreIdeViews();
+    workbenchReady = true;
+    readyResolve();
+  } catch (err) {
+    if (monacoLifecycle.servicesInitialized || isAlreadyInitialized(err)) {
+      attachIdeParts();
+      workbenchReady = true;
+      readyResolve();
+      return;
+    }
+    throw err;
   }
-  attachIdeParts();
-  await monacoLifecycle.waitServicesReady();
-
-  registerWorkbenchLockMenus();
-  hookEditorReadOnly();
-  hookIdeSessionPersist();
-  await registerParadoxLanguages();
-  langClient?.dispose();
-  langClient = registerLanguageClient(
-    () => useWorkspaceStore().activeWorkspaceId ?? "",
-  );
-  themeLock?.dispose();
-  themeLock = lockWorkbenchTheme(() => currentWorkbenchTheme());
-  rootDeco?.dispose();
-  rootDeco = registerRootDecorations();
-  setDecoratedRoots(currentRoots);
-  await applyWorkbenchTheme(theme);
-  if (!foldersMatch(currentRoots)) {
-    await writeWorkspaceFolders(currentRoots);
-  }
-  folderLock?.dispose();
-  folderLock = lockWorkbenchFolders();
-  await restoreIdeViews();
-  workbenchReady = true;
-  readyResolve();
 }
 
 /** Refresh explorer colors without remounting folders. */
@@ -754,6 +881,11 @@ async function applyWorkbenchRoots(
 
   if (!initPromise) {
     initPromise = runInitialize(themeName).catch((err) => {
+      if (monacoLifecycle.servicesInitialized || isAlreadyInitialized(err)) {
+        workbenchReady = true;
+        readyResolve();
+        return;
+      }
       initPromise = null;
       throw err;
     });

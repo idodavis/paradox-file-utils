@@ -5,23 +5,91 @@
  *
  * The monaco root is a class-free element so Vue re-renders cannot wipe
  * `monaco-workbench` (classList.add from LayoutService). Shell z-index lives
- * on the outer wrapper.
+ * on the outer wrapper. Sidebar/panel size is host CSS vars + drag sashes.
  */
-import { onMounted, ref } from "vue";
+import { onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useIdeShellStore } from "../stores/ideShell";
 
-defineProps<{
+const props = defineProps<{
   visible: boolean;
   theme?: string;
 }>();
 
+const SIDEBAR_KEY = "ide.sidebarWidth";
+const PANEL_KEY = "ide.panelHeight";
+const SIDEBAR_MIN = 170;
+const PANEL_MIN = 120;
+const SIDEBAR_DEFAULT = 300;
+const PANEL_DEFAULT = 200;
+
 const ideShell = useIdeShellStore();
 
-const root = ref<HTMLElement | null>(null);
-const activityBar = ref<HTMLElement | null>(null);
-const sidebar = ref<HTMLElement | null>(null);
-const editor = ref<HTMLElement | null>(null);
-const panel = ref<HTMLElement | null>(null);
+const root = useTemplateRef<HTMLElement>("root");
+const activityBar = useTemplateRef<HTMLElement>("activityBar");
+const sidebar = useTemplateRef<HTMLElement>("sidebar");
+const editor = useTemplateRef<HTMLElement>("editor");
+const panel = useTemplateRef<HTMLElement>("panel");
+
+/** Load a persisted pixel size, or the default. */
+function loadPx(key: string, fallback: number): number {
+  const n = Number(localStorage.getItem(key));
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+const sidebarWidth = shallowRef(loadPx(SIDEBAR_KEY, SIDEBAR_DEFAULT));
+const panelHeight = shallowRef(loadPx(PANEL_KEY, PANEL_DEFAULT));
+
+/** Clamp explorer width to min 170px and 50% of the host. */
+function clampSidebar(px: number, host: HTMLElement): number {
+  const max = host.clientWidth * 0.5;
+  return Math.round(Math.min(max, Math.max(SIDEBAR_MIN, px)));
+}
+
+/** Clamp problems height to min 120px and 50% of the host. */
+function clampPanel(px: number, host: HTMLElement): number {
+  const max = host.clientHeight * 0.5;
+  return Math.round(Math.min(max, Math.max(PANEL_MIN, px)));
+}
+
+/** Drag the sidebar width or panel height sash; persist on pointer up. */
+function startDrag(kind: "sidebar" | "panel", ev: PointerEvent): void {
+  const host = root.value;
+  if (!host) return;
+  ev.preventDefault();
+  const startX = ev.clientX;
+  const startY = ev.clientY;
+  const startW = sidebarWidth.value;
+  const startH = panelHeight.value;
+  const target = ev.currentTarget as HTMLElement;
+  target.setPointerCapture(ev.pointerId);
+  const onMove = (e: PointerEvent) => {
+    if (kind === "sidebar") {
+      sidebarWidth.value = clampSidebar(startW + (e.clientX - startX), host);
+      return;
+    }
+    panelHeight.value = clampPanel(startH - (e.clientY - startY), host);
+  };
+  const onUp = () => {
+    target.releasePointerCapture(ev.pointerId);
+    target.removeEventListener("pointermove", onMove);
+    target.removeEventListener("pointerup", onUp);
+    if (kind === "sidebar") {
+      localStorage.setItem(SIDEBAR_KEY, String(sidebarWidth.value));
+      return;
+    }
+    localStorage.setItem(PANEL_KEY, String(panelHeight.value));
+  };
+  target.addEventListener("pointermove", onMove);
+  target.addEventListener("pointerup", onUp);
+}
+
+watch(
+  () => props.visible,
+  (v) => {
+    if (!v) return;
+    void import("../ide/rootDecorations").then((m) => m.repaintDecoratedRoots());
+  },
+);
 
 onMounted(async () => {
   if (!root.value || !activityBar.value || !sidebar.value || !editor.value || !panel.value) {
@@ -49,13 +117,33 @@ onMounted(async () => {
   >
     <slot name="toolbar" />
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <div ref="root">
-        <div class="ide-layout__body flex min-h-0 min-w-0 flex-1">
-          <div ref="activityBar" class="ide-activity-bar shrink-0" />
-          <div ref="sidebar" class="ide-sidebar shrink-0" />
+      <div
+        ref="root"
+        :style="{
+          '--ide-sidebar-width': `${sidebarWidth}px`,
+          '--ide-panel-height': `${panelHeight}px`,
+        }"
+      >
+        <div class="relative flex min-h-0 min-w-0 flex-1">
+          <div ref="activityBar" class="ide-activity-bar w-12 shrink-0" />
+          <div
+            ref="sidebar"
+            class="ide-sidebar w-[var(--ide-sidebar-width,300px)] min-w-[170px] max-w-[50%]"
+          />
+          <div
+            class="ide-sash ide-sash--v w-1 shrink-0 cursor-col-resize"
+            @pointerdown="startDrag('sidebar', $event)"
+          />
           <div ref="editor" class="ide-editor min-h-0 min-w-0 flex-1" />
         </div>
-        <div ref="panel" class="ide-panel shrink-0" />
+        <div
+          class="ide-sash ide-sash--h h-1 shrink-0 cursor-row-resize"
+          @pointerdown="startDrag('panel', $event)"
+        />
+        <div
+          ref="panel"
+          class="ide-panel h-[var(--ide-panel-height,200px)] min-h-[120px] max-h-[50%]"
+        />
       </div>
     </div>
   </div>
@@ -71,29 +159,15 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-.ide-layout__body {
-  position: relative;
-}
-
-.ide-activity-bar {
-  width: 48px;
-}
-
-.ide-sidebar {
-  width: 300px;
-  min-width: 170px;
-  max-width: 50%;
-}
-
-.ide-panel {
-  height: 200px;
-  min-height: 120px;
-  max-height: 50%;
+.ide-sidebar.ide-part-hidden + .ide-sash--v,
+.ide-sash--h:has(+ .ide-panel.ide-part-hidden) {
+  display: none;
 }
 
 .ide-merge-review .ide-activity-bar,
 .ide-merge-review .ide-sidebar,
-.ide-merge-review .ide-panel {
+.ide-merge-review .ide-panel,
+.ide-merge-review .ide-sash {
   display: none !important;
   width: 0 !important;
   min-width: 0 !important;

@@ -43,6 +43,10 @@ tasks:
     summary: Builds the application natively on Linux
     internal: true
     deps:
+      - task: common:fetch:rg
+        vars:
+          GOOS: linux
+          ARCH: "{{.ARCH | default ARCH}}"
       - task: common:go:mod:tidy
       - task: common:build:frontend
         vars:
@@ -72,6 +76,10 @@ tasks:
     summary: Builds for Linux using Docker (for non-Linux hosts or when no C compiler available)
     internal: true
     deps:
+      - task: common:fetch:rg
+        vars:
+          GOOS: linux
+          ARCH: '{{.ARCH | default "amd64"}}'
       - task: common:build:frontend
         vars:
           OBFUSCATED:

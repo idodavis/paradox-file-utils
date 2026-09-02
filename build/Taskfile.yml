@@ -188,6 +188,18 @@ tasks:
     cmds:
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -clean=true{{if eq .OBFUSCATED "true"}} -obfuscated{{end}} -ts -i
 
+  fetch:rg:
+    summary: Downloads microsoft/ripgrep-prebuilt for GOOS/GOARCH into the embed dir
+    dir: '{{.ROOT_DIR}}'
+    vars:
+      TARGET_OS: '{{.GOOS | default OS}}'
+      TARGET_ARCH: '{{.ARCH | default .GOARCH | default ARCH}}'
+    env:
+      GOOS: '{{.TARGET_OS}}'
+      GOARCH: '{{.TARGET_ARCH}}'
+    cmds:
+      - bash ./scripts/fetch-rg.sh
+
   generate:icons:
     summary: Generates Windows `.ico` and Mac `.icns` from an image; on macOS, `-iconcomposerinput appicon.icon -macassetdir darwin` also produces `Assets.car` from a `.icon` file (skipped on other platforms).
     run: once

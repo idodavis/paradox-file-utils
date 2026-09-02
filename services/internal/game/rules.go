@@ -173,6 +173,37 @@ func ScriptSlot(key string) string {
 	return ""
 }
 
+// RefFieldKind is a thin field→def-kind map used when FieldValueKind is empty.
+func RefFieldKind(field string) string {
+	switch strings.ToLower(field) {
+	case "culture":
+		return "culture"
+	case "faith":
+		return "faith"
+	case "title":
+		return "title"
+	case "define":
+		return "define"
+	default:
+		return ""
+	}
+}
+
+// RequiredLocKeys are convention loc keys for a def kind+id (empty if none).
+func RequiredLocKeys(kind, id string) []string {
+	if id == "" {
+		return nil
+	}
+	switch CanonicalKind(kind) {
+	case "trait", "traits":
+		return []string{"trait_" + id}
+	case "game_rules", "game_rule":
+		return []string{"rule_" + id}
+	default:
+		return nil
+	}
+}
+
 // FireKind reports whether key is an event or on_action fire site.
 func FireKind(key string) string {
 	switch strings.ToLower(key) {

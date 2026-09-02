@@ -51,6 +51,8 @@ type Workspace struct {
 	StagingDir     string         `json:"stagingDir"`
 	Tags           []string       `json:"tags"`
 	DefaultLocLang string         `json:"defaultLocLang"`
+	GameColor      string         `json:"gameColor,omitempty"`
+	StagingColor   string         `json:"stagingColor,omitempty"`
 	ResetIdeOnOpen bool           `json:"resetIdeOnOpen"`
 	DefaultTool    string         `json:"defaultTool,omitempty"`
 	IdeOpenFiles   []string       `json:"ideOpenFiles,omitempty"`

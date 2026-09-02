@@ -2,7 +2,7 @@
 /**
  * Loc coverage: GetLocCoverage. Filters live in UTable column state.
  */
-import { computed, shallowRef, watch, useTemplateRef } from "vue";
+import { computed, ref, shallowRef, watch, useTemplateRef } from "vue";
 import { useRoute } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import {
@@ -16,19 +16,25 @@ import type { LocIssueRow } from "@services/internal/views/models";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import DetailPane from "../components/DetailPane.vue";
+import OriginBadge from "../components/OriginBadge.vue";
+import OriginSelectMenu from "../components/OriginSelectMenu.vue";
 import { useOpenInIde } from "../composables/useOpenInIde";
 import { useLiveEnabled } from "../composables/useSessionQuery";
+import { originHex, originHexByOriginId } from "../ide/rootDecorations";
+import { useWorkspaceStore } from "../stores/workspace";
 
 defineOptions({ name: "LocCoveragePage" });
 
 const route = useRoute();
 const { openInIde } = useOpenInIde();
+const ws = useWorkspaceStore();
 const workspaceId = computed(() => String(route.params.id ?? ""));
 const live = useLiveEnabled(workspaceId);
 const lang = shallowRef("");
 const columnFilters = shallowRef<ColumnFiltersState>([]);
 const selected = shallowRef<LocIssueRow | null>(null);
 const rowSelection = shallowRef<RowSelectionState>({});
+const originIds = ref<string[]>([]);
 const table = useTemplateRef<{ tableApi?: {
   getColumn: (id: string) => {
     getFilterValue: () => unknown
@@ -36,6 +42,27 @@ const table = useTemplateRef<{ tableApi?: {
     getFacetedUniqueValues: () => Map<unknown, number>
   } | undefined
 } }>("table");
+
+const liveMods = computed(() =>
+  ws.workspaceMods.filter((m) => !m.isBroken && m.path),
+);
+const originItems = computed(() =>
+  liveMods.value.map((m, i) => ({
+    id: m.id,
+    label: m.name,
+    color: originHex({ kind: "mod", path: m.path, color: m.color, wrapIndex: i }),
+    thumbnail: ws.thumbUrls[m.id],
+  })),
+);
+watch(
+  liveMods,
+  (mods) => {
+    const ids = mods.map((m) => m.id);
+    const keep = originIds.value.filter((id) => ids.includes(id));
+    originIds.value = keep.length ? keep : ids;
+  },
+  { immediate: true },
+);
 
 const {
   data: coverageData,
@@ -71,10 +98,32 @@ const current = computed(
 
 const columns: TableColumn<LocIssueRow>[] = [
   { accessorKey: "kind", header: "Kind", filterFn: "equals" },
-  { accessorKey: "originName", header: "Origin", filterFn: "equals" },
+  {
+    accessorKey: "origin",
+    header: "Origin",
+    filterFn: (row, _id, value) => {
+      if (!Array.isArray(value) || !value.length) return true;
+      return value.includes(row.original.origin);
+    },
+  },
   { accessorKey: "rel", header: "File", filterFn: "includesString" },
   { accessorKey: "key", header: "Key" },
 ];
+
+function setCol(id: string, value: unknown): void {
+  const rest = columnFilters.value.filter((f) => f.id !== id);
+  columnFilters.value = value == null || value === ""
+    ? rest
+    : [...rest, { id, value }];
+}
+function colString(id: string): string | undefined {
+  const hit = columnFilters.value.find((f) => f.id === id);
+  return hit?.value == null ? undefined : String(hit.value);
+}
+watch(originIds, (ids) => {
+  const narrowed = ids.length > 0 && ids.length < originItems.value.length;
+  setCol("origin", narrowed ? ids : undefined);
+});
 
 function facetItems(id: string): { label: string; value: string }[] {
   const col = table.value?.tableApi?.getColumn(id);
@@ -82,10 +131,6 @@ function facetItems(id: string): { label: string; value: string }[] {
     label: `${String(v)} (${n})`,
     value: String(v),
   }));
-}
-function filterString(c: { getFilterValue: () => unknown }) {
-  const v = c.getFilterValue();
-  return v == null ? undefined : String(v);
 }
 
 /** Open a loc site in the workspace IDE. */
@@ -119,9 +164,27 @@ function onRowSelect(_e: Event, row: { original: LocIssueRow; id: string }): voi
     </WorkspaceToolBar>
     <UAlert v-if="error" color="error" variant="subtle" :description="error" class="m-2" />
 
-    <div class="flex shrink-0 items-center gap-2 border-b border-default px-2 py-1">
-      <USelect v-model="lang" :items="langItems" value-key="value" size="xs" class="w-44" />
-    </div>
+    <UDashboardToolbar class="px-2 sm:px-2">
+      <template #left>
+        <USelect v-model="lang" :items="langItems" value-key="value" size="md" class="w-44" />
+        <USelect
+          :model-value="colString('kind')"
+          :items="facetItems('kind')"
+          placeholder="Kind"
+          size="md"
+          class="w-36"
+          @update:model-value="setCol('kind', $event)"
+        />
+        <OriginSelectMenu v-model="originIds" :items="originItems" />
+        <UInput
+          :model-value="colString('rel') ?? ''"
+          placeholder="File contains"
+          size="md"
+          class="w-48"
+          @update:model-value="setCol('rel', $event || undefined)"
+        />
+      </template>
+    </UDashboardToolbar>
 
     <UDashboardGroup
       storage="local"
@@ -152,25 +215,16 @@ function onRowSelect(_e: Event, row: { original: LocIssueRow; id: string }): voi
           @update:column-filters="(v?: ColumnFiltersState) => { if (v) columnFilters = v }"
           @select="onRowSelect"
         >
-          <template #kind-header="{ column }">
-            <USelect :model-value="filterString(column)" :items="facetItems('kind')"
-              placeholder="Kind" size="xs" class="w-36"
-              @update:model-value="column.setFilterValue($event)" />
-          </template>
-          <template #originName-header="{ column }">
-            <USelect :model-value="filterString(column)" :items="facetItems('originName')"
-              placeholder="Origin" size="xs" class="w-40"
-              @update:model-value="column.setFilterValue($event)" />
-          </template>
-          <template #rel-header="{ column }">
-            <UInput :model-value="filterString(column) ?? ''" placeholder="File contains"
-              size="xs" class="w-40"
-              @update:model-value="column.setFilterValue($event || undefined)" />
-          </template>
           <template #kind-cell="{ row }">
             <UBadge :color="kindColor(row.original.kind)" variant="subtle" size="xs">
               {{ row.original.kind }}
             </UBadge>
+          </template>
+          <template #origin-cell="{ row }">
+            <OriginBadge
+              :label="row.original.originName || row.original.origin || 'vanilla'"
+              :hex="originHexByOriginId(row.original.origin || 'vanilla')"
+            />
           </template>
         </UTable>
       </UDashboardPanel>
@@ -186,12 +240,10 @@ function onRowSelect(_e: Event, row: { original: LocIssueRow; id: string }): voi
             <UBadge :color="kindColor(selected.kind)" variant="subtle" size="xs">
               {{ selected.kind }}
             </UBadge>
-            <UBadge
+            <OriginBadge
               v-if="selected.originName || selected.origin"
-              :label="selected.originName || selected.origin"
-              :color="selected.origin ? 'primary' : 'neutral'"
-              variant="subtle"
-              size="xs"
+              :label="selected.originName || selected.origin || 'vanilla'"
+              :hex="originHexByOriginId(selected.origin || 'vanilla')"
             />
           </template>
           <p v-if="selected?.value" class="text-xs text-default">

@@ -29,6 +29,13 @@ export function DeletePath(fullPath: string): $CancellablePromise<void> {
 }
 
 /**
+ * FileSearch lists files whose path contains FilePattern (ripgrep --files).
+ */
+export function FileSearch(q: $models.FileSearchQuery): $CancellablePromise<$models.FileSearchResult> {
+    return $Call.ByID(4261317059, q);
+}
+
+/**
  * GetUserDownloadsDir returns the user's Downloads directory (e.g. ~/Downloads).
  */
 export function GetUserDownloadsDir(): $CancellablePromise<string> {
@@ -62,6 +69,13 @@ export function RenamePath(oldPath: string, newPath: string): $CancellablePromis
  */
 export function StatPath(fullPath: string): $CancellablePromise<$models.PathStat> {
     return $Call.ByID(1964538536, fullPath);
+}
+
+/**
+ * TextSearch runs ripgrep --json, one process per folder.
+ */
+export function TextSearch(q: $models.TextSearchQuery): $CancellablePromise<$models.TextSearchResult> {
+    return $Call.ByID(1211796934, q);
 }
 
 /**

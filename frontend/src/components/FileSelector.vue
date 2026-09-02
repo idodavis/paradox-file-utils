@@ -39,11 +39,13 @@ const props = withDefaults(
     mode: "file" | "folder";
     placeholder?: string;
     hint?: string;
+    description?: string;
     fileFilter?: string;
   }>(),
   {
     placeholder: "",
     hint: "",
+    description: "",
     fileFilter: "*.txt; *.json",
   },
 );
@@ -59,7 +61,11 @@ async function browse(): Promise<void> {
 </script>
 
 <template>
-  <UFormField :label="label" :help="hint || undefined">
+  <UFormField
+    :label="label"
+    :description="description || undefined"
+    :help="hint || undefined"
+  >
     <UFieldGroup class="w-full">
       <UInput v-model="selectedPath" readonly :placeholder="placeholder" class="w-full" />
       <UButton

@@ -12,7 +12,8 @@ import type {
 import { useOpenInIde } from "../../composables/useOpenInIde";
 import DetailPane from "../DetailPane.vue";
 import EventScriptBlock from "./EventScriptBlock.vue";
-import EventRefsAccordion from "./EventRefsAccordion.vue";
+import OriginBadge from "../OriginBadge.vue";
+import { originHexByOriginId } from "../../ide/rootDecorations";
 
 const props = defineProps<{
   workspaceId: string;
@@ -102,11 +103,9 @@ function asSection(item: AccordionItem): EventSectionInfo | undefined {
         variant="subtle"
         size="xs"
       />
-      <UBadge
-        :label="detail.origin ? 'mod' : 'vanilla'"
-        :color="detail.origin ? 'primary' : 'neutral'"
-        variant="subtle"
-        size="xs"
+      <OriginBadge
+        :label="detail.originName || detail.origin || 'vanilla'"
+        :hex="originHexByOriginId(detail.origin || 'vanilla')"
       />
     </template>
     <UAccordion

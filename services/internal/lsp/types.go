@@ -3,6 +3,7 @@ package lsp
 
 import (
 	"os"
+	"regexp"
 	"strings"
 
 	"paradox-modding-tools/services/internal/catalog"
@@ -46,6 +47,9 @@ type CompletionItem struct {
 	Label         string `json:"label"`
 	Detail        string `json:"detail,omitempty"`
 	Documentation string `json:"documentation,omitempty"`
+	Kind          string `json:"kind,omitempty"` // property | value
+	Range         Range  `json:"range,omitempty"`
+	InsertText    string `json:"insertText,omitempty"`
 }
 
 // Location points at a definition or reference.
@@ -133,6 +137,10 @@ func resolveAt(s *session.Session, path string, line, col int) (atPos, bool) {
 			}
 		}
 		fillCompleteSlot(&at, chain, off)
+		if key := pendingAssignKey(at.src, off); key != "" {
+			at.slotKey = key
+			at.inKey = false
+		}
 		at.saveName, at.saveOK = saveScopeIn(chain, off)
 	}
 	return at, true
@@ -163,7 +171,11 @@ func fillCompleteSlot(at *atPos, chain []jomini.Statement, off int) {
 	if vs, ok := innerSt.(*jomini.ValueStmt); ok {
 		at.slotKey = inner.Key.Text
 		if sc, ok := vs.Value.(*jomini.Scalar); ok && !sc.Quoted {
-			at.inKey = true
+			keyLine := at.res.Lines().PositionAt(inner.Key.Range.Start).Line
+			valLine := at.res.Lines().PositionAt(sc.Range.Start).Line
+			if valLine != keyLine {
+				at.inKey = true
+			}
 		}
 		return
 	}
@@ -180,7 +192,29 @@ func fillCompleteSlot(at *atPos, chain []jomini.Statement, off int) {
 	}
 	if off >= inner.Key.Range.End {
 		at.slotKey = inner.Key.Text
+		end := min(off, len(at.src))
+		from := inner.Key.Range.End
+		if from < end && !strings.Contains(at.src[from:end], "=") {
+			at.inKey = true
+		}
 	}
+}
+
+var pendingAssignRe = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*=\s*$`)
+
+func pendingAssignKey(src string, off int) string {
+	if off < 0 {
+		return ""
+	}
+	if off > len(src) {
+		off = len(src)
+	}
+	lineStart := strings.LastIndex(src[:off], "\n") + 1
+	m := pendingAssignRe.FindStringSubmatch(src[lineStart:off])
+	if m == nil {
+		return ""
+	}
+	return m[1]
 }
 
 func saveScopeIn(chain []jomini.Statement, off int) (name string, ok bool) {

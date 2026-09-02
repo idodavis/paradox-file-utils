@@ -64,7 +64,7 @@ func TestNeighborhood(t *testing.T) {
 		root string, want, forbid []string,
 	) {
 		t.Run(name, func(t *testing.T) {
-			got, _, trunc, _ := neighborhood(edges, root, kinds, 80, nil)
+			got, trunc, _, _ := neighborhood(edges, root, kinds, 80, nil)
 			if trunc {
 				t.Fatal("truncated")
 			}
@@ -85,7 +85,19 @@ func TestNeighborhood(t *testing.T) {
 		{From: "pulse", To: "d"}, {From: "e", To: "a"},
 	}, map[string]string{
 		"a": "event", "c": "event", "d": "event", "e": "event", "pulse": "on_action",
-	}, "a", []string{"a", "pulse", "e"}, []string{"c", "d"})
+	}, "a", []string{"a", "pulse"}, []string{"c", "d", "e"})
+	got, trunc, _, hiddenIn := neighborhood([]EventGraphEdge{
+		{From: "a", To: "pulse"}, {From: "e", To: "a"},
+	}, "a", map[string]string{"a": "event", "e": "event", "pulse": "on_action"}, 80, nil)
+	if trunc || hiddenIn["a"] != 1 || got["e"] {
+		t.Fatalf("inbound stub: got=%v hiddenIn=%v trunc=%v", got, hiddenIn, trunc)
+	}
+	got, _, _, hiddenIn = neighborhood([]EventGraphEdge{
+		{From: "a", To: "pulse"}, {From: "e", To: "a"},
+	}, "a", map[string]string{"a": "event", "e": "event", "pulse": "on_action"}, 80, []string{"a"})
+	if !got["e"] || hiddenIn["a"] != 0 {
+		t.Fatalf("expand inbound: got=%v hiddenIn=%v", got, hiddenIn)
+	}
 	assert("three event hops", []EventGraphEdge{
 		{From: "a", To: "b"}, {From: "b", To: "c"},
 		{From: "c", To: "d"}, {From: "d", To: "e"},
@@ -143,16 +155,30 @@ mod.1 = { type = character_event
 	})})
 	g := Graph(s, EventGraphParams{Root: "ns.1"})
 	ids := nodeIDs(g)
-	for _, id := range []string{"ns.0", "ns.1", "ns.2", "ns.3", "ns.4"} {
+	for _, id := range []string{"ns.1", "ns.2", "ns.3", "ns.4"} {
 		if _, ok := ids[id]; !ok {
 			t.Fatalf("missing %s in %v", id, ids)
 		}
 	}
+	if _, ok := ids["ns.0"]; ok {
+		t.Fatal("ns.0 should be collapsed into the fired-by stub")
+	}
+	if ids["ns.1"].Role != "root" {
+		t.Fatalf("root role = %q", ids["ns.1"].Role)
+	}
+	if stub, ok := ids["more-in:ns.1"]; !ok || stub.Title != "+1 fired by" {
+		t.Fatalf("fired-by stub = %+v ok=%v", stub, ok)
+	}
+	expanded := Graph(s, EventGraphParams{Root: "ns.1", Expand: []string{"ns.1"}})
+	expIDs := nodeIDs(expanded)
+	if _, ok := expIDs["ns.0"]; !ok {
+		t.Fatalf("expand missing ns.0 in %v", expIDs)
+	}
+	if expIDs["ns.0"].Role == "caller" {
+		t.Fatal("expanded inbound should be a full node")
+	}
 	if _, ok := ids["ns.9"]; ok {
 		t.Fatal("orphan ns.9 should not appear")
-	}
-	if ids["ns.1"].Role != "root" || ids["ns.0"].Role != "caller" {
-		t.Fatalf("roles root=%q caller=%q", ids["ns.1"].Role, ids["ns.0"].Role)
 	}
 	if ids["ns.2"].Role != "" {
 		t.Fatalf("ns.2 role = %q, want empty", ids["ns.2"].Role)

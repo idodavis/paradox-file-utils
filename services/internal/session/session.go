@@ -42,9 +42,14 @@ type Session struct {
 	edgesByTo        map[string][]catalog.Edge
 	edgesByFile      map[string][]catalog.Edge
 	cacheByKey       map[string][]catalog.Def
+	cacheRefsByKey   map[string][]catalog.Ref
 	cacheEdgesByTo   map[string][]catalog.Edge
 	cacheEdgesByFrom map[string][]catalog.Edge
 	effectSet        map[string]bool
+	fieldValueKinds  map[string]string
+	modFieldKinds    map[string]string
+	modFieldEnums    map[string]map[string][]string
+	fieldEnumsByKind map[string]map[string][]string
 	viaByTo          map[string][]catalog.Edge
 	viaDirty         bool
 	buffers          map[string]*buffer
@@ -90,7 +95,10 @@ func NewWithLoc(
 	s.addDefsLocked(idx.Defs)
 	s.addRefsLocked(idx.Refs)
 	s.addEdgesLocked(idx.Edges)
+	s.modFieldKinds = idx.FieldValueKinds
+	s.modFieldEnums = idx.FieldEnumsByKind
 	s.rebuildCacheIndexLocked()
+	s.rebuildFieldKindsLocked()
 	s.rebuildEffectSetLocked()
 	s.viaDirty = true
 	return s
@@ -104,6 +112,7 @@ func (s *Session) ReplaceCache(c *catalog.VanillaCache) {
 	}
 	s.cache = c
 	s.rebuildCacheIndexLocked()
+	s.rebuildFieldKindsLocked()
 	s.rebuildEffectSetLocked()
 	s.viaDirty = true
 	s.mu.Unlock()
@@ -464,6 +473,7 @@ func removeEdgesPath(in []catalog.Edge, drop string) []catalog.Edge {
 
 func (s *Session) rebuildCacheIndexLocked() {
 	s.cacheByKey = map[string][]catalog.Def{}
+	s.cacheRefsByKey = map[string][]catalog.Ref{}
 	s.cacheEdgesByTo = map[string][]catalog.Edge{}
 	s.cacheEdgesByFrom = map[string][]catalog.Edge{}
 	if s.cache == nil {
@@ -472,10 +482,26 @@ func (s *Session) rebuildCacheIndexLocked() {
 	for _, d := range s.cache.Defs {
 		s.cacheByKey[d.Key] = append(s.cacheByKey[d.Key], d)
 	}
+	for _, r := range s.cache.LocRefs {
+		s.cacheRefsByKey[r.Key] = append(s.cacheRefsByKey[r.Key], r)
+	}
 	for _, e := range s.cache.Edges {
 		s.cacheEdgesByTo[e.To] = append(s.cacheEdgesByTo[e.To], e)
 		s.cacheEdgesByFrom[e.From] = append(s.cacheEdgesByFrom[e.From], e)
 	}
+}
+
+func (s *Session) rebuildFieldKindsLocked() {
+	var vanilla map[string]string
+	if s.cache != nil {
+		vanilla = s.cache.FieldValueKinds
+	}
+	s.fieldValueKinds = catalog.MergeFieldValueKinds(vanilla, s.modFieldKinds)
+	var vanEnums map[string]map[string][]string
+	if s.cache != nil {
+		vanEnums = s.cache.FieldEnumsByKind
+	}
+	s.fieldEnumsByKind = catalog.MergeFieldEnums(vanEnums, s.modFieldEnums)
 }
 
 func (s *Session) addDefsLocked(defs []catalog.Def) {
@@ -491,7 +517,7 @@ func (s *Session) addRefsLocked(refs []catalog.Ref) {
 		s.refsByKey[r.Key] = append(s.refsByKey[r.Key], r)
 		p := CanonPath(r.Path)
 		s.refsByFile[p] = append(s.refsByFile[p], r)
-		if r.Kind == "loc" || r.Kind == "loc-broad" {
+		if r.Kind == "loc" || r.Kind == "loc-broad" || r.Kind == "loc-convention" {
 			s.locRefs = append(s.locRefs, r)
 		}
 	}
@@ -676,7 +702,7 @@ func (s *Session) MemberSets(kind string) (structKeys, effects, triggers map[str
 	return s.cache.MemberSets(kind)
 }
 
-// Structures returns vanilla structure keys for kind.
+// Structures returns vanilla structure keys for kind (frequency order).
 func (s *Session) Structures(kind string) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -684,6 +710,16 @@ func (s *Session) Structures(kind string) []string {
 		return nil
 	}
 	return s.cache.Structures[kind]
+}
+
+// StructureBlock reports whether key is usually a block field under kind.
+func (s *Session) StructureBlock(kind, key string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cache == nil {
+		return false
+	}
+	return s.cache.StructureBlock(kind, key)
 }
 
 // Vocab returns a vanilla membership slice: effect, trigger, vocabulary,
@@ -707,6 +743,8 @@ func (s *Session) Vocab(kind string) []string {
 		return s.cache.GUIProps
 	case "meta":
 		return s.cache.MetaKeys
+	case "datafunction":
+		return s.cache.DataFunctions
 	default:
 		return nil
 	}
@@ -719,7 +757,11 @@ func (s *Session) RefsTo(key string) []catalog.Ref {
 	if key == "" {
 		return nil
 	}
-	return cloneIf(s.refsByKey[key])
+	out := cloneIf(s.refsByKey[key])
+	if extra := s.cacheRefsByKey[key]; len(extra) > 0 {
+		out = append(out, extra...)
+	}
+	return out
 }
 
 // RefsInFile returns workspace refs sourced from path.
@@ -764,6 +806,16 @@ func (s *Session) FieldDoc(key, kind string) string {
 	if s.cache == nil {
 		return ""
 	}
+	if v := s.fieldDocLocked(key, kind); v != "" {
+		return v
+	}
+	if sib := portraitSibling(key); sib != "" {
+		return s.fieldDocLocked(sib, kind)
+	}
+	return ""
+}
+
+func (s *Session) fieldDocLocked(key, kind string) string {
 	lk := strings.ToLower(key)
 	if kind != "" {
 		if m := s.cache.FieldDocsByKind[kind]; m != nil && m[lk] != "" {
@@ -771,6 +823,80 @@ func (s *Session) FieldDoc(key, kind string) string {
 		}
 	}
 	return s.cache.FieldDocs[lk]
+}
+
+// portraitSibling maps left_foo ↔ right_foo for script_docs pair fallback.
+func portraitSibling(key string) string {
+	k := strings.ToLower(key)
+	switch {
+	case strings.HasPrefix(k, "left_"):
+		return "right_" + k[len("left_"):]
+	case strings.HasPrefix(k, "right_"):
+		return "left_" + k[len("right_"):]
+	default:
+		return ""
+	}
+}
+
+// TokenUsage returns script_docs usage text for an engine token.
+func (s *Session) TokenUsage(key string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cache == nil || s.cache.TokenUsage == nil {
+		return ""
+	}
+	lk := strings.ToLower(key)
+	if u := s.cache.TokenUsage[lk]; u != "" {
+		return u
+	}
+	if s.fieldDocLocked(key, "") != "" {
+		return ""
+	}
+	sib := portraitSibling(key)
+	if sib == "" || s.fieldDocLocked(sib, "") != "" {
+		return ""
+	}
+	return s.cache.TokenUsage[sib]
+}
+
+// TokenScopes returns script_docs supported-scopes text for an engine token.
+func (s *Session) TokenScopes(key string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cache == nil || s.cache.TokenScopes == nil {
+		return ""
+	}
+	return s.cache.TokenScopes[strings.ToLower(key)]
+}
+
+// FieldValueKind returns the harvested unique def type for an assignment field.
+func (s *Session) FieldValueKind(field string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if v := s.fieldValueKinds[field]; v != "" {
+		return v
+	}
+	return s.fieldValueKinds[strings.ToLower(field)]
+}
+
+// FieldEnums returns unique harvested scalar values for a kind+field, or nil.
+func (s *Session) FieldEnums(kind, field string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	lk := strings.ToLower(field)
+	try := func(k string) []string {
+		if k == "" || s.fieldEnumsByKind == nil {
+			return nil
+		}
+		if m := s.fieldEnumsByKind[k]; m != nil {
+			return m[lk]
+		}
+		return nil
+	}
+	if v := try(kind); len(v) > 0 {
+		return v
+	}
+	return try(game.CanonicalKind(kind))
 }
 
 // CacheInfo returns vanilla install path, scan timestamp, game version, and install id.
@@ -815,6 +941,17 @@ func (s *Session) LocRefs() []catalog.Ref {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return cloneIf(s.locRefs)
+}
+
+// AllLocRefs is workspace loc refs plus vanilla cache LocRefs.
+func (s *Session) AllLocRefs() []catalog.Ref {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := cloneIf(s.locRefs)
+	if s.cache != nil {
+		out = append(out, s.cache.LocRefs...)
+	}
+	return out
 }
 
 func addLocKeys(seen map[string]bool, out *[]string, k string) {
@@ -870,8 +1007,8 @@ func (s *Session) LocByLang() map[string]map[string]catalog.LocEntry {
 
 // EdgesFrom returns stored call+fire edges leaving id. Empty id returns every edge.
 func (s *Session) EdgesFrom(id string) []catalog.Edge {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if id == "" {
 		return s.allEdgesLocked()
 	}
@@ -884,8 +1021,8 @@ func (s *Session) EdgesFrom(id string) []catalog.Edge {
 
 // EdgesTo returns stored call+fire/via edges arriving at id.
 func (s *Session) EdgesTo(id string) []catalog.Edge {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if id == "" {
 		return nil
 	}

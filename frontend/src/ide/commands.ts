@@ -1,15 +1,23 @@
 /**
  * High-level IDE commands used by Nuxt pages (open file/diff/merge, set roots).
  */
+import { nextTick } from "vue";
+import { useToast } from "@nuxt/ui/composables/useToast";
 import * as monaco from "monaco-editor";
 import * as vscode from "vscode";
 import { EnsureSession } from "@services/sessionservice";
 import { GetIdeRoots } from "@services/workspaceservice";
+import {
+  ReadFileBase64,
+  StatPath,
+  WriteFileBase64,
+} from "@services/fileservice";
 import { currentWorkbenchTheme } from "./colorThemes";
 import {
   isWorkbenchReady,
   setMergeChrome,
   setWorkbenchRoots,
+  whenLayoutRefs,
   whenWorkbenchReady,
 } from "./workbenchHost";
 import type { IdeRoot } from "./fsBridge";
@@ -40,7 +48,10 @@ export async function openDiff(
   title?: string,
 ): Promise<void> {
   await whenWorkbenchReady();
-  if (!isWorkbenchReady()) return;
+  if (!isWorkbenchReady()) {
+    toastFail("Editor is not ready.");
+    return;
+  }
   const left = monaco.Uri.file(leftPath);
   const right = monaco.Uri.file(rightPath);
   await vscode.commands.executeCommand(
@@ -131,6 +142,25 @@ async function restoreAfterReview(): Promise<void> {
   reviewBaseRoots = [];
 }
 
+function toastFail(title: string, err?: unknown): void {
+  const description = err instanceof Error ? err.message : String(err ?? title);
+  useToast().add({ title, description, color: "error" });
+}
+
+/** Create an empty or copied file so the merge editor has a result path on disk. */
+async function ensureDiskFile(path: string, copyFrom?: string): Promise<void> {
+  const st = await StatPath(path);
+  if (st.exists) return;
+  if (copyFrom) {
+    const src = await ReadFileBase64(copyFrom);
+    if (src.exists && src.b64) {
+      await WriteFileBase64(path, src.b64);
+      return;
+    }
+  }
+  await WriteFileBase64(path, "");
+}
+
 /** Boot workbench if needed, hide chrome, append temp roots, then open. */
 export async function startMergeOverlay(opts: {
   files: string[];
@@ -140,19 +170,24 @@ export async function startMergeOverlay(opts: {
 }): Promise<void> {
   const ws = useWorkspaceStore();
   const shell = useIdeShellStore();
-  if (ws.activeWorkspaceId) await EnsureSession(ws.activeWorkspaceId);
-  const base = (ws.activeWorkspaceId
-    ? ((await GetIdeRoots(ws.activeWorkspaceId)) ?? [])
-    : []) as IdeRoot[];
-  reviewBaseRoots = base;
-  reviewUris = opts.files;
-  const extras = extraRoots(opts.files, base);
-  const roots = [...base, ...extras];
-  if (!roots.length) return;
-  shell.beginMergeReview(() => {
-    void restoreAfterReview().then(() => opts.back?.());
-  }, opts.label);
   try {
+    if (ws.activeWorkspaceId) await EnsureSession(ws.activeWorkspaceId);
+    const base = (ws.activeWorkspaceId
+      ? ((await GetIdeRoots(ws.activeWorkspaceId)) ?? [])
+      : []) as IdeRoot[];
+    reviewBaseRoots = base;
+    reviewUris = opts.files;
+    const extras = extraRoots(opts.files, base);
+    const roots = [...base, ...extras];
+    if (!roots.length) {
+      toastFail("No workspace folders to open for review.");
+      return;
+    }
+    shell.beginMergeReview(() => {
+      void restoreAfterReview().then(() => opts.back?.());
+    }, opts.label);
+    await nextTick();
+    await whenLayoutRefs();
     await setWorkbenchRoots(roots, currentWorkbenchTheme());
     await whenWorkbenchReady();
     setMergeChrome(true);
@@ -160,7 +195,10 @@ export async function startMergeOverlay(opts: {
     setMergeChrome(true);
   } catch (err) {
     shell.endMergeReview();
-    throw err;
+    if (err instanceof Error && err.message.includes("already initialized")) {
+      return;
+    }
+    toastFail("Could not open review", err);
   }
 }
 
@@ -171,15 +209,23 @@ export async function openMergeEditor(opts: {
   result: string;
 }): Promise<void> {
   await whenWorkbenchReady();
-  if (!isWorkbenchReady()) return;
+  if (!isWorkbenchReady()) {
+    toastFail("Editor is not ready.");
+    return;
+  }
+  await ensureDiskFile(opts.result, opts.input1);
   const a = monaco.Uri.file(opts.input1);
   const b = monaco.Uri.file(opts.input2);
   const out = monaco.Uri.file(opts.result);
-  // Registered by view-common mergeEditor.contribution (id is _open.mergeEditor).
-  await vscode.commands.executeCommand("_open.mergeEditor", {
-    base: a.toString(),
-    input1: { uri: a.toString(), title: "A" },
-    input2: { uri: b.toString(), title: "B" },
-    output: out.toString(),
-  });
+  const cmds = await vscode.commands.getCommands(true);
+  if (cmds.includes("_open.mergeEditor")) {
+    await vscode.commands.executeCommand("_open.mergeEditor", {
+      base: a.toString(),
+      input1: { uri: a.toString(), title: "A" },
+      input2: { uri: b.toString(), title: "B" },
+      output: out.toString(),
+    });
+    return;
+  }
+  await vscode.commands.executeCommand("vscode.diff", a, b, "A \u2194 B");
 }

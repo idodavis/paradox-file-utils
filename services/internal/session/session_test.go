@@ -5,6 +5,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"paradox-modding-tools/services/internal/catalog"
@@ -123,4 +124,31 @@ func TestQueries(t *testing.T) {
 	s.ReplaceCache(&catalog.VanillaCache{InstallPath: "/y", GameVersion: "2"})
 	inst, _, _, _ = s.CacheInfo()
 	must(t, inst == "/y", "ReplaceCache")
+}
+
+func TestEdgesFromConcurrent(t *testing.T) {
+	body := "namespace = t\n\nt.1 = {\n\timmediate = { trigger_event = t.2 }\n}\n" +
+		"t.2 = { type = character_event }\n"
+	root := writeFiles(t, map[string]string{"events/x.txt": body})
+	cache := &catalog.VanillaCache{
+		InstallPath: "/game", GameVersion: "1",
+		Edges: []catalog.Edge{{From: "t.1", To: "t.2"}},
+	}
+	s := NewWithLoc("ws", "ck3", "english", cache, nil, []catalog.ModInput{
+		{Origin: "mod", Root: root, Order: 0},
+	})
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = s.EdgesFrom("")
+			_ = s.EdgesTo("t.2")
+		}()
+		go func() {
+			defer wg.Done()
+			s.ReplaceCache(cache)
+		}()
+	}
+	wg.Wait()
 }

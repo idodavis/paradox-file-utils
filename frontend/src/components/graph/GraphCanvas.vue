@@ -1,27 +1,35 @@
 <script setup lang="ts">
 /**
- * Vue Flow canvas: flattened origin boxes under event nodes; payload edges on top.
+ * Vue Flow canvas: dagre-placed event cards and default edges.
  * Click selects; double-click re-roots. Drag is local until layout/root changes.
  */
-import { computed, nextTick, onActivated, ref, watch } from "vue";
+import { computed, nextTick, onActivated, shallowRef, watch } from "vue";
 import {
+  BaseEdge,
   ConnectionMode,
+  EdgeLabelRenderer,
   MarkerType,
   Position,
   VueFlow,
+  getSmoothStepPath,
   useVueFlow,
   type Edge,
+  type EdgeProps,
   type Node,
   type NodeDragEvent,
   type NodeMouseEvent,
 } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
 import { Controls } from "@vue-flow/controls";
+import { MiniMap } from "@vue-flow/minimap";
+import "@vue-flow/minimap/dist/style.css";
 import type {
   EventGraphEdge,
   EventGraphNode,
 } from "@services/internal/views/models";
 import {
+  LABEL_SHOW_CAP,
+  layoutEdgeId,
   nodeBox,
   useGraphLayout,
   type GraphLayoutMode,
@@ -30,7 +38,6 @@ import {
 import EventNodeCard from "./EventNodeCard.vue";
 
 const FLOW_ID = "pmt-graph-canvas";
-const LABEL_ZOOM = 1;
 
 const props = withDefaults(
   defineProps<{
@@ -39,14 +46,12 @@ const props = withDefaults(
     layout: GraphLayoutMode;
     selectedId?: string;
     rootId?: string;
-    originColors?: Record<string, string>;
   }>(),
   {
     nodes: () => [],
     edges: () => [],
     selectedId: "",
     rootId: "",
-    originColors: () => ({}),
   },
 );
 
@@ -56,20 +61,20 @@ const emit = defineEmits<{
   clearSelection: [];
 }>();
 
-const { positions, origins } = useGraphLayout(
+const { positions } = useGraphLayout(
   () => props.nodes,
   () => props.edges,
   () => props.layout,
 );
 
-const placed = ref(new Map<string, GraphPosition>());
+const placed = shallowRef(new Map<string, GraphPosition>());
 watch(positions, (p) => {
   placed.value = new Map(p);
 });
 
-const { fitView, viewport } = useVueFlow(FLOW_ID);
+const { fitView } = useVueFlow(FLOW_ID);
 
-/** Handle sides for the active ELK direction. */
+/** Handle sides for the active dagre direction. */
 function handlePos(mode: GraphLayoutMode): {
   source: Position;
   target: Position;
@@ -86,36 +91,44 @@ function handlePos(mode: GraphLayoutMode): {
   }
 }
 
-const originNodes = computed((): Node[] => {
-  const out: Node[] = [];
-  for (const g of origins.value.values()) {
-    const hex = props.originColors[g.origin] ?? "#5B9A8B";
-    out.push({
-      id: g.id,
-      type: "origin",
-      position: { x: g.x, y: g.y },
-      data: { label: g.label },
-      selectable: false,
-      draggable: false,
-      connectable: false,
-      focusable: false,
-      zIndex: 0,
-      style: {
-        width: `${g.width}px`,
-        height: `${g.height}px`,
-        backgroundColor: `${hex}29`,
-        zIndex: 0,
-      },
-      class: "pointer-events-none rounded-xl",
-    });
-  }
-  return out;
-});
+/** Truncate only when the label is longer than the spacing cap heuristic. */
+function edgeText(text?: string): { label?: string; title?: string } {
+  const full = text ?? "";
+  if (!full) return {};
+  if (full.length <= LABEL_SHOW_CAP) return { label: full, title: full };
+  return { label: `${full.slice(0, LABEL_SHOW_CAP - 1)}…`, title: full };
+}
+
+/** Tooltip text for a truncated edge label. */
+type EdgeData = { title?: string };
+
+/** Smoothstep path plus label anchor for the default edge slot. */
+function smoothGeom(p: EdgeProps) {
+  const [path, labelX, labelY] = getSmoothStepPath({
+    sourceX: p.sourceX,
+    sourceY: p.sourceY,
+    targetX: p.targetX,
+    targetY: p.targetY,
+    sourcePosition: p.sourcePosition,
+    targetPosition: p.targetPosition,
+  });
+  return { path, labelX, labelY };
+}
+
+/** Displayed edge label (Vue Flow also allows object labels). */
+function edgeLabelText(ep: EdgeProps<EdgeData>): string {
+  return typeof ep.label === "string" ? ep.label : "";
+}
+
+/** Full label for the tooltip; falls back to the truncated text. */
+function edgeTooltip(ep: EdgeProps<EdgeData>): string {
+  return ep.data?.title || edgeLabelText(ep);
+}
 
 const eventNodes = computed((): Node<EventGraphNode>[] => {
-  const list = props.nodes ?? [];
-  if (list.some((n) => n.id && !placed.value.has(n.id))) return [];
+  const list = (props.nodes ?? []).filter((n) => n.id && placed.value.has(n.id));
   const hp = handlePos(props.layout);
+  const focus = focusIds.value;
   return list.map((n) => {
     const box = nodeBox(n);
     return {
@@ -130,52 +143,62 @@ const eventNodes = computed((): Node<EventGraphNode>[] => {
       height: box.height,
       draggable: true,
       connectable: false,
-      zIndex: 2,
+      class: focus && !focus.has(n.id) ? "pmt-dim" : "",
     };
   });
 });
 
-const flowNodes = computed((): Node[] => [...originNodes.value, ...eventNodes.value]);
+const focusIds = computed((): Set<string> | null => {
+  const id = props.selectedId;
+  if (!id) return null;
+  const adj = new Set<string>([id]);
+  for (const e of props.edges ?? []) {
+    if (e.from === id || e.to === id) {
+      adj.add(e.from);
+      adj.add(e.to);
+    }
+  }
+  return adj;
+});
 
-const labelsVisible = computed(
-  () => (viewport.value?.zoom ?? 1) >= LABEL_ZOOM,
-);
-
-const flowEdges = computed((): Edge[] => {
-  const ids = new Set((props.nodes ?? []).map((n) => n.id));
-  const labels = labelsVisible.value;
+const flowEdges = computed((): Edge<EdgeData>[] => {
+  const focus = focusIds.value;
   return (props.edges ?? [])
-    .filter((e) => ids.has(e.from) && ids.has(e.to))
-    .map((e, i) => {
+    .map((e, i) => ({ e, i, eid: layoutEdgeId(e, i) }))
+    .filter(({ e }) => placed.value.has(e.from) && placed.value.has(e.to))
+    .map(({ e, eid }) => {
       const kind = e.kind || "events";
+      const stub = e.via === "more" || e.via === "more-in";
+      const dim = !!(focus && !focus.has(e.from) && !focus.has(e.to));
+      const text = edgeText(e.label);
       return {
-        id: `${e.from}->${e.to}:${e.via}:${i}`,
+        id: eid,
         source: e.from,
         target: e.to,
         type: "smoothstep",
-        pathOptions: { borderRadius: 8 },
-        label: labels ? e.label : undefined,
-        title: e.label || e.via,
-        class: `pmt-edge pmt-edge--${kind}`,
+        label: text.label,
+        data: { title: text.title || e.via },
+        class: `pmt-edge pmt-edge--${kind}${stub ? " pmt-edge--stub" : ""}${
+          dim ? " pmt-dim" : ""
+        }`,
         markerEnd: { type: MarkerType.ArrowClosed },
-      };
+      } satisfies Edge<EdgeData>;
     });
 });
 
 const eventNodeIds = computed(() => eventNodes.value.map((n) => n.id));
 
 const layoutNonce = computed(
-  () =>
-    `${props.layout}:${eventNodeIds.value.join("|")}:${props.rootId}:${origins.value.size}`,
+  () => `${props.layout}:${eventNodeIds.value.join("|")}:${props.rootId}`,
 );
 
-/** Fit the canvas to event cards. Does not re-run ELK. */
+/** Fit the canvas to event cards. Does not re-run dagre. */
 async function recenter(): Promise<void> {
   const ids = eventNodeIds.value;
   if (!ids.length) return;
   await nextTick();
   await nextTick();
-  void fitView({ padding: 0.2, nodes: ids, duration: 200 });
+  void fitView({ padding: 0.28, nodes: ids, duration: 200, maxZoom: 1 });
 }
 
 watch(layoutNonce, () => {
@@ -189,7 +212,7 @@ onActivated(() => {
 
 defineExpose({ recenter });
 
-/** Keep dragged coordinates until the next ELK result. */
+/** Keep dragged coordinates until the next dagre result. */
 function onNodeDragStop(ev: NodeDragEvent): void {
   if (ev.node.type !== "event") return;
   placed.value.set(ev.node.id, { ...ev.node.position });
@@ -197,13 +220,11 @@ function onNodeDragStop(ev: NodeDragEvent): void {
 
 /** Select the clicked Go node id. */
 function onClick(ev: NodeMouseEvent): void {
-  if (ev.node.type === "origin") return;
   emit("select", ev.node.id);
 }
 
 /** Re-root the graph on the double-clicked node. */
 function onDblclick(ev: NodeMouseEvent): void {
-  if (ev.node.type === "origin") return;
   const data = ev.node.data as EventGraphNode | undefined;
   if (data?.kind === "more") {
     emit("select", ev.node.id);
@@ -217,14 +238,14 @@ function onDblclick(ev: NodeMouseEvent): void {
   <div class="h-full min-h-0 w-full text-default">
     <VueFlow
       :id="FLOW_ID"
-      :nodes="flowNodes"
+      :nodes="eventNodes"
       :edges="flowEdges"
       :connection-mode="ConnectionMode.Loose"
       :nodes-draggable="true"
       :nodes-connectable="false"
       :edges-updatable="false"
       :fit-view-on-init="true"
-      :only-render-visible-elements="true"
+      :only-render-visible-elements="false"
       :min-zoom="0.35"
       :max-zoom="2"
       class="h-full w-full"
@@ -236,16 +257,32 @@ function onDblclick(ev: NodeMouseEvent): void {
       <template #node-event="np">
         <EventNodeCard v-bind="np" />
       </template>
-      <template #node-origin="np">
-        <div class="pointer-events-none relative h-full w-full">
-          <span
-            class="pointer-events-none absolute top-1 left-2 text-xs text-muted"
+      <template #edge-smoothstep="ep">
+        <BaseEdge
+          :id="ep.id"
+          :path="smoothGeom(ep).path"
+          :marker-end="ep.markerEnd"
+          :interaction-width="ep.interactionWidth"
+        />
+        <EdgeLabelRenderer v-if="edgeLabelText(ep)">
+          <div
+            class="nodrag nopan pointer-events-auto absolute"
+            :style="{
+              transform:
+                `translate(-50%, -50%) translate(${smoothGeom(ep).labelX}px,` +
+                `${smoothGeom(ep).labelY}px)`,
+            }"
           >
-            {{ np.data.label }}
-          </span>
-        </div>
+            <UTooltip :text="edgeTooltip(ep)">
+              <span
+                class="rounded-sm bg-elevated px-1 text-[11px] text-default"
+              >{{ edgeLabelText(ep) }}</span>
+            </UTooltip>
+          </div>
+        </EdgeLabelRenderer>
       </template>
       <Background />
+      <MiniMap pannable zoomable />
       <Controls />
     </VueFlow>
   </div>
@@ -267,6 +304,8 @@ function onDblclick(ev: NodeMouseEvent): void {
 }
 :deep(.vue-flow__edge.pmt-edge .vue-flow__edge-path) {
   stroke: var(--ui-text-muted);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
 }
 :deep(.vue-flow__edge.pmt-edge--immediate .vue-flow__edge-path) {
   stroke: var(--ui-success);
@@ -282,5 +321,19 @@ function onDblclick(ev: NodeMouseEvent): void {
 }
 :deep(.vue-flow__edge.pmt-edge--on_action .vue-flow__edge-path) {
   stroke: var(--ui-accent);
+}
+:deep(.vue-flow__edge.pmt-edge--events .vue-flow__edge-path) {
+  stroke: var(--ui-text-muted);
+}
+:deep(.vue-flow__edge.pmt-edge--stub .vue-flow__edge-path) {
+  stroke-dasharray: 6 4;
+}
+:deep(.vue-flow__node.pmt-dim),
+:deep(.vue-flow__edge.pmt-dim) {
+  opacity: 0.55;
+}
+:deep(.vue-flow__minimap) {
+  background-color: var(--ui-bg-elevated, var(--ui-bg));
+  border: 1px solid var(--ui-border);
 }
 </style>

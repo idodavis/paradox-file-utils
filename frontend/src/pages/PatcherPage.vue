@@ -23,6 +23,7 @@ defineOptions({ name: "PatcherPage" });
 const ws = useWorkspaceStore();
 const route = useRoute();
 const router = useRouter();
+const toast = useToast();
 
 const workspaceId = computed(() => route.params.id as string);
 const { activeWorkspace: workspace, workspaceMods: mods } = storeToRefs(ws);
@@ -133,7 +134,10 @@ async function reviewFile(file: PatchRunFile): Promise<void> {
   const modPath = file.modPath;
   const targetPath = file.targetPath;
   const previewPath = file.previewPath;
-  if (!modPath || !targetPath || !previewPath) return;
+  if (!modPath || !targetPath || !previewPath) {
+    toast.add({ title: "Missing merge paths for this file.", color: "error" });
+    return;
+  }
   await startMergeOverlay({
     files: [modPath, targetPath, previewPath],
     label: "Back to Patcher",

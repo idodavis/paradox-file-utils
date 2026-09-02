@@ -13,7 +13,6 @@ import { useWorkspaceStore } from "./stores/workspace";
 import { useSettingsStore } from "./stores/settings";
 import {
   applySeedCss,
-  currentWorkbenchTheme,
   familyLabel,
   normalizeThemeFamily,
   themeMenuItems,
@@ -25,6 +24,7 @@ import {
 import { CheckForUpdates, GetVersion } from "@services/settingsservice";
 import { isWorkbenchReady } from "./ide/workbenchHost";
 import IdeWorkbenchLayout from "./components/IdeWorkbenchLayout.vue";
+import IdeStatusStrip from "./components/IdeStatusStrip.vue";
 import { applyEditorFontSize, applyWorkbenchTheme } from "./ide/themeBridge";
 import { useIdeShellStore } from "./stores/ideShell";
 import DisplayPopover from "./components/DisplayPopover.vue";
@@ -163,7 +163,7 @@ async function onThemeChange(theme: string | null): Promise<void> {
   setFamily(family);
   await saveFamily(family);
   if (isWorkbenchReady()) {
-    await applyWorkbenchTheme(currentWorkbenchTheme());
+    await applyWorkbenchTheme(workbenchThemeId(family, appearance.value));
   }
 }
 
@@ -202,7 +202,9 @@ watch(
     document.documentElement.dataset.theme = currentFamily.value;
     applySeedCss(workbenchThemeId(currentFamily.value, appearance.value));
     if (isWorkbenchReady()) {
-      await applyWorkbenchTheme(currentWorkbenchTheme());
+      await applyWorkbenchTheme(
+        workbenchThemeId(currentFamily.value, appearance.value),
+      );
     }
   },
 );
@@ -278,7 +280,11 @@ onMounted(async () => {
           <template #toolbar>
             <div class="shrink-0 border-b border-default" :class="{ hidden: route.name !== 'workspace-ide' }">
               <router-view name="ide" v-slot="{ Component }">
-                <component :is="Component" v-if="Component" />
+                <component
+                  :is="Component"
+                  v-if="Component"
+                  :key="String(route.params.id ?? '')"
+                />
               </router-view>
             </div>
             <div v-if="ideShell.mergeReview" class="flex shrink-0 items-center gap-2 border-b border-default px-2 py-1">
@@ -298,12 +304,15 @@ onMounted(async () => {
         </div>
       </main>
 
-      <footer class="relative z-10 flex shrink-0 items-center justify-end
+      <footer class="relative z-10 flex shrink-0 items-center justify-between
           border-t border-default bg-default px-2 text-sm text-default">
+        <div class="relative z-10 min-w-0">
+          <IdeStatusStrip v-if="showWorkbench" />
+        </div>
         <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
           <PMTLogo :icon-height="25" :text-height="30" />
         </div>
-        <div class="relative flex items-center gap-2">
+        <div class="relative z-10 flex items-center gap-2">
           <UButton :label="`Help for ${currentTitle}`" icon="i-lucide-circle-help" color="neutral" variant="ghost"
             size="sm" @click="helpOpen = true" />
           <UButton :label="version" icon="i-lucide-refresh-cw" color="neutral" variant="ghost" size="sm"

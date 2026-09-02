@@ -8,6 +8,7 @@ import {
   Diagnose,
   Hover,
   Complete,
+  SignatureHelp,
   Definition,
   References,
   DocumentSymbols,
@@ -27,7 +28,9 @@ import { originHexByOriginId } from "./rootDecorations";
 const LANGS = ["paradox", "paradox-gui", "paradox-loc", "paradox-info", "paradox-mod"];
 
 function pathOf(doc: vscode.TextDocument): string {
-  return doc.uri.fsPath;
+  let p = doc.uri.fsPath || doc.uri.path;
+  if (p.startsWith("/") && /^\/[A-Za-z]:/.test(p)) p = p.slice(1);
+  return p;
 }
 
 /** Map editor position to UTF-8 byte column for the Go LSP bridge. */
@@ -264,18 +267,31 @@ export function registerLanguageClient(
         async provideCompletionItems(doc, pos, token) {
           const id = getWorkspaceId();
           if (!id || token?.isCancellationRequested) return undefined;
+          dirty.delete(doc.uri.toString());
+          await DidChange(id, pathOf(doc), doc.getText());
+          if (token?.isCancellationRequested) return undefined;
           const p = positionUtf8(doc, pos);
           const items =
             (await Complete(id, pathOf(doc), p.line, p.character)) ?? [];
           if (token?.isCancellationRequested) return undefined;
-          return items.map((it) => {
-            const c = new vscode.CompletionItem(
-              it.label,
-              vscode.CompletionItemKind.Value,
-            );
+          return items.map((it, i) => {
+            const kind =
+              it.kind === "property"
+                ? vscode.CompletionItemKind.Property
+                : vscode.CompletionItemKind.Value;
+            const c = new vscode.CompletionItem(it.label, kind);
             c.detail = it.detail;
+            c.sortText = String(i).padStart(4, "0");
             if (it.documentation) {
               c.documentation = it.documentation;
+            }
+            if (it.insertText) {
+              c.insertText = it.insertText.includes("$")
+                ? new vscode.SnippetString(it.insertText)
+                : it.insertText;
+            }
+            if (it.range) {
+              c.range = rangeToVsCode(doc, it.range);
             }
             return c;
           });
@@ -284,7 +300,32 @@ export function registerLanguageClient(
       ".",
       "[",
       ":",
-      "=",
+      "{",
+    ),
+  );
+  registerLangProviders(subs, (lang) =>
+    vscode.languages.registerSignatureHelpProvider(
+      lang,
+      {
+        async provideSignatureHelp(doc, pos, token) {
+          const id = getWorkspaceId();
+          if (!id || token?.isCancellationRequested) return undefined;
+          const p = positionUtf8(doc, pos);
+          const h = await SignatureHelp(id, pathOf(doc), p.line, p.character);
+          if (!h?.label || token?.isCancellationRequested) return undefined;
+          const info = new vscode.SignatureInformation(h.label, h.documentation);
+          for (const pName of h.parameters ?? []) {
+            info.parameters.push(new vscode.ParameterInformation(pName));
+          }
+          info.activeParameter = h.activeParameter ?? 0;
+          return {
+            signatures: [info],
+            activeSignature: 0,
+            activeParameter: h.activeParameter ?? 0,
+          };
+        },
+      },
+      "(",
       "{",
     ),
   );

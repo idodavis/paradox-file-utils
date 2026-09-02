@@ -137,6 +137,16 @@ func TestScanCorpusFixture(t *testing.T) {
 			t.Errorf("structures[event] missing %q: %v", k, c.Structures["event"])
 		}
 	}
+	if got := c.Structures["event"]; len(got) == 0 || got[0] != "type" {
+		t.Errorf("structures[event] freq = %v, want type first", got)
+	}
+	if !contains(c.StructureBlocks["event"], "immediate") ||
+		!contains(c.StructureBlocks["event"], "option") {
+		t.Errorf("structureBlocks[event] = %v", c.StructureBlocks["event"])
+	}
+	if contains(c.StructureBlocks["event"], "type") {
+		t.Errorf("type should be scalar: %v", c.StructureBlocks["event"])
+	}
 
 	// Corpus vocabulary must be populated with NO script_docs dump.
 	if !contains(c.Vocabulary, "add_gold") {
@@ -175,5 +185,142 @@ func TestScanCorpusFixture(t *testing.T) {
 				t.Fatalf("nested dump field %s leaked: %v", tt.drop, got.Effects)
 			}
 		})
+	}
+}
+
+func TestClassifyRelShippedDocs(t *testing.T) {
+	tests := []struct {
+		name, want string
+	}{
+		{"_traits.info", "docs"},
+		{"readme.txt", "docs"},
+		{"__readme.txt", "docs"},
+		{"____Info.txt", "docs"},
+		{"notes.md", "docs"},
+		{"00_traits.txt", "script"},
+		{"_default.txt", ""},
+		{"_hardcoded.txt", ""},
+		{"_advances_template.txt", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ClassifyRel("common/x/"+tt.name, tt.name); got != tt.want {
+				t.Fatalf("ClassifyRel(%q) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHarvestDocFile(t *testing.T) {
+	tests := []struct {
+		name, src, key, want string
+	}{
+		{
+			name: "ck3 above comment",
+			src:  "# The trait category\ncategory = personality\n",
+			key:  "category", want: "trait category",
+		},
+		{
+			name: "below block comment",
+			src:  "allow = {\n\t# must also pass category\n}\n",
+			key:  "allow", want: "must also pass",
+		},
+		{
+			name: "below does not steal next above",
+			src: "# Event presentation type\ntype = character_event\n" +
+				"# Dynamic loc key\ntitle = loc_key\n",
+			key: "title", want: "Dynamic",
+		},
+		{
+			name: "eu5 attribute bullets",
+			src: "# ATTRIBUTES\n" +
+				"# - build_time: <integer> building time in days\n" +
+				"# - allow: <trigger> can the building be built\n",
+			key: "build_time", want: "building time",
+		},
+		{
+			name: "commented template inline",
+			src:  "#\ttype = country_event\t\t# Defines the scope\n",
+			key:  "type", want: "Defines the scope",
+		},
+		{
+			name: "inline plus below block",
+			src:  "chance = { # weight\n\t# extra lines\n}\n",
+			key:  "chance", want: "weight extra lines",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := harvestDocFile(tt.src)
+			if !strings.Contains(got[tt.key], tt.want) {
+				t.Fatalf("harvestDocFile()[%q] = %q, want substring %q (all=%v)",
+					tt.key, got[tt.key], tt.want, got)
+			}
+		})
+	}
+	t.Run("ck3 type keeps above comment", func(t *testing.T) {
+		got := harvestDocFile(
+			"# Event presentation type\ntype = character_event\n" +
+				"# Dynamic loc key\ntitle = loc_key\n",
+		)
+		if !strings.Contains(got["type"], "presentation") {
+			t.Fatalf("type = %q, want presentation", got["type"])
+		}
+	})
+}
+
+func TestScanEU5ShippedDocs(t *testing.T) {
+	base := t.TempDir()
+	writeMod(t, base, "game/in_game/common/traits/00_traits.txt", `brave = {
+	category = ruler
+	allow = { always = yes }
+}
+`)
+	writeMod(t, base, "game/in_game/common/traits/_traits.info", `trait_name = {
+	# Which type of character can use this trait?
+	category = ruler
+	allow = {
+		# What else does the character need
+	}
+}
+`)
+	writeMod(t, base, "game/in_game/common/building_types/readme.txt", `# ATTRIBUTES
+# - build_time: <integer> building time in days
+# - allow: <trigger> can the building be built
+`)
+	t.Cleanup(func() { _ = DropVanillaFiles("eu5docs") })
+	c, _, err := Scan(context.Background(), "eu5docs", "eu5", base, "1.0", "", "english", nil)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if got := c.FieldDocsByKind["traits"]["allow"]; !strings.Contains(got, "character need") {
+		t.Fatalf("traits allow doc = %q", got)
+	}
+	if got := c.FieldDocsByKind["traits"]["category"]; !strings.Contains(got, "Which type") {
+		t.Fatalf("traits category doc = %q", got)
+	}
+	if got := c.FieldDocsByKind["building_types"]["build_time"]; !strings.Contains(got, "building time") {
+		t.Fatalf("building_types build_time = %q", got)
+	}
+}
+
+func TestScanEU5InstallUsesGameFolder(t *testing.T) {
+	base := t.TempDir()
+	writeMod(t, base, "game/in_game/events/x.txt", `namespace = t
+t.1 = { type = country_event }
+`)
+	writeMod(t, base, "in_game/events/wrong.txt", `namespace = w
+w.1 = { type = country_event }
+`)
+	t.Cleanup(func() { _ = DropVanillaFiles("eu5inst") })
+	c, _, err := Scan(context.Background(), "eu5inst", "eu5", base, "1.0", "", "english", nil)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if !findDef(c.Defs, "event", "t.1") {
+		t.Fatalf("missing install event t.1; defs=%v", c.Defs)
+	}
+	if findDef(c.Defs, "event", "w.1") {
+		t.Fatalf("scanned install-root in_game, not game/: %v", c.Defs)
 	}
 }
