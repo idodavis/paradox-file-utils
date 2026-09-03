@@ -15,14 +15,14 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * FileSearch lists files whose path contains FilePattern (ripgrep --files).
+ * FileSearch lists files whose path contains FilePattern under workspace folders.
  */
 export function FileSearch(q: $models.FileSearchQuery): $CancellablePromise<$models.FileSearchResult> {
     return $Call.ByID(3021161365, q);
 }
 
 /**
- * TextSearch runs ripgrep --json, one process per folder.
+ * TextSearch walks workspace folders and greps file bodies in-process.
  */
 export function TextSearch(q: $models.TextSearchQuery): $CancellablePromise<$models.TextSearchResult> {
     return $Call.ByID(1024315628, q);

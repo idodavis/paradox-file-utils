@@ -8,5 +8,8 @@ frontend/auto-imports.d.ts
 frontend/components.d.ts
 build/linux/appimage/build
 build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
-services/internal/rgbin/bin/rg.bin
-services/internal/rgbin/rg.stamp
+services/internal/steamugc/sdk/
+services/internal/steamugc/steam.stamp
+services/internal/steamugc/*.tar
+services/internal/steamugc/binembed/bin/*
+!services/internal/steamugc/binembed/bin/.keep

@@ -10,6 +10,7 @@ import ConflictPage from "../pages/ConflictPage.vue";
 import LocCoveragePage from "../pages/LocCoveragePage.vue";
 import PatcherPage from "../pages/PatcherPage.vue";
 import ToolsMergePage from "../pages/ToolsMergePage.vue";
+import ReleasePage from "../pages/ReleasePage.vue";
 import WorkspaceSettingsPage from "../pages/WorkspaceSettingsPage.vue";
 import { PAGE_CATALOG } from "../workspaceTools";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -60,6 +61,12 @@ const routes = [
     name: "patcher",
     component: PatcherPage,
     meta: PAGE_CATALOG.patcher,
+  },
+  {
+    path: "/workspace/:id/release",
+    name: "release",
+    component: ReleasePage,
+    meta: PAGE_CATALOG.release,
   },
   {
     path: "/workspace/:id/settings",

@@ -5,7 +5,9 @@ package views
 import (
 	"cmp"
 	"slices"
+	"strconv"
 
+	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -42,17 +44,7 @@ func OverrideRows(s *session.Session) []OverrideRow {
 	contests := s.Contests(order)
 	out := make([]OverrideRow, 0, len(contests))
 	for _, c := range contests {
-		sites := make([]OverrideSite, 0, len(c.Defs))
-		for _, d := range c.Defs {
-			o := originID(d.Origin)
-			sites = append(sites, OverrideSite{
-				Origin:     o,
-				OriginName: s.OriginName(o),
-				Path:       d.Path,
-				Rel:        s.DisplayRel(d.Path),
-				Line:       d.Line,
-			})
-		}
+		sites := overrideSites(s, c.Defs)
 		out = append(out, OverrideRow{
 			Kind:       c.Kind,
 			Name:       c.Name,
@@ -70,4 +62,27 @@ func OverrideRows(s *session.Session) []OverrideRow {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	return out
+}
+
+// overrideSites is one OverrideSite per origin+path+line. Same-line twins from
+// a DidOpen path-key miss are dropped; distinct lines stay (two real blocks).
+func overrideSites(s *session.Session, defs []catalog.Def) []OverrideSite {
+	seen := make(map[string]bool, len(defs))
+	sites := make([]OverrideSite, 0, len(defs))
+	for _, d := range defs {
+		o := originID(d.Origin)
+		id := o + "\x00" + session.CanonPath(d.Path) + "\x00" + strconv.Itoa(d.Line)
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		sites = append(sites, OverrideSite{
+			Origin:     o,
+			OriginName: s.OriginName(o),
+			Path:       d.Path,
+			Rel:        s.DisplayRel(d.Path),
+			Line:       d.Line,
+		})
+	}
+	return sites
 }

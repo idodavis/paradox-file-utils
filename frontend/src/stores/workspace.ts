@@ -41,6 +41,10 @@ export function thumbMime(path: string): string {
       return "image/jpeg";
     case "svg":
       return "image/svg+xml";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
     default:
       return "application/octet-stream";
   }

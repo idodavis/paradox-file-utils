@@ -3,10 +3,13 @@ module paradox-modding-tools
 go 1.26.5
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/bytedance/sonic v1.15.3
+	github.com/ebitengine/purego v0.9.1
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/uuid v1.6.0
 	github.com/wailsapp/wails/v3 v3.0.0-beta.16
+	github.com/yuin/goldmark v1.7.16
 	golang.org/x/net v0.58.0
 	golang.org/x/sync v0.22.0
 )

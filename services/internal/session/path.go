@@ -12,11 +12,16 @@ import (
 )
 
 // CanonPath returns a cleaned path for index and buffer identity.
+// On Windows the result is lowercased so harvest and Monaco fsPath share a key.
 func CanonPath(p string) string {
 	if p == "" {
 		return p
 	}
-	return filepath.Clean(p)
+	p = filepath.Clean(p)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(p)
+	}
+	return p
 }
 
 // SamePath reports whether a and b name the same file. On Windows the

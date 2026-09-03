@@ -35,8 +35,19 @@ const originFallback = computed(() =>
   ws.gameName(ws.activeWorkspace?.gameId ?? ws.currentGameId),
 );
 const vanilla = computed(() => ws.originVanilla);
+/** Load-order rail: sortOrder, then name — not config insertion order. */
+const orderedMods = computed(() => {
+  const mods = ws.workspaceMods.slice();
+  mods.sort((a, b) => {
+    const ao = a.sortOrder ?? 0;
+    const bo = b.sortOrder ?? 0;
+    if (ao !== bo) return ao - bo;
+    return (a.name ?? "").localeCompare(b.name ?? "");
+  });
+  return mods;
+});
 const liveMods = computed(() =>
-  ws.workspaceMods.filter((m) => !m.isBroken && m.path),
+  orderedMods.value.filter((m) => !m.isBroken && m.path),
 );
 const originItems = computed(() =>
   liveMods.value.map((m, i) => ({
@@ -238,7 +249,7 @@ function onRowSelect(
           <p class="text-xs font-semibold">Load order</p>
           <p class="mt-1 text-[11px] leading-snug text-muted">{{ loadOrderCopy }}</p>
           <ul class="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
-            <li v-for="(mod, i) in ws.workspaceMods" :key="mod.id">
+            <li v-for="(mod, i) in orderedMods" :key="mod.id">
               <button
                 type="button"
                 class="flex w-full items-center gap-1.5 rounded-sm px-1 py-0.5 text-left"

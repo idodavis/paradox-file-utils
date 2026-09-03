@@ -65,14 +65,17 @@ type Workspace struct {
 
 // WorkspaceMod is a mod attached to a workspace.
 type WorkspaceMod struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	SortOrder int    `json:"sortOrder"`
-	Color     string `json:"color,omitempty"`
-	Thumbnail string `json:"thumbnail,omitempty"`
-	IsBroken  bool   `json:"isBroken"`
-	CreatedAt string `json:"createdAt"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Path           string `json:"path"`
+	SortOrder      int    `json:"sortOrder"`
+	Color          string `json:"color,omitempty"`
+	Thumbnail      string `json:"thumbnail,omitempty"`
+	DescMdRel      string `json:"descMdRel,omitempty"`
+	DescBbRel      string `json:"descBbRel,omitempty"`
+	WorkshopIgnore string `json:"workshopIgnore,omitempty"`
+	IsBroken       bool   `json:"isBroken"`
+	CreatedAt      string `json:"createdAt"`
 }
 
 // PatchRun is one patch of a mod onto a target install.
@@ -221,6 +224,7 @@ func cloneWorkspace(w Workspace) Workspace {
 	w.IdeOpenFiles = append([]string(nil), w.IdeOpenFiles...)
 	mods := make([]WorkspaceMod, len(w.Mods))
 	copy(mods, w.Mods)
+	sortWorkspaceMods(mods)
 	w.Mods = mods
 	return w
 }

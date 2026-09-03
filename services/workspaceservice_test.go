@@ -64,6 +64,14 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if len(listed) != 2 || listed[0].ID != b.ID || listed[1].ID != a.ID {
 		t.Fatalf("reordered: %+v", listed)
 	}
+	all, err := svc.ListWorkspaces("")
+	if err != nil || len(all) != 1 {
+		t.Fatalf("list: %v %+v", err, all)
+	}
+	fromList := all[0].Mods
+	if len(fromList) != 2 || fromList[0].ID != b.ID || fromList[1].ID != a.ID {
+		t.Fatalf("list order: %+v", fromList)
+	}
 
 	if err := svc.RemoveWorkspaceMod("ws1", b.ID); err != nil {
 		t.Fatal(err)

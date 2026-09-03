@@ -9,13 +9,13 @@ import type { StepperItem } from "@nuxt/ui";
 import { useSortable } from "@vueuse/integrations/useSortable";
 import FileSelector, { pickDirectory } from "../components/FileSelector.vue";
 import CreateModForm from "../components/CreateModForm.vue";
+import AddInstallCard from "../components/AddInstallCard.vue";
 import { LOC_LANG_ITEMS, useWorkspaceStore } from "../stores/workspace";
 import {
   ListGameInstalls,
   AddGameInstall,
   CreateWorkspace,
   AddWorkspaceMod,
-  DetectGameVersion,
   EnsureStagingDir,
   UpdateWorkspace,
   FindGameInstalls,
@@ -36,7 +36,6 @@ const selectedInstallId = ref<string | undefined>(undefined);
 const newInstallPath = ref("");
 const newInstallName = ref("");
 const newInstallVersion = ref("latest");
-const newDetected = ref("");
 const draftVersion = ref("latest");
 const defaultLocLang = ref("english");
 const modEntries = ref<{ path: string; thumbnail: string }[]>([]);
@@ -63,6 +62,7 @@ const stepItems: StepperItem[] = [
 const installItems = computed(() =>
   installs.value.map((i) => ({
     label: `${i.name} (${i.version || "latest"})${i.scannedAt ? " — cache ready" : ""}`,
+    description: i.path,
     value: i.id,
   })),
 );
@@ -111,34 +111,15 @@ const {
 
 const installs = computed(() => installPack.value?.installs ?? []);
 const detectedInstalls = computed(() => installPack.value?.detected ?? []);
+const savedInstallPaths = computed(() =>
+  installs.value.map((i) => i.path).filter(Boolean),
+);
 
 watch(installs, (list) => {
   const keep = selectedInstallId.value;
   const next = list.find((i) => i.id === keep) ?? list[0];
   selectedInstallId.value = next?.id;
   draftVersion.value = next?.version || "latest";
-});
-
-/** Prefill add-install fields from a Steam-detected path. */
-function useDetected(path: string, version: string): void {
-  newInstallPath.value = path;
-  newInstallVersion.value = version || "latest";
-  newDetected.value = version;
-  if (!newInstallName.value) {
-    newInstallName.value = version ? `Steam ${version}` : "Steam";
-  }
-}
-
-watch(newInstallPath, async (p) => {
-  if (!p) {
-    newDetected.value = "";
-    return;
-  }
-  const d = await DetectGameVersion(p);
-  newDetected.value = d;
-  if (!newInstallVersion.value || newInstallVersion.value === "latest") {
-    newInstallVersion.value = d || "latest";
-  }
 });
 
 watch(selectedInstallId, (id) => {
@@ -164,7 +145,6 @@ const {
     newInstallPath.value = "";
     newInstallName.value = "";
     newInstallVersion.value = "latest";
-    newDetected.value = "";
     await refetchInstalls();
   },
 });
@@ -287,7 +267,7 @@ const error = computed(
 <template>
   <div class="h-full w-full min-h-0 overflow-y-auto">
     <div class="flex min-h-full w-full items-center justify-center p-4">
-      <div class="w-full max-w-2xl">
+      <div class="w-full" :class="step === 2 ? 'max-w-4xl' : 'max-w-2xl'">
         <h1 class="mb-6 text-center text-xl font-bold">Create Workspace</h1>
         <UAlert v-if="error" color="error" variant="subtle" :description="error" class="mb-4" />
         <UStepper :model-value="step" :items="stepItems" class="mb-6"
@@ -305,90 +285,73 @@ const error = computed(
             <div class="space-y-4">
               <h2 class="font-semibold">Game Install</h2>
               <p class="text-sm text-muted">
-                Select an existing install or click Add Install before continuing.
+                Pick a saved install, or draft one on the right and click Add install.
               </p>
-              <URadioGroup
-                v-if="installs.length"
-                v-model="selectedInstallId"
-                :items="installItems"
-                variant="card"
-              />
-              <p v-else class="text-sm text-muted">No installs configured yet.</p>
-              <div v-if="selectedInstall" class="space-y-2 rounded border border-default p-2">
-                <p class="truncate text-xs text-muted">{{ selectedInstall.path }}</p>
-                <UFormField label="Version">
-                  <div class="flex gap-2">
-                    <UInput v-model="draftVersion" placeholder="latest" />
-                    <UButton
-                      label="latest"
-                      size="xs"
-                      variant="outline"
-                      @click="draftVersion = 'latest'"
+              <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
+                <UCard
+                  title="Added installs"
+                  description="These are saved. Select one before continuing."
+                >
+                  <div class="space-y-4">
+                    <URadioGroup
+                      v-if="installs.length"
+                      v-model="selectedInstallId"
+                      :items="installItems"
+                      variant="card"
                     />
-                    <UButton
-                      label="Save"
-                      size="xs"
-                      variant="outline"
-                      :loading="busy"
-                      @click="saveSelectedVersion()"
-                    />
+                    <p v-else class="text-sm text-muted">No installs added yet.</p>
+                    <div v-if="selectedInstall" class="space-y-2">
+                      <p class="truncate text-xs text-muted">{{ selectedInstall.path }}</p>
+                      <UFormField label="Version pin">
+                        <div class="flex gap-2">
+                          <UInput v-model="draftVersion" placeholder="latest" />
+                          <UButton
+                            label="latest"
+                            size="xs"
+                            variant="outline"
+                            @click="draftVersion = 'latest'"
+                          />
+                          <UButton
+                            label="Save"
+                            size="xs"
+                            variant="outline"
+                            :loading="busy"
+                            @click="saveSelectedVersion()"
+                          />
+                        </div>
+                      </UFormField>
+                      <p class="text-xs text-muted">
+                        <template v-if="selectedInstall.versionDetected">
+                          detected: {{ selectedInstall.versionDetected }} from
+                          launcher/launcher-settings.json
+                        </template>
+                        <template v-else>no file — default latest, pin optional</template>
+                      </p>
+                      <p class="text-xs text-muted">
+                        {{ selectedInstall.scannedAt
+                          ? `cache ready (${selectedInstall.scannedAt})`
+                          : "cache not scanned" }}
+                      </p>
+                      <UButton
+                        label="Delete"
+                        size="xs"
+                        color="error"
+                        variant="ghost"
+                        :loading="busy"
+                        @click="deleteSelectedInstall()"
+                      />
+                    </div>
                   </div>
-                </UFormField>
-                <p class="text-xs text-muted">
-                  <template v-if="selectedInstall.versionDetected">
-                    detected: {{ selectedInstall.versionDetected }} from
-                    launcher/launcher-settings.json
-                  </template>
-                  <template v-else>no file — default latest, pin optional</template>
-                </p>
-                <p class="text-xs text-muted">
-                  {{ selectedInstall.scannedAt
-                    ? `cache ready (${selectedInstall.scannedAt})` : "cache not scanned" }}
-                </p>
-                <UButton label="Delete" size="xs" color="error" variant="ghost" :loading="busy"
-                  @click="deleteSelectedInstall()" />
-              </div>
-              <div v-if="detectedInstalls.length" class="space-y-2">
-                <p class="text-sm font-medium">Found on this machine</p>
-                <div v-for="d in detectedInstalls" :key="d.path"
-                  class="flex items-center justify-between gap-2 rounded border border-default p-2">
-                  <span class="text-sm">
-                    Found {{ selectedGame }} at {{ d.path }}
-                    <span v-if="d.version" class="text-muted">({{ d.version }})</span>
-                  </span>
-                  <UButton
-                    label="Use"
-                    size="xs"
-                    variant="outline"
-                    @click="useDetected(d.path, d.version)"
-                  />
-                </div>
-              </div>
-              <USeparator label="Or add new" />
-              <div class="space-y-2">
-                <FileSelector v-model="newInstallPath" mode="folder" label="Install path"
-                  dialog-title="Select game install folder" />
-                <UFormField label="Install name">
-                  <UInput v-model="newInstallName" placeholder="e.g. Steam 1.14.0" />
-                </UFormField>
-                <UFormField label="Version">
-                  <UInput v-model="newInstallVersion" placeholder="latest" />
-                </UFormField>
-                <p class="text-xs text-muted">
-                  <template v-if="newDetected">
-                    detected: {{ newDetected }} from launcher/launcher-settings.json
-                  </template>
-                  <template v-else>
-                    detected: none — default latest, pin optional
-                  </template>
-                </p>
-                <UButton
-                  label="Add Install"
-                  icon="i-lucide-plus"
-                  size="sm"
-                  :disabled="!newInstallPath || !newInstallName"
-                  :loading="busy"
-                  @click="addNewInstall()"
+                </UCard>
+                <AddInstallCard
+                  v-model:path="newInstallPath"
+                  v-model:name="newInstallName"
+                  v-model:version="newInstallVersion"
+                  :game-id="selectedGame"
+                  :detected="detectedInstalls"
+                  :saved-paths="savedInstallPaths"
+                  :loading="adding"
+                  @add="addNewInstall()"
                 />
               </div>
             </div>
@@ -452,7 +415,7 @@ const error = computed(
               </div>
               <div class="flex flex-wrap gap-2">
                 <UButton
-                  label="Add existing folder"
+                  label="Add existing mod to workspace"
                   icon="i-lucide-folder-plus"
                   variant="outline"
                   @click="addModPath"

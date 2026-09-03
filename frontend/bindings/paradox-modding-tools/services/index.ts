@@ -5,6 +5,7 @@ import * as FileService from "./fileservice.js";
 import * as IdeService from "./ideservice.js";
 import * as MergeService from "./mergeservice.js";
 import * as PatcherService from "./patcherservice.js";
+import * as ReleaseService from "./releaseservice.js";
 import * as SearchService from "./searchservice.js";
 import * as SessionService from "./sessionservice.js";
 import * as SettingsService from "./settingsservice.js";
@@ -16,6 +17,7 @@ export {
     IdeService,
     MergeService,
     PatcherService,
+    ReleaseService,
     SearchService,
     SessionService,
     SettingsService,
@@ -25,6 +27,7 @@ export {
 };
 
 export type {
+    ConvertResult,
     DirEntry,
     FileBytes,
     FileMergeResult,
@@ -35,6 +38,7 @@ export type {
     IdeRoot,
     IdeRoots,
     LanguageHealth,
+    Listing,
     MergerOptions,
     PatchRun,
     PatchRunFile,
@@ -42,11 +46,13 @@ export type {
     PatchRunPreview,
     PathStat,
     PreviewItem,
+    PublishResult,
     ResolvedConflict,
     TextSearchFolder,
     TextSearchHit,
     TextSearchQuery,
     TextSearchResult,
+    WorkshopPreview,
     Workspace,
     WorkspaceMod
 } from "./models.js";

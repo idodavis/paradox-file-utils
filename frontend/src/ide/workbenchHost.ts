@@ -90,7 +90,7 @@ import {
 } from "@services/workspaceservice";
 import { ISearchService } from "@codingame/monaco-vscode-api/vscode/vs/workbench/services/search/common/search.service";
 import { SearchService } from "@codingame/monaco-vscode-search-service-override/vscode/vs/workbench/services/search/common/searchService";
-import { registerRipgrepSearch } from "./searchProvider";
+import { registerWorkspaceSearch } from "./searchProvider";
 import "./explorerLayout.css";
 
 let workbenchReady = false;
@@ -797,7 +797,7 @@ async function runInitialize(theme: string): Promise<void> {
     attachIdeParts();
     await monacoLifecycle.waitServicesReady();
     if (!searchRegistered) {
-      await registerRipgrepSearch();
+      await registerWorkspaceSearch();
       searchRegistered = true;
     }
     if (!menusRegistered) {

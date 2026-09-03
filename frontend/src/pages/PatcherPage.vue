@@ -21,7 +21,7 @@ const workspaceId = computed(() => String(route.params.id ?? ""));
 const items: TabsItem[] = [
   { label: "Patch Notes", value: "notes", icon: "i-lucide-file-text" },
   { label: "Impact Check", value: "impact", icon: "i-lucide-search" },
-  { label: "Patcher", value: "patcher", icon: "i-lucide-git-compare" },
+  { label: "Patcher", value: "patcher", icon: "i-lucide-arrow-left-right" },
 ];
 
 /** Route query `tab`, default Patch Notes. */

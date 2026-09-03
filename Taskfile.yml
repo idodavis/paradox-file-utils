@@ -50,7 +50,7 @@ tasks:
   dev:
     summary: Runs the application in development mode
     deps:
-      - task: common:fetch:rg
+      - task: common:build:steamugc
     cmds:
       - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
 

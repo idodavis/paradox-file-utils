@@ -24,6 +24,24 @@ export async function pickFile(title: string, filter: string): Promise<string> {
   });
   return typeof path === "string" ? path : "";
 }
+
+/** Open a save-file picker. Cancel yields an empty path. */
+export async function pickSave(title: string, filter: string): Promise<string> {
+  const dialogs = Dialogs as typeof Dialogs & {
+    SaveFile?: (opts: {
+      Title: string;
+      Filters?: { DisplayName: string; Pattern: string }[];
+    }) => Promise<unknown>;
+  };
+  if (typeof dialogs.SaveFile !== "function") {
+    return pickFile(title, filter);
+  }
+  const path = await dialogs.SaveFile({
+    Title: title,
+    Filters: filter ? [{ DisplayName: filter, Pattern: filter }] : undefined,
+  });
+  return typeof path === "string" ? path : "";
+}
 </script>
 
 <script setup lang="ts">

@@ -89,6 +89,13 @@ export function EnsureStagingDir(workspaceID: string): $CancellablePromise<strin
 }
 
 /**
+ * ExportWorkshopIgnore writes the saved ignore text to .workshop-ignore in the mod root.
+ */
+export function ExportWorkshopIgnore(workspaceID: string, modID: string): $CancellablePromise<void> {
+    return $Call.ByID(2343872159, workspaceID, modID);
+}
+
+/**
  * FindGameInstalls returns Steam-detected installs for a game.
  */
 export function FindGameInstalls(gameID: string): $CancellablePromise<game$0.DetectedInstall[] | null> {
@@ -107,6 +114,13 @@ export function GetIdeRoots(workspaceID: string): $CancellablePromise<$models.Id
  */
 export function GetWorkspace(id: string): $CancellablePromise<$models.Workspace | null> {
     return $Call.ByID(2164363903, id);
+}
+
+/**
+ * ImportWorkshopIgnore reads .workshop-ignore into workspace config and returns the text.
+ */
+export function ImportWorkshopIgnore(workspaceID: string, modID: string): $CancellablePromise<string> {
+    return $Call.ByID(1048022600, workspaceID, modID);
 }
 
 /**
@@ -187,10 +201,10 @@ export function UpdateWorkspace(id: string, name: string, installID: string, sta
 }
 
 /**
- * UpdateWorkspaceMod updates a mod's name and optional color/thumbnail.
+ * UpdateWorkspaceMod updates listing paths, ignore text, name, color, and thumbnail.
  */
-export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: string, color: string, thumbnail: string): $CancellablePromise<void> {
-    return $Call.ByID(439726452, workspaceID, modID, name, color, thumbnail);
+export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: string, color: string, thumbnail: string, descMdRel: string, descBbRel: string, workshopIgnore: string): $CancellablePromise<void> {
+    return $Call.ByID(439726452, workspaceID, modID, name, color, thumbnail, descMdRel, descBbRel, workshopIgnore);
 }
 
 /**

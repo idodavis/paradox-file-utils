@@ -1,6 +1,7 @@
 /**
- * Workbench Find-in-Files via Go-exec ripgrep (replaces the JS URI indexer).
+ * Workbench Find-in-Files via in-process Go search (replaces the JS URI indexer).
  */
+import { CancelError, type CancellablePromise } from "@wailsio/runtime";
 import { getService } from "@codingame/monaco-vscode-api";
 import { Schemas } from "@codingame/monaco-vscode-api/vscode/vs/base/common/network";
 import { URI } from "@codingame/monaco-vscode-api/vscode/vs/base/common/uri";
@@ -92,6 +93,30 @@ function fileMatchesFromHits(
   return results;
 }
 
+/** Forward Monaco cancellation to a Wails CancellablePromise. */
+async function awaitCancellable<T>(
+  promise: CancellablePromise<T>,
+  token?: CancellationToken,
+): Promise<T | undefined> {
+  if (token?.isCancellationRequested) {
+    void promise.cancel();
+    return undefined;
+  }
+  const sub = token?.onCancellationRequested(() => {
+    void promise.cancel();
+  });
+  try {
+    return await promise;
+  } catch (err) {
+    if (err instanceof CancelError || token?.isCancellationRequested) {
+      return undefined;
+    }
+    throw err;
+  } finally {
+    sub?.dispose();
+  }
+}
+
 const provider: ISearchResultProvider = {
   async getAIName() {
     return undefined;
@@ -107,15 +132,18 @@ const provider: ISearchResultProvider = {
     let limitHit = false;
     for (const folder of foldersFrom(query)) {
       if (token?.isCancellationRequested) return emptyComplete();
-      const res = await TextSearch({
-        pattern,
-        isRegexp: !!query.contentPattern.isRegExp,
-        isCaseSensitive: !!query.contentPattern.isCaseSensitive,
-        isWordMatch: !!query.contentPattern.isWordMatch,
-        maxResults: query.maxResults ?? 0,
-        folders: [folder],
-      });
-      if (token?.isCancellationRequested) return emptyComplete();
+      const res = await awaitCancellable(
+        TextSearch({
+          pattern,
+          isRegexp: !!query.contentPattern.isRegExp,
+          isCaseSensitive: !!query.contentPattern.isCaseSensitive,
+          isWordMatch: !!query.contentPattern.isWordMatch,
+          maxResults: query.maxResults ?? 0,
+          folders: [folder],
+        }),
+        token,
+      );
+      if (!res || token?.isCancellationRequested) return emptyComplete();
       const part = fileMatchesFromHits(res.hits ?? []);
       if (onProgress) {
         for (const fm of part) onProgress(fm as ISearchProgressItem);
@@ -130,12 +158,15 @@ const provider: ISearchResultProvider = {
   },
   async fileSearch(query: IFileQuery, token?: CancellationToken) {
     if (token?.isCancellationRequested) return emptyComplete();
-    const res = await FileSearch({
-      filePattern: query.filePattern ?? "",
-      maxResults: query.maxResults ?? 0,
-      folders: foldersFrom(query),
-    });
-    if (token?.isCancellationRequested) return emptyComplete();
+    const res = await awaitCancellable(
+      FileSearch({
+        filePattern: query.filePattern ?? "",
+        maxResults: query.maxResults ?? 0,
+        folders: foldersFrom(query),
+      }),
+      token,
+    );
+    if (!res || token?.isCancellationRequested) return emptyComplete();
     const results = (res.hits ?? []).map((h) => new FileMatch(URI.file(h.path)));
     return { ...emptyComplete(), results, limitHit: !!res.limitHit };
   },
@@ -143,8 +174,8 @@ const provider: ISearchResultProvider = {
 
 let registered = false;
 
-/** Replace the JS WorkspaceSearchProvider with Go ripgrep for scheme `file`. */
-export async function registerRipgrepSearch(): Promise<void> {
+/** Replace the JS WorkspaceSearchProvider with Go workspace search for scheme `file`. */
+export async function registerWorkspaceSearch(): Promise<void> {
   if (registered) return;
   registered = true;
   const search = await getService(ISearchService);

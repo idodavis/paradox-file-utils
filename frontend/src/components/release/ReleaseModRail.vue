@@ -1,0 +1,72 @@
+<script setup lang="ts">
+/**
+ * Release load-order rail: index, workspace thumb, origin pill.
+ */
+import { computed } from "vue";
+import type { WorkspaceMod } from "@services/models";
+import OriginBadge from "../OriginBadge.vue";
+import { originHexByOriginId } from "../../ide/rootDecorations";
+
+const props = defineProps<{
+  mods: WorkspaceMod[];
+  selectedId: string;
+  thumbUrls: Record<string, string>;
+}>();
+
+const emit = defineEmits<{
+  select: [id: string];
+}>();
+
+/** Sort by sortOrder then name — not config insertion order. */
+const ordered = computed(() => {
+  const mods = props.mods.slice();
+  mods.sort((a, b) => {
+    const ao = a.sortOrder ?? 0;
+    const bo = b.sortOrder ?? 0;
+    if (ao !== bo) return ao - bo;
+    return (a.name ?? "").localeCompare(b.name ?? "");
+  });
+  return mods;
+});
+</script>
+
+<template>
+  <aside
+    class="flex w-48 shrink-0 flex-col gap-1 overflow-auto
+      border-r border-default p-2"
+  >
+    <p class="px-1 text-xs font-semibold tracking-wide text-muted uppercase">
+      Mods
+    </p>
+    <ul class="space-y-0.5">
+      <li v-for="(mod, i) in ordered" :key="mod.id">
+        <button
+          type="button"
+          class="flex w-full items-center gap-1.5 rounded-sm px-1 py-0.5
+            text-left"
+          :class="mod.id === selectedId ? 'bg-elevated' : ''"
+          :aria-pressed="mod.id === selectedId"
+          @click="emit('select', mod.id)"
+        >
+          <span class="w-4 shrink-0 tabular-nums text-xs text-muted">
+            {{ (mod.sortOrder ?? i) + 1 }}
+          </span>
+          <img
+            v-if="thumbUrls[mod.id]"
+            :src="thumbUrls[mod.id]"
+            alt=""
+            class="size-4 shrink-0 rounded-sm object-cover"
+          >
+          <OriginBadge
+            :label="mod.name"
+            :hex="originHexByOriginId(mod.id)"
+            class="min-w-0"
+          />
+        </button>
+      </li>
+    </ul>
+    <p v-if="!ordered.length" class="px-1 text-xs text-muted">
+      No mods attached.
+    </p>
+  </aside>
+</template>

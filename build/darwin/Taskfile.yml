@@ -28,7 +28,7 @@ tasks:
     summary: Builds the application natively on macOS
     internal: true
     deps:
-      - task: common:fetch:rg
+      - task: common:build:steamugc
         vars:
           GOOS: darwin
           ARCH: "{{.ARCH | default ARCH}}"
@@ -63,7 +63,7 @@ tasks:
     summary: Cross-compiles for macOS using Docker (for Linux/Windows hosts)
     internal: true
     deps:
-      - task: common:fetch:rg
+      - task: common:build:steamugc
         vars:
           GOOS: darwin
           ARCH: "{{.ARCH | default ARCH}}"

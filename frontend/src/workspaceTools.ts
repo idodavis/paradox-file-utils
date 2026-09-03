@@ -9,6 +9,7 @@ export type PageId =
   | "conflicts"
   | "loc-coverage"
   | "patcher"
+  | "release"
   | "workspace-settings"
   | "tools-merge";
 
@@ -46,7 +47,7 @@ export const PAGE_CATALOG: Record<PageId, PageEntry> = {
     description: "Set up a new modding workspace.",
     help: [
       "Walk through game, install, mods, name, and staging.",
-      "Add existing folders or Create new mod (descriptor, empty common/ and events/, readmes, localization stub with UTF-8 BOM).",
+      "Add existing mod to workspace or Create new mod (descriptor, empty common/ and events/, readmes, localization stub with UTF-8 BOM).",
       "Drag mods to set load order (SortOrder). You can change all of this later in Workspace Settings.",
       "After create you land in the IDE so you can open the files you just attached.",
     ],
@@ -68,7 +69,7 @@ export const PAGE_CATALOG: Record<PageId, PageEntry> = {
     description: "Browse event and on_action links in the workspace.",
     keepAlive: true,
     workspace: true,
-    tool: { label: "Event Graph", icon: "i-lucide-git-fork" },
+    tool: { label: "Event Graph", icon: "i-lucide-waypoints" },
     help: [
       "Pick a root event to see what it fires and what fires it. Origins filter which mods (and game files) feed the graph.",
       "Namespace narrows the picker; leave it empty to search every id. Double-click a node to re-root. Drag is temporary until you change layout or root.",
@@ -103,11 +104,25 @@ export const PAGE_CATALOG: Record<PageId, PageEntry> = {
     description: "Patch notes, impact check, and file retarget.",
     keepAlive: true,
     workspace: true,
-    tool: { label: "Patch Center", icon: "i-lucide-git-compare" },
+    tool: { label: "Patch Center", icon: "i-lucide-arrow-left-right" },
     help: [
       "Three tabs: Patch Notes (wiki changelog), Impact Check (heuristic overlap with your mod), and Patcher (file retarget).",
       "Patch Notes is a cached wiki reader. Impact Check is incomplete — wiki bullets miss a lot. Patcher previews diffs in the workbench, then writes accepted files.",
       "This is not a full merge of two mods — use Ad-hoc Merge for that.",
+    ],
+  },
+  release: {
+    title: "Release",
+    description: "Edit the listing and publish to Steam Workshop or Paradox Mods.",
+    keepAlive: true,
+    workspace: true,
+    tool: { label: "Release", icon: "i-lucide-upload" },
+    help: [
+      "This page edits the mod folder: descriptor, mod-description.md, mod-description.bbcode, and changelog/<version>.bbcode.",
+      "Description is Markdown in a rich editor. Save writes the Markdown file and converts to BBCode. Steam always uploads BBCode. Description paths are in Workspace Settings.",
+      "Steam staging skips dotfiles (except .metadata/), .gitignore, patterns in .gitignore, and Workshop ignore patterns from Settings.",
+      "Steam: Steam client must be running and signed in as the Workshop owner. New items stay private until you set them Public on Workshop. Do not run a local copy and a Workshop subscribe of the same mod together.",
+      "Paradox Mods has no API. Copy BBCode for the launcher, or Copy Markdown. The site often strips formatting. PMT does not write a sibling Documents/…/mod/<name>.mod pointer.",
     ],
   },
   "workspace-settings": {
@@ -116,7 +131,7 @@ export const PAGE_CATALOG: Record<PageId, PageEntry> = {
     workspace: true,
     help: [
       "Overview: name, default loc language, whether the IDE remembers open files, and which page Library should open.",
-      "Game: pick or add an install and pin a version. Changing install rebuilds language intelligence. Mods: attach an existing folder or create a new skeleton, then color, reorder, or detach. Detach does not delete the folder on disk. Staging: where patched output lands.",
+      "Game: pick or add an install and pin a version. Changing install rebuilds language intelligence. Mods: attach an existing folder or create a new skeleton, then color, reorder, or detach. Detach does not delete the folder on disk. Per-mod description file paths and Workshop ignore live here. Staging: where patched output lands.",
       "Remove this workspace deletes the PMT record only. Reset all data lives on the Library page. Appearance (scale, editor font, which tools show) lives in the header Display control, not here.",
     ],
   },

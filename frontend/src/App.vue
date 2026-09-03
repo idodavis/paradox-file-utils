@@ -119,7 +119,7 @@ const workspaceDropdownItems = computed<DropdownMenuItem[][]>(() => {
       onSelect: () => router.push({ name: "library" })
     },
     {
-      label: "Ad-hoc Merge", icon: "i-lucide-git-merge",
+      label: "Ad-hoc Merge", icon: "i-lucide-merge",
       onSelect: () => router.push({ name: "tools-merge" })
     },
   ]);

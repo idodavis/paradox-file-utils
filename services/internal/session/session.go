@@ -261,9 +261,65 @@ func (s *Session) reindexLocked(path, rel, text string, parsed jomini.Result) {
 	s.viaDirty = true
 }
 
+// mapKeysMatching returns map keys that SamePath-match path.
+func mapKeysMatching[V any](m map[string]V, path string) []string {
+	var keys []string
+	for k := range m {
+		if SamePath(k, path) {
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}
+
 // dropPathLocked removes every index entry sourced from path.
+// File maps are keyed by CanonPath; harvest and Monaco may still disagree on
+// case until CanonPath folds them, so every SamePath alias is dropped.
 func (s *Session) dropPathLocked(path string) {
 	path = CanonPath(path)
+	seen := map[string]bool{}
+	var keys []string
+	add := func(k string) {
+		if k == "" || seen[k] {
+			return
+		}
+		seen[k] = true
+		keys = append(keys, k)
+	}
+	for _, k := range mapKeysMatching(s.defsByFile, path) {
+		add(k)
+	}
+	for _, k := range mapKeysMatching(s.refsByFile, path) {
+		add(k)
+	}
+	for _, k := range mapKeysMatching(s.edgesByFile, path) {
+		add(k)
+	}
+	add(path)
+	for _, key := range keys {
+		s.dropFileMapsLocked(key)
+	}
+	s.locRefs = removeRefsPath(s.locRefs, path)
+	for _, k := range mapKeysMatching(s.lastIndexed, path) {
+		delete(s.lastIndexed, k)
+	}
+	if s.locByLang == nil {
+		return
+	}
+	for lang, m := range s.locByLang {
+		for k, v := range m {
+			if SamePath(v.Path, path) {
+				delete(m, k)
+			}
+		}
+		if len(m) == 0 {
+			delete(s.locByLang, lang)
+		}
+	}
+}
+
+// dropFileMapsLocked removes defs/refs/edges stored under one file-map key.
+func (s *Session) dropFileMapsLocked(path string) {
 	defs := s.defsByFile[path]
 	for _, d := range defs {
 		s.defsByKey[d.Key] = removeDefsPath(s.defsByKey[d.Key], path)
@@ -282,7 +338,6 @@ func (s *Session) dropPathLocked(path string) {
 		}
 	}
 	delete(s.refsByFile, path)
-	s.locRefs = removeRefsPath(s.locRefs, path)
 	for _, e := range s.edgesByFile[path] {
 		s.edgesByFrom[e.From] = removeEdgesPath(s.edgesByFrom[e.From], path)
 		if len(s.edgesByFrom[e.From]) == 0 {
@@ -294,18 +349,6 @@ func (s *Session) dropPathLocked(path string) {
 		}
 	}
 	delete(s.edgesByFile, path)
-	if s.locByLang != nil {
-		for lang, m := range s.locByLang {
-			for k, v := range m {
-				if SamePath(v.Path, path) {
-					delete(m, k)
-				}
-			}
-			if len(m) == 0 {
-				delete(s.locByLang, lang)
-			}
-		}
-	}
 }
 
 func (s *Session) defsOf(key string) []catalog.Def {

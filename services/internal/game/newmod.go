@@ -75,7 +75,7 @@ type NewModOpts struct {
 }
 
 // WriteNewMod creates root with a descriptor, empty common/ and events/, loc stub,
-// readmes, and an optional thumbnail copied in with picture= on the descriptor.
+// description files, and an optional thumbnail copied in with picture= on the descriptor.
 func WriteNewMod(opts NewModOpts) error {
 	info := Get(opts.GameID)
 	if info == nil {
@@ -107,7 +107,7 @@ func WriteNewMod(opts NewModOpts) error {
 		return err
 	}
 	body := descOrName(opts.Description, name)
-	if err := writeReadmes(root, name, body); err != nil {
+	if err := writeDescriptions(root, name, body); err != nil {
 		return err
 	}
 	lang := locLangOrEnglish(opts.LocLang)
@@ -120,13 +120,13 @@ func WriteNewMod(opts NewModOpts) error {
 	return os.WriteFile(filepath.Join(locDir, locName), locBody, 0o644)
 }
 
-func writeReadmes(root, name, description string) error {
+func writeDescriptions(root, name, description string) error {
 	md := "# " + name + "\n\n" + description + "\n"
 	bb := "[b]" + name + "[/b]\n\n" + description + "\n"
-	if err := os.WriteFile(filepath.Join(root, "readme.md"), []byte(md), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, DescMdName), []byte(md), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(root, "readme.bbcode"), []byte(bb), 0o644)
+	return os.WriteFile(filepath.Join(root, DescBbName), []byte(bb), 0o644)
 }
 
 func copyThumbnail(root, src string) (string, error) {

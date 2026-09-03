@@ -398,6 +398,26 @@ func TestOverrideRows(t *testing.T) {
 	}
 }
 
+func TestOverrideSitesDedupe(t *testing.T) {
+	t.Parallel()
+	s := twoMods(t, "ck3",
+		"brave = { category = personality }\n",
+		"brave = { category = personality }\n")
+	path := s.ModDefsOf("brave")[0].Path
+	twins := []catalog.Def{
+		{Origin: "modA", Path: path, Line: 1},
+		{Origin: "modA", Path: path, Line: 1},
+		{Origin: "modA", Path: path, Line: 9},
+	}
+	got := overrideSites(s, twins)
+	if len(got) != 2 {
+		t.Fatalf("sites = %d, want 2 (same-line twin dropped)", len(got))
+	}
+	if got[0].Line == got[1].Line {
+		t.Fatalf("expected distinct lines, got %+v", got)
+	}
+}
+
 func fanoutBody() string {
 	var b strings.Builder
 	b.WriteString("r.1 = {\n\ttype = character_event\n\tevents = {\n")

@@ -39,20 +39,20 @@ func TestWriteNewModCK3(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "events")); err != nil {
 		t.Fatal(err)
 	}
-	md, err := os.ReadFile(filepath.Join(root, "readme.md"))
+	md, err := os.ReadFile(filepath.Join(root, DescMdName))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(md), "# My Cool Mod") ||
 		!strings.Contains(string(md), "My Cool Mod") {
-		t.Fatalf("readme.md: %s", md)
+		t.Fatalf("mod-description.md: %s", md)
 	}
-	bb, err := os.ReadFile(filepath.Join(root, "readme.bbcode"))
+	bb, err := os.ReadFile(filepath.Join(root, DescBbName))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(bb), "[b]My Cool Mod[/b]") {
-		t.Fatalf("readme.bbcode: %s", bb)
+		t.Fatalf("mod-description.bbcode: %s", bb)
 	}
 	loc := filepath.Join(root, "localization", "english", "my_cool_mod_l_english.yml")
 	locRaw, err := os.ReadFile(loc)
@@ -91,12 +91,12 @@ func TestWriteNewModVic3OmitsLatest(t *testing.T) {
 	if strings.Contains(s, "supported_game_version") {
 		t.Fatalf("latest must omit pin: %s", s)
 	}
-	md, err := os.ReadFile(filepath.Join(root, "readme.md"))
+	md, err := os.ReadFile(filepath.Join(root, DescMdName))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(md), "A desc") {
-		t.Fatalf("readme.md: %s", md)
+		t.Fatalf("mod-description.md: %s", md)
 	}
 	loc := filepath.Join(root, "localization", "french", "v_l_french.yml")
 	if _, err := os.Stat(loc); err != nil {

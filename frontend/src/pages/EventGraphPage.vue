@@ -98,7 +98,7 @@ const graphCanvas = ref<{ recenter: () => Promise<void> } | null>(null);
 
 const layoutItems = [
   { label: "After", value: "lr", icon: "i-lucide-arrow-right" },
-  { label: "Tree", value: "tree", icon: "i-lucide-git-fork" },
+  { label: "Tree", value: "tree", icon: "i-lucide-waypoints" },
 ];
 
 const graphParams = computed((): EventGraphParams => {

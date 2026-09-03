@@ -12,6 +12,8 @@ jobs:
   build-and-release:
     runs-on: ubuntu-latest
     environment: Production
+    env:
+      STEAMWORKS_GPG_PASSPHRASE: ${{ secrets.STEAMWORKS_GPG_PASSPHRASE }}
 
     steps:
       - uses: actions/checkout@v4

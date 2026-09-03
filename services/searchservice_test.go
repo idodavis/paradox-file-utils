@@ -1,12 +1,14 @@
-// searchservice_test.go covers Find-in-Files globs: include, exclude, and folder isolation.
+// searchservice_test.go covers Find-in-Files globs, filters, and cancellation.
 package services
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeSearchTree(t *testing.T, root string) {
@@ -36,9 +38,6 @@ func writeSearchTree(t *testing.T, root string) {
 
 func TestTextSearchIncludeEvents(t *testing.T) {
 	t.Parallel()
-	if _, err := rgPath(); err != nil {
-		t.Skip(err.Error())
-	}
 	root := t.TempDir()
 	writeSearchTree(t, root)
 	ss := &SearchService{}
@@ -64,9 +63,6 @@ func TestTextSearchIncludeEvents(t *testing.T) {
 
 func TestTextSearchExcludeTxt(t *testing.T) {
 	t.Parallel()
-	if _, err := rgPath(); err != nil {
-		t.Skip(err.Error())
-	}
 	root := t.TempDir()
 	writeSearchTree(t, root)
 	ss := &SearchService{}
@@ -92,9 +88,6 @@ func TestTextSearchExcludeTxt(t *testing.T) {
 
 func TestTextSearchFoldersDoNotLeakGlobs(t *testing.T) {
 	t.Parallel()
-	if _, err := rgPath(); err != nil {
-		t.Skip(err.Error())
-	}
 	a := t.TempDir()
 	b := t.TempDir()
 	writeSearchTree(t, a)
@@ -133,9 +126,6 @@ func TestTextSearchFoldersDoNotLeakGlobs(t *testing.T) {
 
 func TestTextSearchEmptyIncludeUsesPassedExcludes(t *testing.T) {
 	t.Parallel()
-	if _, err := rgPath(); err != nil {
-		t.Skip(err.Error())
-	}
 	root := t.TempDir()
 	writeSearchTree(t, root)
 	ss := &SearchService{}
@@ -156,5 +146,176 @@ func TestTextSearchEmptyIncludeUsesPassedExcludes(t *testing.T) {
 	}
 	if len(res.Hits) == 0 {
 		t.Fatal("expected script hits")
+	}
+}
+
+func TestTextSearchSkipsGitDir(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	gitFile := filepath.Join(root, ".git", "objects", "secret.txt")
+	if err := os.MkdirAll(filepath.Dir(gitFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(gitFile, []byte("hidden_token\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vis := filepath.Join(root, "visible.txt")
+	if err := os.WriteFile(vis, []byte("hidden_token visible\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ss := &SearchService{}
+	res, err := ss.TextSearch(context.Background(), TextSearchQuery{
+		Pattern: "hidden_token",
+		Folders: []TextSearchFolder{{Path: root}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 1 {
+		t.Fatalf("hits = %+v", res.Hits)
+	}
+	if strings.Contains(filepath.ToSlash(res.Hits[0].Path), "/.git/") {
+		t.Fatalf("searched .git: %s", res.Hits[0].Path)
+	}
+}
+
+func TestTextSearchSkipsNULFile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	nul := filepath.Join(root, "binary.dat")
+	data := append(append([]byte("findme"), 0), []byte("tail")...)
+	if err := os.WriteFile(nul, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ok := filepath.Join(root, "ok.txt")
+	if err := os.WriteFile(ok, []byte("findme ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ss := &SearchService{}
+	res, err := ss.TextSearch(context.Background(), TextSearchQuery{
+		Pattern: "findme",
+		Folders: []TextSearchFolder{{Path: root}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 1 {
+		t.Fatalf("hits = %+v", res.Hits)
+	}
+	if strings.HasSuffix(res.Hits[0].Path, "binary.dat") {
+		t.Fatal("NUL file was searched")
+	}
+}
+
+func TestTextSearchRegexpWordCase(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	body := "TOK only\npartialtoken\nanother TOK\n"
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ss := &SearchService{}
+	res, err := ss.TextSearch(context.Background(), TextSearchQuery{
+		Pattern:         "tok",
+		IsCaseSensitive: true,
+		IsWordMatch:     true,
+		Folders:         []TextSearchFolder{{Path: root}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 0 {
+		t.Fatalf("case-sensitive word hits = %+v", res.Hits)
+	}
+	res, err = ss.TextSearch(context.Background(), TextSearchQuery{
+		Pattern:     "tok",
+		IsWordMatch: true,
+		Folders:     []TextSearchFolder{{Path: root}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 2 {
+		t.Fatalf("case-insensitive word hits = %+v", res.Hits)
+	}
+	res, err = ss.TextSearch(context.Background(), TextSearchQuery{
+		Pattern:  `tok.+only`,
+		IsRegexp: true,
+		Folders:  []TextSearchFolder{{Path: root}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 1 {
+		t.Fatalf("regex hits = %+v", res.Hits)
+	}
+}
+
+func TestTextSearchInvalidRegex(t *testing.T) {
+	t.Parallel()
+	ss := &SearchService{}
+	_, err := ss.TextSearch(context.Background(), TextSearchQuery{
+		Pattern:  "[",
+		IsRegexp: true,
+		Folders:  []TextSearchFolder{{Path: t.TempDir()}},
+	})
+	if err == nil {
+		t.Fatal("expected invalid pattern error")
+	}
+}
+
+func TestFileSearchNeedleAndGlob(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeSearchTree(t, root)
+	ss := &SearchService{}
+	res, err := ss.FileSearch(context.Background(), FileSearchQuery{
+		FilePattern: "hit",
+		Folders: []TextSearchFolder{{
+			Path:     root,
+			Includes: []string{"**/events/**"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 2 {
+		t.Fatalf("file hits = %+v", res.Hits)
+	}
+	for _, h := range res.Hits {
+		if !strings.Contains(filepath.ToSlash(h.Path), "/events/") {
+			t.Fatalf("leaked %s", h.Path)
+		}
+	}
+}
+
+func TestTextSearchCancel(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for i := range 40 {
+		name := filepath.Join(root, "dir", strings.Repeat("a", i%5+1), fmt.Sprintf("f%d.txt", i))
+		if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := strings.Repeat("needle\n", 200)
+		if err := os.WriteFile(name, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+	}()
+	ss := &SearchService{}
+	res, err := ss.TextSearch(ctx, TextSearchQuery{
+		Pattern: "needle",
+		Folders: []TextSearchFolder{{Path: root}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Hits) > 8000 {
+		t.Fatal("cancel did not stop search promptly")
 	}
 }

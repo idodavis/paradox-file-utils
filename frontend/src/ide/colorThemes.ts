@@ -15,7 +15,7 @@ import Color from "colorjs.io";
 
 /** Palette families for `data-theme`. */
 export const PMT_THEME_FAMILIES = [
-  "pmt", "catppuccin", "one", "monokai", "github", "gruvbox", "horizon",
+  "pmt", "ck3", "eu5", "vic3", "catppuccin", "one", "github", "horizon",
 ] as const;
 /** Named palette family. */
 export type PmtThemeFamily = (typeof PMT_THEME_FAMILIES)[number];
@@ -25,15 +25,15 @@ export type ColorAppearance = "dark" | "light";
 export type PmtThemeName = `${PmtThemeFamily}-${ColorAppearance}`;
 /** All contributed VS Code color themes. */
 export const PMT_THEME_NAMES = [
-  "pmt-dark", "pmt-light", "catppuccin-dark", "catppuccin-light",
-  "one-dark", "one-light", "monokai-dark", "monokai-light",
-  "github-dark", "github-light", "gruvbox-dark", "gruvbox-light",
-  "horizon-dark", "horizon-light",
+  "pmt-dark", "pmt-light", "ck3-dark", "ck3-light",
+  "eu5-dark", "eu5-light", "vic3-dark", "vic3-light",
+  "catppuccin-dark", "catppuccin-light", "one-dark", "one-light",
+  "github-dark", "github-light", "horizon-dark", "horizon-light",
 ] as const satisfies readonly PmtThemeName[];
 
 const FAMILY_LABELS: Record<PmtThemeFamily, string> = {
-  pmt: "PMT", catppuccin: "Catppuccin", one: "One",
-  monokai: "Monokai", github: "GitHub", gruvbox: "Gruvbox", horizon: "Horizon",
+  pmt: "PMT", ck3: "CK3", eu5: "EU5", vic3: "Vic3",
+  catppuccin: "Catppuccin", one: "One", github: "GitHub", horizon: "Horizon",
 };
 
 /** Display label for a palette family. */
@@ -103,6 +103,48 @@ const SEEDS: Record<PmtThemeName, ThemeSeed> = {
     buttonHover: "#b8911c", badgeFg: "#1b2030", remoteBg: "#1a9e74",
     remoteFg: "#f4efe3", inactive: "#7c4dbd",
   },
+  "ck3-dark": {
+    fg: "#ded6bf", accent: "#d19260", link: "#829ca6", error: "#b23131",
+    info: "#576071", warning: "#d1c480", success: "#6e7940", editorBg: "#141416",
+    chrome: "#1a1a21", chrome2: "#242428", input: "#101012", button: "#d19260",
+    buttonHover: "#d1c480", badgeFg: "#1a1a21", remoteBg: "#7f5f45",
+    remoteFg: "#ded6bf", inactive: "#ad8f69",
+  },
+  "ck3-light": {
+    fg: "#3a3428", accent: "#1a1a21", link: "#7a1f28", error: "#a32b22",
+    info: "#3a4a5c", warning: "#8a7040", success: "#4a5c30", editorBg: "#f6f3eb",
+    chrome: "#f2efe7", chrome2: "#e8e4d8", input: "#faf8f3", button: "#1a1a21",
+    buttonHover: "#2d2d32", badgeFg: "#f6f3eb", remoteBg: "#7a1f28",
+    remoteFg: "#f6f3eb", inactive: "#7a1f28",
+  },
+  "eu5-dark": {
+    fg: "#f0ead9", accent: "#c5a059", link: "#4ebad6", error: "#e36166",
+    info: "#4ebad6", warning: "#f0d999", success: "#5db149", editorBg: "#12161f",
+    chrome: "#1a222e", chrome2: "#222a38", input: "#10141c", button: "#ad8f69",
+    buttonHover: "#d1b37d", badgeFg: "#12161f", remoteBg: "#1a7380",
+    remoteFg: "#f0ead9", inactive: "#36595f",
+  },
+  "eu5-light": {
+    fg: "#1a222e", accent: "#8c5e16", link: "#1a3358", error: "#b03a40",
+    info: "#1a3358", warning: "#8a7040", success: "#2e7a3a", editorBg: "#f5f3ee",
+    chrome: "#f0eee8", chrome2: "#e6e3db", input: "#faf9f6", button: "#8c5e16",
+    buttonHover: "#6e4a12", badgeFg: "#f5f3ee", remoteBg: "#1a3358",
+    remoteFg: "#f5f3ee", inactive: "#1a2e4a",
+  },
+  "vic3-dark": {
+    fg: "#e4dcd0", accent: "#8c3c4c", link: "#c5a66d", error: "#e05757",
+    info: "#69abbd", warning: "#ffac74", success: "#63ab54", editorBg: "#141618",
+    chrome: "#2c3233", chrome2: "#262c2d", input: "#111313", button: "#3e6b52",
+    buttonHover: "#4a7a5c", badgeFg: "#e4dcd0", remoteBg: "#541b2b",
+    remoteFg: "#e4dcd0", inactive: "#3e6b52",
+  },
+  "vic3-light": {
+    fg: "#1e2224", accent: "#6b2434", link: "#2d5a40", error: "#b03a3a",
+    info: "#2a6a78", warning: "#a06a30", success: "#3e6b52", editorBg: "#e8e4dc",
+    chrome: "#ddd6cc", chrome2: "#cfc8bc", input: "#f2efe8", button: "#3e6b52",
+    buttonHover: "#2d5a27", badgeFg: "#e8e4dc", remoteBg: "#541b2b",
+    remoteFg: "#e8e4dc", inactive: "#3e6b52",
+  },
   "catppuccin-dark": {
     fg: "#cdd6f4", accent: "#cba6f7", link: "#89b4fa", error: "#f38ba8",
     info: "#89dceb", warning: "#f9e2af", success: "#a6e3a1", editorBg: "#1e1e2e",
@@ -131,20 +173,6 @@ const SEEDS: Record<PmtThemeName, ThemeSeed> = {
     buttonHover: "#2d5fd0", badgeFg: "#fafafa", remoteBg: "#50a14f",
     remoteFg: "#fafafa", inactive: "#a626a4",
   },
-  "monokai-dark": {
-    fg: "#f8f8f2", accent: "#f92672", link: "#66d9ef", error: "#f92672",
-    info: "#66d9ef", warning: "#e6db74", success: "#a6e22e", editorBg: "#272822",
-    chrome: "#1e1f1c", chrome2: "#141511", input: "#3e3d32", button: "#f92672",
-    buttonHover: "#fd971f", badgeFg: "#272822", remoteBg: "#a6e22e",
-    remoteFg: "#272822", inactive: "#ae81ff",
-  },
-  "monokai-light": {
-    fg: "#272822", accent: "#d01050", link: "#0088a8", error: "#d01050",
-    info: "#0088a8", warning: "#a09020", success: "#5a8a10", editorBg: "#f8f8f2",
-    chrome: "#eeeede", chrome2: "#e0e0d0", input: "#ffffff", button: "#d01050",
-    buttonHover: "#c56a00", badgeFg: "#f8f8f2", remoteBg: "#5a8a10",
-    remoteFg: "#f8f8f2", inactive: "#7b5ea7",
-  },
   "github-dark": {
     fg: "#e6edf3", accent: "#2f81f7", link: "#2f81f7", error: "#f85149",
     info: "#2f81f7", warning: "#d29922", success: "#3fb950", editorBg: "#0d1117",
@@ -158,20 +186,6 @@ const SEEDS: Record<PmtThemeName, ThemeSeed> = {
     chrome: "#f6f8fa", chrome2: "#d0d7de", input: "#ffffff", button: "#1f883d",
     buttonHover: "#1a7f37", badgeFg: "#ffffff", remoteBg: "#0969da",
     remoteFg: "#ffffff", inactive: "#8250df",
-  },
-  "gruvbox-dark": {
-    fg: "#ebdbb2", accent: "#fe8019", link: "#83a598", error: "#fb4934",
-    info: "#83a598", warning: "#fabd2f", success: "#b8bb26", editorBg: "#282828",
-    chrome: "#1d2021", chrome2: "#3c3836", input: "#1d2021", button: "#fe8019",
-    buttonHover: "#d65d0e", badgeFg: "#1d2021", remoteBg: "#458588",
-    remoteFg: "#ebdbb2", inactive: "#d3869b",
-  },
-  "gruvbox-light": {
-    fg: "#3c3836", accent: "#af3a03", link: "#076678", error: "#9d0006",
-    info: "#076678", warning: "#b57614", success: "#79740e", editorBg: "#f4f3ef",
-    chrome: "#ecebe6", chrome2: "#e4e2dc", input: "#f8f7f4", button: "#af3a03",
-    buttonHover: "#9d0006", badgeFg: "#f4f3ef", remoteBg: "#427b58",
-    remoteFg: "#f4f3ef", inactive: "#8f3f71",
   },
   "horizon-dark": {
     fg: "#e0d6d1", accent: "#e95678", link: "#f09383", error: "#e95678",

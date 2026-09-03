@@ -5,6 +5,8 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -67,6 +69,35 @@ func TestDidOpenDropsDiskRefs(t *testing.T) {
 	s.DidOpen(ev, jomini.Normalize(crlf))
 	if n := len(s.RefsTo("k.t")); n != 1 {
 		t.Fatalf("k.t refs after DidOpen = %d, want 1", n)
+	}
+}
+
+func TestDidOpenDropsCaseMismatch(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("case-insensitive path keys are Windows-only")
+	}
+	body := "namespace = test\n\ntest.1 = {\n\ttitle = k.t\n}\n"
+	root := writeFiles(t, map[string]string{"events/x.txt": body})
+	ev := filepath.Join(root, "events", "x.txt")
+	s := NewWithLoc("ws", "ck3", "english", nil, nil, []catalog.ModInput{
+		{Origin: "mod", Root: root, Order: 0},
+	})
+	if n := len(s.ModDefsOf("test.1")); n != 1 {
+		t.Fatalf("harvest defs = %d, want 1", n)
+	}
+	alt := strings.ToLower(ev)
+	if alt == ev {
+		alt = strings.ToUpper(ev[:1]) + ev[1:]
+		if SamePath(alt, ev) && alt == ev {
+			t.Skip("could not build a case-mismatched path")
+		}
+	}
+	s.DidOpen(alt, jomini.Normalize(body))
+	if n := len(s.ModDefsOf("test.1")); n != 1 {
+		t.Fatalf("defs after DidOpen = %d, want 1", n)
+	}
+	if n := len(s.RefsTo("k.t")); n != 1 {
+		t.Fatalf("refs after DidOpen = %d, want 1", n)
 	}
 }
 

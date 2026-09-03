@@ -43,7 +43,7 @@ tasks:
     summary: Builds the application natively on Linux
     internal: true
     deps:
-      - task: common:fetch:rg
+      - task: common:build:steamugc
         vars:
           GOOS: linux
           ARCH: "{{.ARCH | default ARCH}}"
@@ -76,7 +76,7 @@ tasks:
     summary: Builds for Linux using Docker (for non-Linux hosts or when no C compiler available)
     internal: true
     deps:
-      - task: common:fetch:rg
+      - task: common:build:steamugc
         vars:
           GOOS: linux
           ARCH: '{{.ARCH | default "amd64"}}'

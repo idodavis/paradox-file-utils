@@ -121,7 +121,6 @@ func (w *WorkspaceService) GetWorkspace(id string) (*Workspace, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace not found")
 	}
-	sortWorkspaceMods(ws.Mods)
 	return ws, nil
 }
 
@@ -329,9 +328,9 @@ func (w *WorkspaceService) ReorderWorkspaceMods(workspaceID string, modIDs []str
 	return w.rebuildSession(workspaceID)
 }
 
-// UpdateWorkspaceMod updates a mod's name and optional color/thumbnail.
+// UpdateWorkspaceMod updates listing paths, ignore text, name, color, and thumbnail.
 func (w *WorkspaceService) UpdateWorkspaceMod(
-	workspaceID, modID, name, color, thumbnail string,
+	workspaceID, modID, name, color, thumbnail, descMdRel, descBbRel, workshopIgnore string,
 ) error {
 	return w.Store.Mutate(func(c *Config) error {
 		ws := findWorkspace(c, workspaceID)
@@ -339,17 +338,133 @@ func (w *WorkspaceService) UpdateWorkspaceMod(
 			return fmt.Errorf("workspace not found")
 		}
 		for i := range ws.Mods {
+			if ws.Mods[i].ID != modID {
+				continue
+			}
+			if name != "" {
+				ws.Mods[i].Name = name
+			}
+			ws.Mods[i].Color = color
+			ws.Mods[i].Thumbnail = thumbnail
+			md, err := listingRel(ws.Mods[i].Path, descMdRel)
+			if err != nil {
+				return err
+			}
+			bb, err := listingRel(ws.Mods[i].Path, descBbRel)
+			if err != nil {
+				return err
+			}
+			ws.Mods[i].DescMdRel = md
+			ws.Mods[i].DescBbRel = bb
+			ws.Mods[i].WorkshopIgnore = workshopIgnore
+			return nil
+		}
+		return fmt.Errorf("mod not found")
+	})
+}
+
+const workshopIgnoreName = ".workshop-ignore"
+
+// ExportWorkshopIgnore writes the saved ignore text to .workshop-ignore in the mod root.
+func (w *WorkspaceService) ExportWorkshopIgnore(workspaceID, modID string) error {
+	_, mod, err := w.modRef(workspaceID, modID)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(
+		filepath.Join(mod.Path, workshopIgnoreName),
+		[]byte(mod.WorkshopIgnore),
+		0o644,
+	)
+}
+
+// ImportWorkshopIgnore reads .workshop-ignore into workspace config and returns the text.
+func (w *WorkspaceService) ImportWorkshopIgnore(workspaceID, modID string) (string, error) {
+	_, mod, err := w.modRef(workspaceID, modID)
+	if err != nil {
+		return "", err
+	}
+	raw, err := os.ReadFile(filepath.Join(mod.Path, workshopIgnoreName))
+	if err != nil {
+		return "", err
+	}
+	text := string(raw)
+	err = w.Store.Mutate(func(c *Config) error {
+		ws := findWorkspace(c, workspaceID)
+		if ws == nil {
+			return fmt.Errorf("workspace not found")
+		}
+		for i := range ws.Mods {
 			if ws.Mods[i].ID == modID {
-				if name != "" {
-					ws.Mods[i].Name = name
-				}
-				ws.Mods[i].Color = color
-				ws.Mods[i].Thumbnail = thumbnail
+				ws.Mods[i].WorkshopIgnore = text
 				return nil
 			}
 		}
 		return fmt.Errorf("mod not found")
 	})
+	if err != nil {
+		return "", err
+	}
+	return text, nil
+}
+
+func (w *WorkspaceService) modRef(workspaceID, modID string) (*Workspace, *WorkspaceMod, error) {
+	var ws Workspace
+	var mod WorkspaceMod
+	var foundWS, foundMod bool
+	w.Store.Read(func(c *Config) {
+		w := findWorkspace(c, workspaceID)
+		if w == nil {
+			return
+		}
+		ws = *w
+		foundWS = true
+		for i := range w.Mods {
+			if w.Mods[i].ID == modID {
+				mod = w.Mods[i]
+				foundMod = true
+				return
+			}
+		}
+	})
+	if !foundWS {
+		return nil, nil, fmt.Errorf("workspace not found")
+	}
+	if !foundMod {
+		return nil, nil, fmt.Errorf("mod not found")
+	}
+	return &ws, &mod, nil
+}
+
+// listingRel stores a description path relative to the mod root. Empty keeps the default.
+func listingRel(root, chosen string) (string, error) {
+	chosen = strings.TrimSpace(chosen)
+	if chosen == "" {
+		return "", nil
+	}
+	abs := chosen
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(root, filepath.FromSlash(chosen))
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("description file: %w", err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("description path is a directory")
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("description file must be inside the mod folder")
+	}
+	slash := filepath.ToSlash(rel)
+	if slash == game.DescMdName || slash == game.DescBbName {
+		return "", nil
+	}
+	return slash, nil
 }
 
 // SaveIdeSession stores open editor paths for a workspace.
@@ -372,6 +487,7 @@ var legalDefaultTools = map[string]bool{
 	"conflicts":     true,
 	"loc-coverage":  true,
 	"patcher":       true,
+	"release":       true,
 }
 
 // UpdateWorkspacePrefs sets IDE persist, default landing page, and origin colors.
