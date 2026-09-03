@@ -1,4 +1,4 @@
-// sanitize.go allowlists wiki HTML and strips chrome (TOC, cites, [top] links).
+// sanitize.go allowlists wiki HTML and strips chrome via drop tables.
 package wiki
 
 import (
@@ -10,124 +10,119 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
+const dumpTableRows = 20
+
+var citeMark = regexp.MustCompile(`^(\[\d+\])+$`)
+
+// Drop / keep tables. Add wiki chrome here instead of a new helper.
 var (
-	moddingHead = regexp.MustCompile(`(?i)^(user )?modding$`)
-	dropClass   = regexp.MustCompile(`(?i)(navbox|thumb|infobox|mw-editsection|noprint|metadata|\btoc\b|mw-portlet-toc|sidebar-toc|\breferences?\b)`)
-	dropHead    = regexp.MustCompile(`(?i)^(table of )?contents$|^see also$|^references$|^external links$|^further reading$`)
-	moveHead    = regexp.MustCompile(`(?i)^scripting tools$`)
-	citeFrag    = regexp.MustCompile(`(?i)^(cite_note|cite_ref)`)
-	citeMark    = regexp.MustCompile(`^(\[\d+\])+$`)
+	allowed = set(
+		atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6,
+		atom.P, atom.Br, atom.Hr, atom.Blockquote,
+		atom.Ul, atom.Ol, atom.Li, atom.Dl, atom.Dt, atom.Dd,
+		atom.Table, atom.Thead, atom.Tbody, atom.Tfoot,
+		atom.Tr, atom.Th, atom.Td, atom.Caption,
+		atom.Pre, atom.Code, atom.A,
+		atom.Strong, atom.Em, atom.B, atom.I,
+		atom.Sup, atom.Sub, atom.Small,
+	)
+	dropTag = set(
+		atom.Img, atom.Figure, atom.Style, atom.Script,
+		atom.Noscript, atom.Link, atom.Meta,
+	)
+	rank = map[atom.Atom]int{
+		atom.H1: 1, atom.H2: 2, atom.H3: 3,
+		atom.H4: 4, atom.H5: 5, atom.H6: 6,
+	}
+	dropClass = set(
+		"navbox", "thumb", "infobox", "mw-editsection",
+		"noprint", "metadata", "toc", "mw-portlet-toc",
+		"sidebar-toc", "reference", "references",
+	)
+	dropHead = set(
+		"contents", "table of contents", "see also",
+		"references", "external links", "further reading",
+	)
+	moveHead    = set("scripting tools")
+	keepModding = set("modding", "user modding")
+	dropID      = set("toc")
+	dropText    = set("[top]")
+	dropHash    = set("top")
+	citePrefix  = []string{"cite_note", "cite_ref"}
+	keepAttr    = map[atom.Atom][]string{
+		atom.Td: {"colspan", "rowspan"},
+		atom.Th: {"colspan", "rowspan"},
+	}
 )
 
-var allowed = map[atom.Atom]bool{
-	atom.H1: true, atom.H2: true, atom.H3: true, atom.H4: true, atom.H5: true, atom.H6: true,
-	atom.P: true, atom.Br: true, atom.Hr: true, atom.Blockquote: true,
-	atom.Ul: true, atom.Ol: true, atom.Li: true, atom.Dl: true, atom.Dt: true, atom.Dd: true,
-	atom.Table: true, atom.Thead: true, atom.Tbody: true, atom.Tfoot: true,
-	atom.Tr: true, atom.Th: true, atom.Td: true, atom.Caption: true,
-	atom.Pre: true, atom.Code: true, atom.A: true,
-	atom.Strong: true, atom.Em: true, atom.B: true, atom.I: true,
-	atom.Sup: true, atom.Sub: true, atom.Small: true,
+func set[K comparable](ks ...K) map[K]bool {
+	m := make(map[K]bool, len(ks))
+	for _, k := range ks {
+		m[k] = true
+	}
+	return m
 }
 
-func classOf(n *html.Node) string {
-	for _, a := range n.Attr {
-		if a.Key == "class" {
-			return a.Val
-		}
+func lower(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+func frag(href string) string {
+	if i := strings.IndexByte(href, '#'); i >= 0 {
+		return href[i+1:]
 	}
 	return ""
 }
 
-func dropNode(n *html.Node) bool {
-	if n.Type != html.ElementNode {
-		return false
-	}
-	switch n.DataAtom {
-	case atom.Img, atom.Figure, atom.Style, atom.Script, atom.Noscript, atom.Link, atom.Meta:
-		return true
-	}
-	if strings.EqualFold(attrVal(n, "id"), "toc") || citeID(attrVal(n, "id")) {
-		return true
-	}
-	if citeMarker(n) || topLink(n) || (n.DataAtom == atom.A && citeHref(attrVal(n, "href"))) {
-		return true
-	}
-	return dropClass.MatchString(classOf(n))
-}
-
-func citeID(id string) bool {
-	return citeFrag.MatchString(id)
-}
-
-func citeHref(href string) bool {
-	h := strings.TrimSpace(href)
-	if i := strings.IndexByte(h, '#'); i >= 0 {
-		h = h[i+1:]
-	}
-	return citeID(h)
-}
-
-func pruneCites(root *html.Node) {
-	if root == nil {
-		return
-	}
-	var next *html.Node
-	for c := root.FirstChild; c != nil; c = next {
-		next = c.NextSibling
-		if dropCiteNode(c) {
-			root.RemoveChild(c)
-			continue
+func prefixed(s string) bool {
+	s = lower(s)
+	for _, p := range citePrefix {
+		if strings.HasPrefix(s, p) {
+			return true
 		}
-		pruneCites(c)
-		if emptySup(c) {
-			root.RemoveChild(c)
-		}
-	}
-}
-
-func citeMarker(n *html.Node) bool {
-	if n.Type != html.ElementNode {
-		return false
-	}
-	switch n.DataAtom {
-	case atom.A, atom.Sup:
-		return citeMark.MatchString(strings.TrimSpace(nodeText(n)))
-	default:
-		return false
-	}
-}
-
-func dropCiteNode(n *html.Node) bool {
-	if n.Type != html.ElementNode {
-		return false
-	}
-	if citeID(attrVal(n, "id")) || citeMarker(n) || topLink(n) {
-		return true
-	}
-	return n.DataAtom == atom.A && citeHref(attrVal(n, "href"))
-}
-
-// topLink is a MediaWiki "[top]" / href="#top" jump, not a heading named Top.
-func topLink(n *html.Node) bool {
-	if n.Type != html.ElementNode || n.DataAtom != atom.A {
-		return false
-	}
-	if strings.EqualFold(strings.TrimSpace(nodeText(n)), "[top]") {
-		return true
-	}
-	h := attrVal(n, "href")
-	if i := strings.IndexByte(h, '#'); i >= 0 {
-		return strings.EqualFold(h[i+1:], "top")
 	}
 	return false
 }
 
-func emptySup(n *html.Node) bool {
-	if n.Type != html.ElementNode || n.DataAtom != atom.Sup {
+func drop(n *html.Node) bool {
+	if n == nil || n.Type != html.ElementNode {
 		return false
 	}
-	return strings.TrimSpace(nodeText(n)) == ""
+	if dropTag[n.DataAtom] || dropID[lower(attrVal(n, "id"))] || prefixed(attrVal(n, "id")) {
+		return true
+	}
+	for _, t := range strings.Fields(attrVal(n, "class")) {
+		if dropClass[strings.ToLower(t)] {
+			return true
+		}
+	}
+	if n.DataAtom == atom.A || n.DataAtom == atom.Sup {
+		t := lower(nodeText(n))
+		if dropText[t] || citeMark.MatchString(t) {
+			return true
+		}
+	}
+	return n.DataAtom == atom.A && (dropHash[lower(frag(attrVal(n, "href")))] ||
+		prefixed(frag(attrVal(n, "href"))))
+}
+
+func prune(root *html.Node) {
+	if root == nil {
+		return
+	}
+	for c := root.FirstChild; c != nil; {
+		next := c.NextSibling
+		if drop(c) {
+			root.RemoveChild(c)
+			c = next
+			continue
+		}
+		prune(c)
+		if c.DataAtom == atom.Sup && strings.TrimSpace(nodeText(c)) == "" {
+			root.RemoveChild(c)
+		}
+		c = next
+	}
 }
 
 func rewriteHref(href, wikiBase string) string {
@@ -138,22 +133,19 @@ func rewriteHref(href, wikiBase string) string {
 	if strings.HasPrefix(href, "#") {
 		return href
 	}
-	if strings.HasPrefix(href, "//") {
+	base := strings.TrimRight(wikiBase, "/")
+	switch {
+	case strings.HasPrefix(href, "//"):
 		return "https:" + href
-	}
-	if strings.HasPrefix(href, "/wiki/") {
-		return strings.TrimRight(wikiBase, "/") + "/" + strings.TrimPrefix(href, "/wiki/")
-	}
-	if strings.HasPrefix(href, "/") && !strings.HasPrefix(href, "//") {
-		return strings.TrimRight(wikiBase, "/") + href
-	}
-	if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
+	case strings.HasPrefix(href, "/wiki/"):
+		return base + "/" + strings.TrimPrefix(href, "/wiki/")
+	case strings.HasPrefix(href, "/") && !strings.HasPrefix(href, "//"):
+		return base + href
+	case strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://"):
 		return href
 	}
 	return ""
 }
-
-const dumpTableRows = 20
 
 func countTr(n *html.Node) int {
 	if n == nil {
@@ -169,8 +161,31 @@ func countTr(n *html.Node) int {
 	return ntr
 }
 
+func copyAttr(dst, n *html.Node, wikiBase string) {
+	if headingRank(n) > 0 {
+		if id := firstID(n); id != "" {
+			dst.Attr = []html.Attribute{{Key: "id", Val: id}}
+		}
+		return
+	}
+	if n.DataAtom == atom.A {
+		if h := rewriteHref(attrVal(n, "href"), wikiBase); h != "" {
+			dst.Attr = []html.Attribute{{Key: "href", Val: h}}
+		}
+		return
+	}
+	want := keepAttr[n.DataAtom]
+	for _, a := range n.Attr {
+		for _, k := range want {
+			if a.Key == k {
+				dst.Attr = append(dst.Attr, a)
+			}
+		}
+	}
+}
+
 func appendAllowed(dst, n *html.Node, wikiBase string) {
-	if n == nil || dropNode(n) {
+	if n == nil || drop(n) {
 		return
 	}
 	switch n.Type {
@@ -187,28 +202,7 @@ func appendAllowed(dst, n *html.Node, wikiBase string) {
 			return
 		}
 		out := &html.Node{Type: html.ElementNode, Data: n.Data, DataAtom: n.DataAtom}
-		if headingRank(n) > 0 {
-			if id := firstID(n); id != "" {
-				out.Attr = []html.Attribute{{Key: "id", Val: id}}
-			}
-		}
-		if n.DataAtom == atom.A {
-			for _, a := range n.Attr {
-				if a.Key == "href" {
-					if h := rewriteHref(a.Val, wikiBase); h != "" {
-						out.Attr = []html.Attribute{{Key: "href", Val: h}}
-					}
-					break
-				}
-			}
-		}
-		if n.DataAtom == atom.Td || n.DataAtom == atom.Th {
-			for _, a := range n.Attr {
-				if a.Key == "colspan" || a.Key == "rowspan" {
-					out.Attr = append(out.Attr, a)
-				}
-			}
-		}
+		copyAttr(out, n, wikiBase)
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			appendAllowed(out, c, wikiBase)
 		}
@@ -231,34 +225,34 @@ func renderChildren(n *html.Node) string {
 	return strings.TrimSpace(buf.String())
 }
 
-func findBody(n *html.Node) *html.Node {
-	if n == nil {
-		return nil
-	}
-	if n.Type == html.ElementNode && n.DataAtom == atom.Body {
-		return n
-	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if b := findBody(c); b != nil {
-			return b
+func articleRoot(n *html.Node) *html.Node {
+	var body, out *html.Node
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n == nil || out != nil {
+			return
 		}
+		if n.Type == html.ElementNode {
+			if strings.Contains(attrVal(n, "class"), "mw-parser-output") {
+				out = n
+				return
+			}
+			if n.DataAtom == atom.Body {
+				body = n
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	if out != nil {
+		return out
+	}
+	if body != nil {
+		return body
 	}
 	return n
-}
-
-func findOutput(n *html.Node) *html.Node {
-	if n == nil {
-		return nil
-	}
-	if n.Type == html.ElementNode && strings.Contains(classOf(n), "mw-parser-output") {
-		return n
-	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if o := findOutput(c); o != nil {
-			return o
-		}
-	}
-	return nil
 }
 
 // sanitize returns allowlisted HTML (no images) and <pre> snippet texts.
@@ -267,10 +261,7 @@ func sanitize(raw, wikiBase string) (clean string, snippets []string) {
 	if err != nil {
 		return "", nil
 	}
-	src := findOutput(doc)
-	if src == nil {
-		src = findBody(doc)
-	}
+	src := articleRoot(doc)
 	dst := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
 	if src != nil {
 		for c := src.FirstChild; c != nil; c = c.NextSibling {
@@ -288,8 +279,7 @@ func reshape(cleanHTML string) (string, []Section) {
 		return "", nil
 	}
 	reshapeTree(root)
-	secs := sectionsFrom(root)
-	return renderChildren(root), secs
+	return renderChildren(root), sectionsFrom(root)
 }
 
 func takeChildren(root *html.Node) []*html.Node {
@@ -325,10 +315,10 @@ func reshapeTree(root *html.Node) {
 			end++
 		}
 		block := kids[i:end]
-		line := headingLine(n)
+		line := lower(headingLine(n))
 		switch {
-		case dropHead.MatchString(line):
-		case moveHead.MatchString(line):
+		case dropHead[line]:
+		case moveHead[line]:
 			moved = append(moved, block)
 		default:
 			keep = append(keep, block)
@@ -342,7 +332,7 @@ func reshapeTree(root *html.Node) {
 			}
 		}
 	}
-	pruneCites(root)
+	prune(root)
 }
 
 func sectionsFrom(root *html.Node) []Section {
@@ -404,24 +394,10 @@ func nodeText(n *html.Node) string {
 }
 
 func headingRank(n *html.Node) int {
-	if n.Type != html.ElementNode {
+	if n == nil || n.Type != html.ElementNode {
 		return 0
 	}
-	switch n.DataAtom {
-	case atom.H1:
-		return 1
-	case atom.H2:
-		return 2
-	case atom.H3:
-		return 3
-	case atom.H4:
-		return 4
-	case atom.H5:
-		return 5
-	case atom.H6:
-		return 6
-	}
-	return 0
+	return rank[n.DataAtom]
 }
 
 func headingLine(n *html.Node) string {
@@ -452,17 +428,16 @@ func extractModding(cleanHTML string) string {
 	}
 	dst := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
 	collecting := false
-	rank := 0
+	headRank := 0
 	for c := root.FirstChild; c != nil; c = c.NextSibling {
 		if r := headingRank(c); r > 0 {
-			line := strings.TrimSpace(headingLine(c))
-			if !collecting && moddingHead.MatchString(line) {
+			if !collecting && keepModding[lower(headingLine(c))] {
 				collecting = true
-				rank = r
+				headRank = r
 				dst.AppendChild(cloneTree(c))
 				continue
 			}
-			if collecting && r <= rank {
+			if collecting && r <= headRank {
 				break
 			}
 		}
