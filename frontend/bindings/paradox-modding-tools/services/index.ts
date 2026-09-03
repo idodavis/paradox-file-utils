@@ -5,18 +5,22 @@ import * as FileService from "./fileservice.js";
 import * as IdeService from "./ideservice.js";
 import * as MergeService from "./mergeservice.js";
 import * as PatcherService from "./patcherservice.js";
+import * as SearchService from "./searchservice.js";
 import * as SessionService from "./sessionservice.js";
 import * as SettingsService from "./settingsservice.js";
 import * as ViewsService from "./viewsservice.js";
+import * as WikiService from "./wikiservice.js";
 import * as WorkspaceService from "./workspaceservice.js";
 export {
     FileService,
     IdeService,
     MergeService,
     PatcherService,
+    SearchService,
     SessionService,
     SettingsService,
     ViewsService,
+    WikiService,
     WorkspaceService
 };
 
@@ -29,10 +33,9 @@ export type {
     FileSearchResult,
     GameInstall,
     IdeRoot,
-    InstallCacheInfo,
+    IdeRoots,
     LanguageHealth,
     MergerOptions,
-    ModelStatus,
     PatchRun,
     PatchRunFile,
     PatchRunFileStats,

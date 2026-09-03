@@ -3,7 +3,6 @@
  */
 import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
-import { clamp } from "es-toolkit";
 import { GetSettings, SaveSettings } from "@services/settingsservice";
 import { applyEditorFontSize } from "../ide/themeBridge";
 import {
@@ -20,6 +19,10 @@ function normalizeSettings(
       (entry): entry is [string, string] => entry[1] !== undefined,
     ),
   );
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, n));
 }
 
 const FONT_SCALE_MIN = 85;

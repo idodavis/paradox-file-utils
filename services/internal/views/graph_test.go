@@ -112,9 +112,9 @@ func TestGraphViaOptionRoles(t *testing.T) {
 	vfile := write(t, vanilla, "events/v.txt",
 		"birth.1 = {\n	type = character_event\n	immediate = { trigger_event = mod.1 }\n}\n")
 	s := buildSession(t, "ck3", &catalog.VanillaCache{Defs: []catalog.Def{
-		{Type: "event", Key: "birth.1", Path: vfile, Line: 0},
+		{Kind: "event", Key: "birth.1", Path: vfile, Line: 0},
 	}}, &catalog.VanillaLoc{
-		Sites: map[string]catalog.LocEntry{"vanilla_key": {File: locFile, Line: 1, Value: "Hi"}},
+		Sites: map[string]catalog.LocEntry{"vanilla_key": {Path: locFile, Line: 1, Value: "Hi"}},
 	}, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
 		"events/ns.txt": `namespace = ns
 ns.0 = { type = character_event
@@ -255,14 +255,14 @@ mod.1 = { type = character_event
 	}
 	var birth, modOrig bool
 	for _, it := range empty.Suggestions.IDs {
-		birth = birth || (it.ID == "birth.1" && it.Origin == "")
+		birth = birth || (it.ID == "birth.1" && it.Origin == "vanilla")
 		modOrig = modOrig || (it.ID == "mod.1" && it.Origin == "mod")
 	}
 	if !birth || !modOrig {
 		t.Fatalf("suggestions = %+v", empty.Suggestions.IDs)
 	}
 	rooted := nodeIDs(Graph(s, EventGraphParams{Root: "mod.1"}))
-	if rooted["mod.1"].Origin != "mod" || rooted["birth.1"].Origin != "" {
+	if rooted["mod.1"].Origin != "mod" || rooted["birth.1"].Origin != "vanilla" {
 		t.Fatalf("rooted = %v", rooted)
 	}
 	for _, it := range Graph(s, EventGraphParams{Origins: []string{"mod"}}).Suggestions.IDs {
@@ -285,7 +285,7 @@ mod.1 = { type = character_event
 			}
 		}
 	}
-	if lu := Lookup(s, "vanilla_key"); lu == nil || lu.Origin != "vanilla" || lu.File != locFile {
+	if lu := Lookup(s, "vanilla_key"); lu == nil || lu.Origin != "vanilla" || lu.Path != locFile {
 		t.Fatalf("Lookup vanilla_key = %+v", lu)
 	}
 
@@ -386,7 +386,7 @@ func TestOverrideRows(t *testing.T) {
 					if site.Origin != "" {
 						n++
 					}
-					if site.File != "" && site.Rel == "" {
+					if site.Path != "" && site.Rel == "" {
 						t.Fatalf("site missing rel: %+v", site)
 					}
 				}
@@ -418,8 +418,8 @@ func TestGraphVanillaFireEdge(t *testing.T) {
 			"birth.2 = { type = character_event }\n")
 	cache := &catalog.VanillaCache{
 		Defs: []catalog.Def{
-			{Type: "event", Key: "birth.1", Path: vfile, Line: 1},
-			{Type: "event", Key: "birth.2", Path: vfile, Line: 4},
+			{Kind: "event", Key: "birth.1", Path: vfile, Line: 1},
+			{Kind: "event", Key: "birth.2", Path: vfile, Line: 4},
 		},
 		Edges: []catalog.Edge{
 			{From: "birth.1", To: "birth.2", Via: "trigger_event", Kind: "immediate"},

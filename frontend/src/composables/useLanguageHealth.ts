@@ -5,6 +5,7 @@ import { computed, reactive, toValue, type MaybeRefOrGetter } from "vue";
 import { useQuery, useQueryCache } from "@pinia/colada";
 import { useEventListener } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
+import { useToast } from "@nuxt/ui/composables/useToast";
 import {
   EnsureSession,
   GetLanguageHealth,
@@ -20,6 +21,17 @@ type ScanState = {
 const scanByInstall = new Map<string, ScanState>();
 let scanListening = false;
 let sessionQueryCache: ReturnType<typeof useQueryCache> | null = null;
+
+/** Bust health + IDE boot so a failed first open remounts after rescan. */
+async function bustSessionQueries(
+  cache: ReturnType<typeof useQueryCache> | null,
+): Promise<void> {
+  if (!cache) return;
+  await Promise.all([
+    cache.invalidateQueries({ key: ["session"] }),
+    cache.invalidateQueries({ key: ["ide-boot"] }),
+  ]);
+}
 
 function scanState(id: string): ScanState {
   let s = scanByInstall.get(id);
@@ -43,7 +55,26 @@ function ensureScanListener(): void {
     if (typeof row.msg === "string") s.msg = row.msg;
   });
   Events.On("lang:ready", () => {
-    void sessionQueryCache?.invalidateQueries({ key: ["session"] });
+    void bustSessionQueries(sessionQueryCache);
+  });
+  Events.On("wiki:first", () => {
+    useToast().add({
+      title: "Downloading wiki guides",
+      description:
+        "The first cache can take a few minutes because of MediaWiki rate limits.",
+      duration: 8000,
+    });
+  });
+  Events.On("wiki:updated", (ev: { data?: unknown }) => {
+    const data = ev.data;
+    if (!data || typeof data !== "object") return;
+    const row = data as { ok?: boolean; err?: string };
+    if (row.ok !== false || !row.err) return;
+    useToast().add({
+      title: "Wiki fetch failed",
+      description: row.err,
+      color: "error",
+    });
   });
 }
 
@@ -90,7 +121,7 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     try {
       await RebuildInstallSemantics(installId);
       await EnsureSession(wsId);
-      await queryCache.invalidateQueries({ key: ["session"] });
+      await bustSessionQueries(queryCache);
     } finally {
       scan.value.scanning = false;
       scan.value.msg = "";

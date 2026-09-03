@@ -1,19 +1,33 @@
 <script setup lang="ts">
 /**
- * Multi-select origin menu for loc/conflicts: workspace mods only, color dots.
+ * Multi-select origin menu. Default-all when items change. Vanilla may set gameId.
  */
+import { watch } from "vue";
+import GameIcon from "./GameIcon.vue";
+
 export type OriginMenuItem = {
   id: string;
   label: string;
   color: string;
   thumbnail?: string;
+  gameId?: string;
 };
 
-defineProps<{
+const props = defineProps<{
   items: OriginMenuItem[];
 }>();
 
 const selected = defineModel<string[]>({ default: () => [] });
+
+watch(
+  () => props.items.map((i) => i.id).join("\0"),
+  () => {
+    const ids = props.items.map((i) => i.id);
+    const keep = selected.value.filter((id) => ids.includes(id));
+    selected.value = keep.length ? keep : ids;
+  },
+  { immediate: true },
+);
 
 const MENU_UI = { content: "min-w-96 w-[420px]", viewport: "max-h-96" };
 </script>
@@ -31,8 +45,9 @@ const MENU_UI = { content: "min-w-96 w-[420px]", viewport: "max-h-96" };
     :ui="MENU_UI"
   >
     <template #item-leading="{ item }">
+      <GameIcon v-if="item.gameId" :game-id="item.gameId" />
       <img
-        v-if="item.thumbnail"
+        v-else-if="item.thumbnail"
         :src="item.thumbnail"
         alt=""
         class="size-4 rounded-sm object-cover"

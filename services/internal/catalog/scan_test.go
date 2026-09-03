@@ -6,16 +6,22 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// ck3Install writes the shared corpus fixture and returns the install path.
-func ck3Install(t *testing.T) string {
+// ck3Install writes the shared corpus fixture and returns install + isolated user data.
+func ck3Install(t *testing.T) (base, userData string) {
 	t.Helper()
-	base := t.TempDir()
+	base = t.TempDir()
+	userData = filepath.Join(base, "userdata")
+	if err := os.MkdirAll(userData, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pinUserData(t, base, userData)
 	writeMod(t, base, "game/common/traits/00_traits.txt", `brave = {
 	category = personality
 	opposites = { craven }
@@ -48,7 +54,25 @@ scripted_effect my_inline = { add_prestige = 5 }
 	writeMod(t, base, "game/localization/french/test_l_french.yml", `l_french:
  french_only:0 "Bonjour"
 `)
-	return base
+	return base, userData
+}
+
+func pinUserData(t *testing.T, install, userData string) {
+	t.Helper()
+	if err := os.MkdirAll(userData, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(install, "launcher")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(map[string]string{"gameDataPath": userData})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "launcher-settings.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func contains(list []string, want string) bool {
@@ -62,17 +86,20 @@ func contains(list []string, want string) bool {
 
 func findDef(defs []Def, kind, key string) bool {
 	for _, d := range defs {
-		if d.Type == kind && d.Key == key {
+		if d.Kind == kind && d.Key == key {
 			return true
 		}
 	}
 	return false
 }
 
-func scanCK3(t *testing.T, base, docs string) (*VanillaCache, *VanillaLoc) {
+func scanCK3(t *testing.T, base string) (*VanillaCache, *VanillaLoc) {
 	t.Helper()
 	t.Cleanup(func() { _ = DropVanillaFiles("inst") })
-	c, vloc, err := Scan(context.Background(), "inst", "ck3", base, "1.0", docs, "english", nil)
+	c, vloc, err := Scan(context.Background(), ScanRequest{
+		InstallID: "inst", GameID: "ck3", InstallPath: base,
+		Version: "1.0", LocLang: "english",
+	})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -80,8 +107,8 @@ func scanCK3(t *testing.T, base, docs string) (*VanillaCache, *VanillaLoc) {
 }
 
 func TestScanCorpusFixture(t *testing.T) {
-	base := ck3Install(t)
-	c, vloc := scanCK3(t, base, "")
+	base, userData := ck3Install(t)
+	c, vloc := scanCK3(t, base)
 
 	for _, d := range [][2]string{
 		{"traits", "brave"}, {"event", "test.1"}, {"scripted_effect", "my_inline"},
@@ -103,11 +130,11 @@ func TestScanCorpusFixture(t *testing.T) {
 	if got := vloc.Sites["test.1.t"].Value; got != "Test Event" {
 		t.Errorf("loc[test.1.t] = %q, want %q", got, "Test Event")
 	}
-	if c.FieldDocs["category"] == "" {
+	if c.FieldInfo["category"] == "" {
 		t.Errorf("fieldDocs[category] empty, want prose from _traits.info")
 	}
 	hk := vloc.Sites["header_key"]
-	if hk.Value != "From header" || hk.File == "" {
+	if hk.Value != "From header" || hk.Path == "" {
 		t.Errorf("header_key = %+v", hk)
 	}
 	if _, ok := vloc.Sites["french_only"]; ok {
@@ -120,10 +147,10 @@ func TestScanCorpusFixture(t *testing.T) {
 	if got := fr.Sites["french_only"].Value; got != "Bonjour" {
 		t.Errorf("french loc[french_only] = %q", got)
 	}
-	if got := c.FieldDocsByKind["event"]["type"]; !strings.Contains(got, "presentation") {
+	if got := c.FieldInfoByKind["event"]["type"]; !strings.Contains(got, "presentation") {
 		t.Errorf("fieldDocsByKind[event][type] = %q, want events.info prose", got)
 	}
-	if got := c.FieldDocsByKind["event"]["title"]; !strings.Contains(got, "Dynamic") {
+	if got := c.FieldInfoByKind["event"]["title"]; !strings.Contains(got, "Dynamic") {
 		t.Errorf("fieldDocsByKind[event][title] = %q, want events.info prose", got)
 	}
 
@@ -170,16 +197,19 @@ func TestScanCorpusFixture(t *testing.T) {
 			"add_gold", "type"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			docs := t.TempDir()
-			if err := os.WriteFile(filepath.Join(docs, "effects.log"), []byte(tt.body), 0o644); err != nil {
+			logs := filepath.Join(userData, "logs")
+			if err := os.MkdirAll(logs, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			got, _ := scanCK3(t, base, docs)
+			if err := os.WriteFile(filepath.Join(logs, "effects.log"), []byte(tt.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got, _ := scanCK3(t, base)
 			if !contains(got.Effects, tt.want) {
 				t.Errorf("effects missing %s: %v", tt.want, got.Effects)
 			}
-			if tt.name == "enrichment" && got.FieldDocs["add_gold"] == "" {
-				t.Error("fieldDocs[add_gold] empty after enrichment")
+			if tt.name == "enrichment" && got.TokenDoc["add_gold"] == "" {
+				t.Error("tokenDoc[add_gold] empty after enrichment")
 			}
 			if tt.drop != "" && contains(got.Effects, tt.drop) {
 				t.Fatalf("nested dump field %s leaked: %v", tt.drop, got.Effects)
@@ -192,11 +222,11 @@ func TestClassifyRelShippedDocs(t *testing.T) {
 	tests := []struct {
 		name, want string
 	}{
-		{"_traits.info", "docs"},
-		{"readme.txt", "docs"},
-		{"__readme.txt", "docs"},
-		{"____Info.txt", "docs"},
-		{"notes.md", "docs"},
+		{"_traits.info", "info"},
+		{"readme.txt", "info"},
+		{"__readme.txt", "info"},
+		{"____Info.txt", "info"},
+		{"notes.md", "info"},
 		{"00_traits.txt", "script"},
 		{"_default.txt", ""},
 		{"_hardcoded.txt", ""},
@@ -288,18 +318,22 @@ func TestScanEU5ShippedDocs(t *testing.T) {
 # - build_time: <integer> building time in days
 # - allow: <trigger> can the building be built
 `)
+	pinUserData(t, base, filepath.Join(t.TempDir(), "ud"))
 	t.Cleanup(func() { _ = DropVanillaFiles("eu5docs") })
-	c, _, err := Scan(context.Background(), "eu5docs", "eu5", base, "1.0", "", "english", nil)
+	c, _, err := Scan(context.Background(), ScanRequest{
+		InstallID: "eu5docs", GameID: "eu5", InstallPath: base,
+		Version: "1.0", LocLang: "english",
+	})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
-	if got := c.FieldDocsByKind["traits"]["allow"]; !strings.Contains(got, "character need") {
+	if got := c.FieldInfoByKind["traits"]["allow"]; !strings.Contains(got, "character need") {
 		t.Fatalf("traits allow doc = %q", got)
 	}
-	if got := c.FieldDocsByKind["traits"]["category"]; !strings.Contains(got, "Which type") {
+	if got := c.FieldInfoByKind["traits"]["category"]; !strings.Contains(got, "Which type") {
 		t.Fatalf("traits category doc = %q", got)
 	}
-	if got := c.FieldDocsByKind["building_types"]["build_time"]; !strings.Contains(got, "building time") {
+	if got := c.FieldInfoByKind["building_types"]["build_time"]; !strings.Contains(got, "building time") {
 		t.Fatalf("building_types build_time = %q", got)
 	}
 }
@@ -312,8 +346,12 @@ t.1 = { type = country_event }
 	writeMod(t, base, "in_game/events/wrong.txt", `namespace = w
 w.1 = { type = country_event }
 `)
+	pinUserData(t, base, filepath.Join(t.TempDir(), "ud"))
 	t.Cleanup(func() { _ = DropVanillaFiles("eu5inst") })
-	c, _, err := Scan(context.Background(), "eu5inst", "eu5", base, "1.0", "", "english", nil)
+	c, _, err := Scan(context.Background(), ScanRequest{
+		InstallID: "eu5inst", GameID: "eu5", InstallPath: base,
+		Version: "1.0", LocLang: "english",
+	})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -323,4 +361,70 @@ w.1 = { type = country_event }
 	if findDef(c.Defs, "event", "w.1") {
 		t.Fatalf("scanned install-root in_game, not game/: %v", c.Defs)
 	}
+}
+
+func TestScanScriptDocsFixtures(t *testing.T) {
+	t.Run("ck3", func(t *testing.T) {
+		base, ud := ck3Install(t)
+		raw, err := os.ReadFile(filepath.Join("testdata", "ck3-effects.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		logs := filepath.Join(ud, "logs")
+		if err := os.MkdirAll(logs, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(logs, "effects.log"), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		c, _ := scanCK3(t, base)
+		if !contains(c.Effects, "add_diplomacy_skill") {
+			t.Fatalf("effects missing add_diplomacy_skill: %v", c.Effects)
+		}
+		if contains(c.Effects, "Effect") {
+			t.Fatalf("header token leaked: %v", c.Effects)
+		}
+		if !strings.Contains(c.TokenDoc["add_diplomacy_skill"], "diplomacy") {
+			t.Fatalf("tokenDoc = %q", c.TokenDoc["add_diplomacy_skill"])
+		}
+	})
+	t.Run("eu5", func(t *testing.T) {
+		base := t.TempDir()
+		ud := filepath.Join(base, "userdata")
+		pinUserData(t, base, ud)
+		writeMod(t, base, "game/in_game/events/x.txt", `namespace = t
+t.1 = { type = country_event }
+`)
+		raw, err := os.ReadFile(filepath.Join("testdata", "eu5-effects.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs := filepath.Join(ud, "docs")
+		if err := os.MkdirAll(docs, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(docs, "effects.log"), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = DropVanillaFiles("eu5fix") })
+		c, _, err := Scan(context.Background(), ScanRequest{
+			InstallID: "eu5fix", GameID: "eu5", InstallPath: base,
+			Version: "1.0", LocLang: "english",
+		})
+		if err != nil {
+			t.Fatalf("Scan: %v", err)
+		}
+		if !contains(c.Effects, "abandon_colonial_charter") {
+			t.Fatalf("effects missing abandon_colonial_charter: %v", c.Effects)
+		}
+		if contains(c.Effects, "Effect") {
+			t.Fatalf("header token leaked: %v", c.Effects)
+		}
+		if !strings.Contains(c.TokenDoc["abandon_colonial_charter"], "colonial") {
+			t.Fatalf("tokenDoc = %q", c.TokenDoc["abandon_colonial_charter"])
+		}
+		if !strings.Contains(c.TokenScopes["abandon_colonial_charter"], "none") {
+			t.Fatalf("scopes = %q", c.TokenScopes["abandon_colonial_charter"])
+		}
+	})
 }

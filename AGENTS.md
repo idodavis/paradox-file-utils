@@ -18,6 +18,7 @@
 
 ## Learned Workspace Facts
 
+- Terminology: [GLOSSARY.md](GLOSSARY.md).
 - Paradox Modding Tools is a Wails v3 desktop app (Go backend, Vue 3 + Nuxt UI + Pinia frontend) for Paradox modders, licensed under GPL-3.0-or-later. Product is workspace-centric: library, IDE, event graph, conflicts (FIOS/LIOS), loc coverage, patcher, merge. CK3, Vic3, and EU5 (partial). GUI preview is a future **views** feature; `.gui` is the same Jomini CST as `.txt`, not a third parser.
 - Local develop/build flows use Taskfile (`task dev`, `task build`) with the Wails v3 CLI (`wails3@v3.0.0-beta.14`).
 - Workspace IDE embeds monaco-vscode-api workbench (Monaco + VS Code services); product chrome stays Nuxt. UTF-16 exists only at `languageClient.ts` (Monaco). Everywhere else is UTF-8 byte offsets.
@@ -32,8 +33,8 @@
 - **Pool:** `EnsureSession` Drops every other live session (one live workspace). `Pool.Drop` is not a Wails RPC. DeleteGameInstall refuses while in use (does not Drop).
 - Workspaces: first-launch/retriggerable wizard, dropdown switching, user-specified mod paths, default staging, multiple installs per game, broken-path marking, default loc language, install version pin/`latest`, DeleteGameInstall (refuses while in use). No DeleteWorkspace RPC.
 - Scan hot-swap: `RebuildInstallSemantics(installId)` ReplaceCache/ReplaceVanillaLoc on every live session on that install, emit `lang:cache-updated`; languageClient re-Diagnoses open LANGS docs (no app reload).
-- Event-graph layout is frontend `elkjs` layered + Vue Flow nested `parentNode` (origin groups). Go returns nodes/edges with no coordinates. Via-effect edges stay. Vue templates the payload (no regroup of gates/effects/locRows).
-- **Frontend husk:** appearance + interaction only. `SEEDS` in `frontend/src/ide/colorThemes.ts` is the only palette; `applySeedCss` injects onto `:root`. Families: pmt, catppuccin, one, monokai, github. `themes.css` is the structural `@theme` / `--ui-*` bridge. Syntax tokens from `@codingame/monaco-vscode-theme-defaults-default-extension` (dark_plus / light_plus); all `@codingame/monaco-vscode-*` packages pin the same version via npm overrides. Table filters live in UTable column state; fetch state in Pinia Colada `useQuery`/`useMutation`. No path-stripping helpers; payloads carry `rel`/`origin`/`originName`. Kept as presentation: elkjs (`useGraphLayout`) and Vue Flow origin parents.
+- Event-graph layout is frontend `dagre` layered + Vue Flow nested `parentNode` (origin groups). Go returns nodes/edges with no coordinates. Via-effect edges stay. Vue templates the payload (no regroup of gates/effects/locRows).
+- **Frontend husk:** appearance + interaction only. `SEEDS` in `frontend/src/ide/colorThemes.ts` is the only palette; `applySeedCss` injects onto `:root`. Families: pmt, catppuccin, one, monokai, github. `themes.css` is the structural `@theme` / `--ui-*` bridge. Syntax tokens from `@codingame/monaco-vscode-theme-defaults-default-extension` (dark_plus / light_plus); all `@codingame/monaco-vscode-*` packages pin the same version via npm overrides. Table filters live in UTable column state; fetch state in Pinia Colada `useQuery`/`useMutation`. No path-stripping helpers; payloads carry `rel`/`origin`/`originName`. Kept as presentation: dagre (`useGraphLayout`) and Vue Flow origin parents.
 - Monaco language providers use `registerLanguageClient(() => workspaceId)` — no `useWorkspaceStore()` inside provider callbacks.
 - Tool pages use `useWorkspaceStore().ensureReady()` — success means a **live** session (`GetModelStatus().live`), not merely `defCount > 0`.
 - On Windows, the parser is pure Go (`CGO_ENABLED=0`). Linux/darwin stay `CGO_ENABLED=1` for Wails WebKit. `go test -race ./services/internal/parser/...` should work on Windows.

@@ -17,10 +17,10 @@ import type { OverrideRow, OverrideSite } from "@services/internal/views/models"
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import DetailPane from "../components/DetailPane.vue";
-import OriginBadge from "../components/OriginBadge.vue";
+import OriginBadge, { PILL_UI } from "../components/OriginBadge.vue";
 import OriginSelectMenu from "../components/OriginSelectMenu.vue";
 import { useOpenInIde } from "../composables/useOpenInIde";
-import { useLiveEnabled } from "../composables/useSessionQuery";
+import { useLiveEnabled } from "../composables/useLiveEnabled";
 import { useWorkspaceStore } from "../stores/workspace";
 import { originHex, originHexByOriginId } from "../ide/rootDecorations";
 
@@ -47,33 +47,12 @@ const originItems = computed(() =>
   })),
 );
 const originIds = ref<string[]>([]);
-watch(
-  liveMods,
-  (mods) => {
-    const ids = mods.map((m) => m.id);
-    const keep = originIds.value.filter((id) => ids.includes(id));
-    originIds.value = keep.length ? keep : ids;
-  },
-  { immediate: true },
-);
-
-/** First-wins kinds for this workspace's game (mirrors game.IsFIOS). */
-function firstWinsNote(gameId: string): string {
-  switch (gameId) {
-    case "ck3":
-      return "GUI types and templates are first-wins.";
-    case "vic3":
-      return "GUI types, templates, and events are first-wins.";
-    case "eu5":
-      return "Events are first-wins; GUI types last-wins.";
-    default:
-      return "GUI types and templates are first-wins.";
-  }
-}
 
 const loadOrderCopy = computed(() => {
-  const extra = firstWinsNote(ws.activeWorkspace?.gameId ?? ws.currentGameId);
-  return `Last listed wins (LIOS). ${extra} Click a row to filter.`;
+  const extra = ws.firstWins(ws.activeWorkspace?.gameId ?? ws.currentGameId);
+  return extra
+    ? `Last listed wins (LIOS). ${extra} Click a row to filter.`
+    : "Last listed wins (LIOS). Click a row to filter.";
 });
 
 /** Toggle a mod origin in the same set OriginSelectMenu uses. */
@@ -204,7 +183,7 @@ function onRowSelect(
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <WorkspaceToolBar :workspace-id="workspaceId" title="Conflicts" active="conflicts">
+    <WorkspaceToolBar :workspace-id="workspaceId">
       <template #trailing>
         <LanguageHealthStrip v-if="workspaceId" :workspace-id="workspaceId" />
       </template>
@@ -323,19 +302,27 @@ function onRowSelect(
             </div>
           </template>
           <template #overlay-cell="{ row }">
-            <UBadge :label="row.original.overlay ? 'override' : 'conflict'"
+            <UBadge
+              :label="row.original.overlay ? 'override' : 'conflict'"
               :color="row.original.overlay ? 'neutral' : 'warning'"
-              variant="subtle" size="xs" />
+              variant="subtle"
+              size="xs"
+              :ui="PILL_UI"
+            />
           </template>
           <template #rule-cell="{ row }">
-            <UBadge :label="row.original.rule"
+            <UBadge
+              :label="row.original.rule"
               :color="row.original.rule === 'FIOS' ? 'warning' : 'info'"
-              variant="subtle" size="xs" />
+              variant="subtle"
+              size="xs"
+              :ui="PILL_UI"
+            />
           </template>
           <template #winner-cell="{ row }">
             <OriginBadge
               :label="row.original.winnerName || originFallback"
-              :hex="originHexByOriginId(row.original.winner || 'vanilla')"
+              :hex="originHexByOriginId(row.original.winner ?? '')"
             />
           </template>
         </UTable>
@@ -344,32 +331,42 @@ function onRowSelect(
         <DetailPane
           :workspace-id="workspaceId"
           :title="selected?.name"
-          :file="winnerSite?.file"
+          :file="winnerSite?.path"
           :rel="winnerSite?.rel"
           :line="winnerSite?.line"
         >
-          <template v-if="selected" #badges>
-            <UBadge :label="selected.overlay ? 'override' : 'conflict'"
-              :color="selected.overlay ? 'neutral' : 'warning'"
-              variant="subtle" size="xs" />
-            <UBadge :label="selected.rule"
-              :color="selected.rule === 'FIOS' ? 'warning' : 'info'"
-              variant="subtle" size="xs" />
+          <template v-if="selected" #origin>
             <OriginBadge
               :label="selected.winnerName || originFallback"
-              :hex="originHexByOriginId(selected.winner || 'vanilla')"
+              :hex="originHexByOriginId(selected.winner ?? '')"
+            />
+          </template>
+          <template v-if="selected" #badges>
+            <UBadge
+              :label="selected.overlay ? 'override' : 'conflict'"
+              :color="selected.overlay ? 'neutral' : 'warning'"
+              variant="subtle"
+              size="xs"
+              :ui="PILL_UI"
+            />
+            <UBadge
+              :label="selected.rule"
+              :color="selected.rule === 'FIOS' ? 'warning' : 'info'"
+              variant="subtle"
+              size="xs"
+              :ui="PILL_UI"
             />
           </template>
           <div class="flex flex-col gap-1">
             <UButton
               v-for="(site, i) in selected?.sites ?? []"
               :key="i"
-              :label="`${site.originName || originFallback} · ${site.rel || site.file}:${site.line + 1}`"
+              :label="`${site.originName || originFallback} · ${site.rel || site.path}:${site.line + 1}`"
               size="xs"
               :color="site.origin === selected?.winner ? 'primary' : 'neutral'"
               variant="subtle"
               class="justify-start"
-              @click="open(site.file, site.line)"
+              @click="open(site.path, site.line)"
             />
           </div>
         </DetailPane>

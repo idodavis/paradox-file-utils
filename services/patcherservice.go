@@ -107,6 +107,29 @@ func (p *PatcherService) SetFileDecision(fileID, decision string) error {
 	})
 }
 
+// CancelPatchRun drops a run and its staging dir.
+func (p *PatcherService) CancelPatchRun(runID string) error {
+	var staging string
+	err := p.Store.Mutate(func(c *Config) error {
+		for i := range c.PatchRuns {
+			if c.PatchRuns[i].ID != runID {
+				continue
+			}
+			staging = c.PatchRuns[i].StagingDir
+			c.PatchRuns = append(c.PatchRuns[:i], c.PatchRuns[i+1:]...)
+			return nil
+		}
+		return fmt.Errorf("patch run not found")
+	})
+	if err != nil {
+		return err
+	}
+	if staging != "" {
+		_ = os.RemoveAll(staging)
+	}
+	return nil
+}
+
 // ApplyPatchRun applies accepted changes from a patch run to the mod.
 func (p *PatcherService) ApplyPatchRun(runID string) error {
 	run, modPath, err := p.runAndMod(runID)
@@ -143,4 +166,79 @@ func (p *PatcherService) ApplyPatchRun(runID string) error {
 		r.Status, r.UpdatedAt = "applied", now
 		return nil
 	})
+}
+
+func (p *PatcherService) previewOne(
+	staging, rel, modP, tgt string, prev *PatchRunPreview,
+) (PatchRunFile, error) {
+	f := PatchRunFile{
+		ID: uuid.New().String(), RelPath: rel, ModPath: modP, TargetPath: tgt,
+	}
+	if tgt == "" {
+		f.Status = "mod_only"
+		prev.SkippedCount++
+		return f, nil
+	}
+	out := filepath.Join(staging, rel)
+	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		return f, fmt.Errorf("create preview dir: %w", err)
+	}
+	r := p.MergeService.mergeAndWrite(
+		modP, tgt, out, rel, MergerOptions{AddAdditionalEntries: true})
+	if r.Error != "" {
+		f.Status, f.Stats = "error", PatchRunFileStats{Error: r.Error}
+		return f, nil
+	}
+	f.PreviewPath, f.Stats = r.OutputPath, PatchRunFileStats{
+		Changed: r.Changed, Added: r.Added, Conflicts: len(r.ResolvedConflicts)}
+	if f.Stats.Conflicts > 0 || f.Stats.Changed > 3 {
+		f.Status = "review"
+		prev.ReviewCount++
+	} else {
+		f.Status = "safe"
+		prev.SafeCount++
+	}
+	return f, nil
+}
+
+func (p *PatcherService) runAndMod(runID string) (*PatchRun, string, error) {
+	var run *PatchRun
+	var modPath string
+	p.Store.Read(func(c *Config) {
+		if r := findRun(c, runID); r != nil {
+			cp := *r
+			run = &cp
+			if m := findMod(c, r.ModID); m != nil {
+				modPath = m.Path
+			}
+		}
+	})
+	if run == nil {
+		return nil, "", fmt.Errorf("patch run not found")
+	}
+	if modPath == "" {
+		return nil, "", fmt.Errorf("mod not found")
+	}
+	return run, modPath, nil
+}
+
+func (p *PatcherService) resolveTargetPath(run *PatchRun) (string, error) {
+	installID := run.TargetInstallID
+	var root string
+	var err error
+	p.Store.Read(func(c *Config) {
+		if installID == "" {
+			if ws := findWorkspace(c, run.WorkspaceID); ws != nil {
+				installID = ws.InstallID
+			}
+		}
+		root, err = installScriptRoot(c, installID)
+	})
+	if err != nil {
+		return "", err
+	}
+	if root == "" {
+		return "", fmt.Errorf("no target install configured")
+	}
+	return root, nil
 }

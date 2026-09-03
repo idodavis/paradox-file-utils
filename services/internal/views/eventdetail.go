@@ -35,15 +35,15 @@ func Detail(s *session.Session, id string) *EventDetail {
 	if d == nil {
 		return nil
 	}
-	kind := game.CanonicalKind(d.Type)
+	kind := game.CanonicalKind(d.Kind)
 	res := s.Parsed(d.Path)
 	if res.Root == nil {
 		if kind == "event" {
 			return nil
 		}
 		return &EventDetail{
-			ID: id, Kind: kind, File: d.Path, Rel: s.DisplayRel(d.Path),
-			Origin: d.Origin, OriginName: s.OriginName(d.Origin),
+			ID: id, Kind: kind, Path: d.Path, Rel: s.DisplayRel(d.Path),
+			Origin: originID(d.Origin), OriginName: s.OriginName(originID(d.Origin)),
 			Line: d.Line, Title: locIfAny(s, id),
 			RefGroups: refGroups(s, d.Path), Incoming: incomingEdges(s, id),
 		}
@@ -63,8 +63,8 @@ func Detail(s *session.Session, id string) *EventDetail {
 			return nil
 		}
 		return &EventDetail{
-			ID: id, Kind: kind, File: d.Path, Rel: s.DisplayRel(d.Path),
-			Origin: d.Origin, OriginName: s.OriginName(d.Origin),
+			ID: id, Kind: kind, Path: d.Path, Rel: s.DisplayRel(d.Path),
+			Origin: originID(d.Origin), OriginName: s.OriginName(originID(d.Origin)),
 			Line: d.Line, Title: locIfAny(s, id),
 			RefGroups: refGroups(s, d.Path), Incoming: incomingEdges(s, id),
 		}
@@ -72,8 +72,8 @@ func Detail(s *session.Session, id string) *EventDetail {
 	block := jomini.BlockOf(stmt.Value)
 	_, _, fields := inspectBlock(block, lineOf, nil)
 	detail := &EventDetail{
-		ID: id, Kind: kind, File: d.Path, Rel: s.DisplayRel(d.Path),
-		Origin: d.Origin, OriginName: s.OriginName(d.Origin),
+		ID: id, Kind: kind, Path: d.Path, Rel: s.DisplayRel(d.Path),
+		Origin: originID(d.Origin), OriginName: s.OriginName(originID(d.Origin)),
 		Line: lineOf(stmt.Key.Range.Start), Fields: fields,
 		RefGroups: refGroups(s, d.Path), Incoming: incomingEdges(s, id),
 	}
@@ -206,7 +206,7 @@ func locIfAny(s *session.Session, id string) *EventLocField {
 		if t := locValue(s, key); t != "" {
 			f := &EventLocField{Key: key, Text: t}
 			if file, line, _, ok := s.LocSite(key); ok {
-				f.File, f.Line = file, line
+				f.Path, f.Line = file, line
 			}
 			return f
 		}
@@ -220,8 +220,8 @@ func locField(s *session.Session, a *jomini.Assignment) *EventLocField {
 		return nil
 	}
 	f := &EventLocField{Key: sc.Text, Text: locValue(s, sc.Text)}
-	if hit := Lookup(s, sc.Text); hit != nil && hit.File != "" {
-		f.File, f.Line = hit.File, hit.Line
+	if hit := Lookup(s, sc.Text); hit != nil && hit.Path != "" {
+		f.Path, f.Line = hit.Path, hit.Line
 	}
 	return f
 }

@@ -14,10 +14,7 @@ import (
 )
 
 // Range is a half-open span of UTF-8 byte offsets.
-type Range struct {
-	Start int
-	End   int
-}
+type Range = jomini.Range
 
 // Entry is one `key:version "value"` localization entry. Version is -1 when absent.
 // Value is the verbatim text between the opening quote and the LAST quote on the line.

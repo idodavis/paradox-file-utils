@@ -41,10 +41,11 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed, err := svc.ListWorkspaceMods("ws1")
+	ws, err := svc.GetWorkspace("ws1")
 	if err != nil {
 		t.Fatal(err)
 	}
+	listed := ws.Mods
 	if len(listed) != 2 || listed[0].ID != a.ID || listed[1].ID != b.ID {
 		t.Fatalf("initial order: %+v", listed)
 	}
@@ -55,10 +56,11 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err := svc.ReorderWorkspaceMods("ws1", []string{b.ID, a.ID}); err != nil {
 		t.Fatal(err)
 	}
-	listed, err = svc.ListWorkspaceMods("ws1")
+	ws, err = svc.GetWorkspace("ws1")
 	if err != nil {
 		t.Fatal(err)
 	}
+	listed = ws.Mods
 	if len(listed) != 2 || listed[0].ID != b.ID || listed[1].ID != a.ID {
 		t.Fatalf("reordered: %+v", listed)
 	}
@@ -66,10 +68,11 @@ func TestWorkspaceService_AddReorderRemoveMods(t *testing.T) {
 	if err := svc.RemoveWorkspaceMod("ws1", b.ID); err != nil {
 		t.Fatal(err)
 	}
-	listed, err = svc.ListWorkspaceMods("ws1")
+	ws, err = svc.GetWorkspace("ws1")
 	if err != nil {
 		t.Fatal(err)
 	}
+	listed = ws.Mods
 	if len(listed) != 1 || listed[0].ID != a.ID {
 		t.Fatalf("after remove: %+v", listed)
 	}
@@ -138,17 +141,18 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	if _, err := svc.AddWorkspaceMod("ws1", "Alpha", modDir, ""); err != nil {
 		t.Fatal(err)
 	}
-	roots, err := svc.GetIdeRoots("ws1")
+	got, err := svc.GetIdeRoots("ws1")
 	if err != nil {
 		t.Fatal(err)
 	}
+	roots := got.Roots
 	if len(roots) != 3 {
 		t.Fatalf("len %d %+v", len(roots), roots)
 	}
 	if roots[0].Kind != "mod" || roots[1].Kind != "staging" || roots[2].Kind != "game" {
 		t.Fatalf("kinds %+v", roots)
 	}
-	if roots[2].Label != "Crusader Kings III" || roots[2].OriginId != "vanilla" {
+	if roots[2].Label != "Crusader Kings III" || roots[2].Origin != "vanilla" {
 		t.Fatalf("game root %+v", roots[2])
 	}
 }

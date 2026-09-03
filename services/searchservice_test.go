@@ -1,7 +1,8 @@
-// rgsearch_test.go covers Find-in-Files globs: include, exclude, and folder isolation.
+// searchservice_test.go covers Find-in-Files globs: include, exclude, and folder isolation.
 package services
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,8 +41,8 @@ func TestTextSearchIncludeEvents(t *testing.T) {
 	}
 	root := t.TempDir()
 	writeSearchTree(t, root)
-	fs := &FileService{}
-	res, err := fs.TextSearch(TextSearchQuery{
+	ss := &SearchService{}
+	res, err := ss.TextSearch(context.Background(), TextSearchQuery{
 		Pattern: "unique_search_token",
 		Folders: []TextSearchFolder{{
 			Path:     root,
@@ -68,8 +69,8 @@ func TestTextSearchExcludeTxt(t *testing.T) {
 	}
 	root := t.TempDir()
 	writeSearchTree(t, root)
-	fs := &FileService{}
-	res, err := fs.TextSearch(TextSearchQuery{
+	ss := &SearchService{}
+	res, err := ss.TextSearch(context.Background(), TextSearchQuery{
 		Pattern: "unique_search_token",
 		Folders: []TextSearchFolder{{
 			Path:     root,
@@ -98,8 +99,8 @@ func TestTextSearchFoldersDoNotLeakGlobs(t *testing.T) {
 	b := t.TempDir()
 	writeSearchTree(t, a)
 	writeSearchTree(t, b)
-	fs := &FileService{}
-	res, err := fs.TextSearch(TextSearchQuery{
+	ss := &SearchService{}
+	res, err := ss.TextSearch(context.Background(), TextSearchQuery{
 		Pattern: "unique_search_token",
 		Folders: []TextSearchFolder{
 			{Path: a, Includes: []string{"**/events/**"}},
@@ -137,8 +138,8 @@ func TestTextSearchEmptyIncludeUsesPassedExcludes(t *testing.T) {
 	}
 	root := t.TempDir()
 	writeSearchTree(t, root)
-	fs := &FileService{}
-	res, err := fs.TextSearch(TextSearchQuery{
+	ss := &SearchService{}
+	res, err := ss.TextSearch(context.Background(), TextSearchQuery{
 		Pattern: "unique_search_token",
 		Folders: []TextSearchFolder{{
 			Path:     root,

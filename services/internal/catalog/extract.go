@@ -16,8 +16,6 @@ import (
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/parser/loc"
-
-	"github.com/samber/lo"
 )
 
 var (
@@ -47,18 +45,18 @@ type CallCandidate struct {
 
 // FileExtract is one parsed file's catalog harvest.
 type FileExtract struct {
-	Defs       []Def
-	Refs       []Ref
-	Edges      []Edge
-	Cands      []CallCandidate
-	Loc        LocDelta
+	Defs         []Def
+	Refs         []Ref
+	Edges        []Edge
+	Cands        []CallCandidate
+	Loc          LocDelta
 	StructKind   string
 	StructCounts map[string]int
 	StructBlocks map[string]int
 	Vocab        map[string]bool
-	GUITypes   map[string]bool
-	GUIProps   map[string]bool
-	FieldRHS   map[string]map[string]bool
+	GUITypes     map[string]bool
+	GUIProps     map[string]bool
+	FieldRHS     map[string]map[string]bool
 }
 
 // ExtractLoc turns a localization file into loc_key defs, values, and `$key$` refs.
@@ -68,14 +66,14 @@ func ExtractLoc(absPath, content, origin string) (defs []Def, locd LocDelta, ref
 	vals := map[string]LocEntry{}
 	for _, e := range r.Entries {
 		defs = append(defs, Def{
-			Type: "loc_key", Key: e.Key, Path: absPath, Line: e.Line,
+			Kind: "loc_key", Key: e.Key, Path: absPath, Line: e.Line,
 			Start: e.KeyRange.Start, End: e.KeyRange.End, Origin: origin,
 		})
 		v := e.Value
 		if len(v) > locValueLimit {
 			v = v[:locValueLimit]
 		}
-		vals[e.Key] = LocEntry{Value: v, File: absPath, Line: e.Line}
+		vals[e.Key] = LocEntry{Value: v, Path: absPath, Line: e.Line}
 		for _, ip := range loc.Interps(e.Value, e.ValueRange.Start) {
 			refs = append(refs, Ref{
 				Key: ip.Key, Kind: "loc", Path: absPath,
@@ -198,7 +196,7 @@ func ExtractFile(gameID, absPath, rel, origin, text string, harvestBodies bool) 
 
 func makeDef(kind, key, path, origin string, kr jomini.Range, li *jomini.LineIndex) Def {
 	return Def{
-		Type:   game.CanonicalKind(kind),
+		Kind:   game.CanonicalKind(kind),
 		Key:    key,
 		Path:   path,
 		Line:   li.PositionAt(kr.Start).Line,
@@ -367,7 +365,7 @@ type defAtLine struct {
 func defContainers(defs []Def) []defAtLine {
 	var out []defAtLine
 	for _, d := range defs {
-		if d.Type != "loc_key" {
+		if d.Kind != "loc_key" {
 			out = append(out, defAtLine{d.Line, d.Key})
 		}
 	}
@@ -509,7 +507,7 @@ func extractFieldRHS(root *jomini.Root) map[string]map[string]bool {
 func VoteFieldValueKinds(rhs map[string]map[string]bool, defs []Def) map[string]string {
 	kindsByKey := map[string][]string{}
 	for _, d := range defs {
-		k := game.CanonicalKind(d.Type)
+		k := game.CanonicalKind(d.Kind)
 		if k == "" || d.Key == "" {
 			continue
 		}
@@ -792,7 +790,7 @@ func EffectSet(defs []Def, cache *VanillaCache) map[string]bool {
 
 func addEffectDefs(set map[string]bool, defs []Def) {
 	for _, d := range defs {
-		if isScriptedEffect(d.Type) {
+		if isScriptedEffect(d.Kind) {
 			set[d.Key] = true
 		}
 	}
@@ -825,7 +823,7 @@ func DeriveVia(stored []Edge, cache *VanillaCache, effectSet map[string]bool, mo
 	kinds := map[string]bool{}
 	addKinds := func(defs []Def) {
 		for _, d := range defs {
-			switch game.CanonicalKind(d.Type) {
+			switch game.CanonicalKind(d.Kind) {
 			case "event", "on_action", "decision":
 				kinds[d.Key] = true
 			}
@@ -897,12 +895,12 @@ func DeriveVia(stored []Edge, cache *VanillaCache, effectSet map[string]bool, mo
 
 // Harvest is the in-memory result of indexing a workspace's mods.
 type Harvest struct {
-	Defs            []Def
-	Refs            []Ref
-	Edges           []Edge
-	Loc             map[string]map[string]LocEntry
-	Order           []string
-	FieldValueKinds map[string]string
+	Defs             []Def
+	Refs             []Ref
+	Edges            []Edge
+	Loc              map[string]map[string]LocEntry
+	Order            []string
+	FieldValueKinds  map[string]string
 	FieldEnumsByKind map[string]map[string][]string
 }
 
@@ -916,7 +914,7 @@ func ingestFile(gameID string, f fileRef, harvestBodies bool) FileExtract {
 }
 
 // BuildIndex walks every mod in load order and harvests its files.
-func BuildIndex(gameID string, mods []ModInput, cache *VanillaCache) Harvest {
+func BuildIndex(ctx context.Context, gameID string, mods []ModInput, cache *VanillaCache) (Harvest, error) {
 	ordered := append([]ModInput{}, mods...)
 	slices.SortStableFunc(ordered, func(a, b ModInput) int { return cmp.Compare(a.Order, b.Order) })
 	var files []fileRef
@@ -928,7 +926,10 @@ func BuildIndex(gameID string, mods []ModInput, cache *VanillaCache) Harvest {
 			files = append(files, f)
 		}
 	}
-	acc, _ := collectExtracts(context.Background(), gameID, files, false, cache)
+	acc, err := collectExtracts(ctx, gameID, files, false, cache)
+	if acc == nil {
+		return Harvest{}, err
+	}
 	defs := acc.defs
 	if cache != nil && len(cache.Defs) > 0 {
 		defs = append(append([]Def{}, cache.Defs...), acc.defs...)
@@ -936,9 +937,22 @@ func BuildIndex(gameID string, mods []ModInput, cache *VanillaCache) Harvest {
 	kinds := VoteFieldValueKinds(acc.fieldRHS, defs)
 	return Harvest{
 		Defs: acc.defs, Refs: acc.refs, Edges: acc.edges, Loc: acc.loc,
-		Order: lo.Uniq(order), FieldValueKinds: kinds,
+		Order: uniqKeep(order), FieldValueKinds: kinds,
 		FieldEnumsByKind: VoteFieldEnums(acc.fieldRHSByKind, kinds),
+	}, err
+}
+
+func uniqKeep(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
 	}
+	return out
 }
 
 // MergeLoc copies locd into dst, allocating maps as needed.
@@ -968,176 +982,5 @@ func modFiles(root string) []fileRef {
 			out = append(out, f)
 		}
 	})
-	return out
-}
-
-func enrichScriptDocs(dir, format string, c *VanillaCache) {
-	if dir == "" {
-		return
-	}
-	entries := parseScriptDocs(dir, format)
-	if len(entries) == 0 {
-		return
-	}
-	effects, triggers, vocab := map[string]bool{}, map[string]bool{}, map[string]bool{}
-	for _, v := range c.Vocabulary {
-		vocab[v] = true
-	}
-	if c.FieldDocs == nil {
-		c.FieldDocs = map[string]string{}
-	}
-	if c.TokenUsage == nil {
-		c.TokenUsage = map[string]string{}
-	}
-	if c.TokenScopes == nil {
-		c.TokenScopes = map[string]string{}
-	}
-	for _, e := range entries {
-		vocab[e.name] = true
-		if e.doc != "" && c.FieldDocs[e.name] == "" {
-			c.FieldDocs[e.name] = e.doc
-		}
-		if e.usage != "" {
-			c.TokenUsage[strings.ToLower(e.name)] = e.usage
-		}
-		if e.scopes != "" {
-			c.TokenScopes[strings.ToLower(e.name)] = e.scopes
-		}
-		switch e.kind {
-		case "effect":
-			effects[e.name] = true
-		case "trigger":
-			triggers[e.name] = true
-		}
-	}
-	c.Vocabulary, c.Effects, c.Triggers = sortedKeys(vocab), sortedKeys(effects), sortedKeys(triggers)
-}
-
-type docToken struct{ name, kind, doc, usage, scopes string }
-
-func parseScriptDocs(dir, format string) []docToken {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	var out []docToken
-	for _, de := range entries {
-		if de.IsDir() {
-			continue
-		}
-		name := strings.ToLower(de.Name())
-		raw, err := os.ReadFile(filepath.Join(dir, de.Name()))
-		if err != nil {
-			continue
-		}
-		kind := kindFromDocFilename(name)
-		switch {
-		case format == "markdown" && strings.HasSuffix(name, ".md"):
-			out = append(out, parseMarkdownDocs(string(raw), kind)...)
-		case format != "markdown" && strings.HasSuffix(name, ".log"):
-			out = append(out, parseClassicDocs(string(raw), kind)...)
-		}
-	}
-	return out
-}
-
-func kindFromDocFilename(name string) string {
-	switch {
-	case strings.Contains(name, "event_target"):
-		return "event_target"
-	case strings.Contains(name, "event_scope"):
-		return "scope_type"
-	case strings.Contains(name, "effect"):
-		return "effect"
-	case strings.Contains(name, "trigger"):
-		return "trigger"
-	case strings.Contains(name, "modif"):
-		return "modifier"
-	default:
-		return ""
-	}
-}
-
-func prose(parts []string) string {
-	return strings.TrimSpace(strings.Join(strings.Fields(strings.Join(parts, " ")), " "))
-}
-
-func splitDocMeta(parts []string) (doc, usage, scopes string) {
-	var body []string
-	for _, p := range parts {
-		t := strings.TrimSpace(p)
-		low := strings.ToLower(t)
-		switch {
-		case strings.HasPrefix(low, "usage:"):
-			usage = strings.TrimSpace(t[len("usage:"):])
-		case strings.HasPrefix(low, "supported scopes:"):
-			scopes = strings.TrimSpace(t[len("supported scopes:"):])
-		default:
-			body = append(body, p)
-		}
-	}
-	return prose(body), usage, scopes
-}
-
-func parseMarkdownDocs(text, kind string) []docToken {
-	var out []docToken
-	var cur *docToken
-	var body []string
-	flush := func() {
-		if cur == nil {
-			return
-		}
-		cur.doc, cur.usage, cur.scopes = splitDocMeta(body)
-		out = append(out, *cur)
-		cur, body = nil, body[:0]
-	}
-	for _, line := range strings.Split(text, "\n") {
-		if h := strings.TrimSpace(line); strings.HasPrefix(h, "## ") {
-			flush()
-			if m := tokenRe.FindString(strings.TrimSpace(strings.TrimLeft(h, "# "))); m != "" {
-				cur = &docToken{name: m, kind: kind}
-			}
-			continue
-		}
-		if cur != nil {
-			body = append(body, line)
-		}
-	}
-	flush()
-	return out
-}
-
-func parseClassicDocs(text, kind string) []docToken {
-	var out []docToken
-	var cur *docToken
-	var parts []string
-	flush := func() {
-		if cur == nil {
-			return
-		}
-		cur.doc, cur.usage, cur.scopes = splitDocMeta(parts)
-		out = append(out, *cur)
-		cur, parts = nil, nil
-	}
-	for _, raw := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
-		trimmed := strings.TrimSpace(raw)
-		switch {
-		case strings.HasPrefix(trimmed, "----"):
-			flush()
-		case trimmed == "":
-		case cur == nil:
-			name := tokenRe.FindString(trimmed)
-			if name == "" {
-				continue
-			}
-			cur = &docToken{name: name, kind: kind}
-			if i := strings.Index(trimmed, " - "); i >= 0 {
-				parts = append(parts, trimmed[i+3:])
-			}
-		default:
-			parts = append(parts, trimmed)
-		}
-	}
-	flush()
 	return out
 }

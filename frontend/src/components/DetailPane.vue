@@ -14,6 +14,7 @@ const props = defineProps<{
 }>();
 
 defineSlots<{
+  origin(): unknown;
   badges(): unknown;
   default(): unknown;
   empty(): unknown;
@@ -40,7 +41,11 @@ function open(): void {
         <div v-if="subtitle" class="truncate text-xs text-muted">
           {{ subtitle }}
         </div>
-        <div v-if="$slots.badges" class="flex flex-wrap items-center gap-1">
+        <div
+          v-if="$slots.origin || $slots.badges"
+          class="flex flex-wrap items-center gap-1"
+        >
+          <slot name="origin" />
           <slot name="badges" />
         </div>
         <div

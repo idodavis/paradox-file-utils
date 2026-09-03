@@ -43,13 +43,13 @@ func (p *Pool) EnsureSession(id string) (*Session, error) {
 	if id == "" {
 		return nil, fmt.Errorf("workspace id is required")
 	}
-	p.dropOthers(id)
 	p.mu.RLock()
 	if s := p.sessions[id]; s != nil {
 		p.mu.RUnlock()
 		return s, nil
 	}
 	p.mu.RUnlock()
+	p.dropOthers(id)
 
 	v, err, _ := p.sf.Do(id, func() (any, error) {
 		p.mu.RLock()

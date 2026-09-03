@@ -8,11 +8,11 @@ import { useQuery } from "@pinia/colada";
 import { useWorkspaceStore } from "../stores/workspace";
 import { setWorkbenchRoots } from "../ide/workbenchHost";
 import { currentWorkbenchTheme } from "../ide/colorThemes";
-import { GetIdeRoots, GetWorkspace } from "@services/workspaceservice";
+import { GetIdeRoots } from "@services/workspaceservice";
 import { EnsureSession } from "@services/sessionservice";
-import type { IdeRoot } from "../ide/fsBridge";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
+import { guideOpen, setGuideOpen } from "../composables/useGuidePrefs";
 
 defineOptions({ name: "WorkspaceIdePage" });
 
@@ -27,9 +27,16 @@ const { error, isPending } = useQuery({
     const id = String(route.params.id ?? "");
     if (!id) return true;
     await ws.loadActiveWorkspace();
-    await EnsureSession(id);
-    const rec = await GetWorkspace(id);
-    const roots = ((await GetIdeRoots(id)) ?? []) as IdeRoot[];
+    // Mount folders even when the session fails (stale loc sidecar, etc.).
+    // Re-throw after setWorkbenchRoots so the strip still shows the error.
+    let sessionErr: unknown;
+    try {
+      await EnsureSession(id);
+    } catch (e) {
+      sessionErr = e;
+    }
+    const rec = await GetIdeRoots(id);
+    const roots = rec?.roots ?? [];
     if (!roots.length) {
       throw new Error(
         "No game, mod, or staging paths available for this workspace.",
@@ -41,6 +48,7 @@ const { error, isPending } = useQuery({
       openFiles: rec?.ideOpenFiles ?? [],
       activeFile: rec?.ideActiveFile ?? "",
     });
+    if (sessionErr) throw sessionErr;
     return true;
   },
   enabled: () => !!workspaceId.value,
@@ -48,12 +56,16 @@ const { error, isPending } = useQuery({
 </script>
 
 <template>
-  <WorkspaceToolBar
-    :workspace-id="workspaceId"
-    title="Workspace IDE"
-    active="workspace-ide"
-  >
+  <WorkspaceToolBar :workspace-id="workspaceId">
     <template #trailing>
+      <UButton
+        icon="i-lucide-book-open"
+        label="Guide"
+        size="xs"
+        color="neutral"
+        :variant="guideOpen ? 'soft' : 'ghost'"
+        @click="setGuideOpen(!guideOpen)"
+      />
       <span v-if="isPending" class="text-xs text-muted">Loading workbench…</span>
       <span v-if="error" class="text-xs text-error">{{ error.message }}</span>
       <LanguageHealthStrip

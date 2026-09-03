@@ -7,7 +7,7 @@
 export interface EventDetail {
     "id": string;
     "kind"?: string;
-    "file": string;
+    "path": string;
     "rel"?: string;
     "origin"?: string;
     "originName"?: string;
@@ -95,7 +95,7 @@ export interface EventGraphSuggestions {
 export interface EventLocField {
     "key": string;
     "text"?: string;
-    "file"?: string;
+    "path"?: string;
     "line"?: number;
 }
 
@@ -163,7 +163,7 @@ export interface LocIssueRow {
     "language": string;
     "kind": string;
     "key": string;
-    "file"?: string;
+    "path"?: string;
     "rel"?: string;
     "line"?: number;
     "value"?: string;
@@ -177,7 +177,7 @@ export interface LocIssueRow {
 export interface LocLookup {
     "key": string;
     "text": string;
-    "file"?: string;
+    "path"?: string;
     "line"?: number;
     "origin"?: string;
     "originName"?: string;
@@ -203,7 +203,7 @@ export interface OverrideRow {
 export interface OverrideSite {
     "origin": string;
     "originName"?: string;
-    "file": string;
+    "path": string;
     "rel"?: string;
     "line": number;
 }
@@ -217,7 +217,7 @@ export interface RefKindGroup {
 }
 
 /**
- * SuggestionItem is one picker entry. Origin is "" for vanilla, else a mod id.
+ * SuggestionItem is one picker entry. Origin is "vanilla" or a mod id.
  */
 export interface SuggestionItem {
     "id": string;

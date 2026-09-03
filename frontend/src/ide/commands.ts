@@ -20,7 +20,7 @@ import {
   whenLayoutRefs,
   whenWorkbenchReady,
 } from "./workbenchHost";
-import type { IdeRoot } from "./fsBridge";
+import { normFs, type IdeRoot } from "./fsBridge";
 import { useIdeShellStore } from "../stores/ideShell";
 import { useWorkspaceStore } from "../stores/workspace";
 
@@ -68,9 +68,9 @@ function parentDir(path: string): string {
 }
 
 function covered(path: string, roots: IdeRoot[]): boolean {
-  const a = path.replace(/\\/g, "/").toLowerCase();
+  const a = normFs(path);
   return roots.some((r) => {
-    const b = r.path.replace(/\\/g, "/").toLowerCase();
+    const b = normFs(r.path);
     return a === b || a.startsWith(`${b}/`);
   });
 }
@@ -80,7 +80,7 @@ function extraRoots(files: string[], base: IdeRoot[]): IdeRoot[] {
   const seen = new Set<string>();
   for (const [i, file] of files.entries()) {
     const dir = parentDir(file);
-    const key = dir.replace(/\\/g, "/").toLowerCase();
+    const key = normFs(dir);
     if (!dir || seen.has(key) || covered(file, base) || covered(dir, base)) {
       continue;
     }
@@ -90,7 +90,7 @@ function extraRoots(files: string[], base: IdeRoot[]): IdeRoot[] {
       path: dir,
       readOnly: false,
       kind: "mod",
-      originId: `review-${i}`,
+      origin: `review-${i}`,
     });
   }
   return out;
@@ -98,6 +98,7 @@ function extraRoots(files: string[], base: IdeRoot[]): IdeRoot[] {
 
 let reviewUris: string[] = [];
 let reviewBaseRoots: IdeRoot[] = [];
+let reviewBack: (() => void) | undefined;
 
 async function closeReviewTabs(paths: string[]): Promise<void> {
   const want = new Set(paths.map((p) => monaco.Uri.file(p).toString()));
@@ -173,8 +174,8 @@ export async function startMergeOverlay(opts: {
   try {
     if (ws.activeWorkspaceId) await EnsureSession(ws.activeWorkspaceId);
     const base = (ws.activeWorkspaceId
-      ? ((await GetIdeRoots(ws.activeWorkspaceId)) ?? [])
-      : []) as IdeRoot[];
+      ? ((await GetIdeRoots(ws.activeWorkspaceId))?.roots ?? [])
+      : []);
     reviewBaseRoots = base;
     reviewUris = opts.files;
     const extras = extraRoots(opts.files, base);
@@ -183,9 +184,8 @@ export async function startMergeOverlay(opts: {
       toastFail("No workspace folders to open for review.");
       return;
     }
-    shell.beginMergeReview(() => {
-      void restoreAfterReview().then(() => opts.back?.());
-    }, opts.label);
+    reviewBack = opts.back;
+    shell.beginMergeReview(opts.label);
     await nextTick();
     await whenLayoutRefs();
     await setWorkbenchRoots(roots, currentWorkbenchTheme());
@@ -194,12 +194,21 @@ export async function startMergeOverlay(opts: {
     await opts.open();
     setMergeChrome(true);
   } catch (err) {
-    shell.endMergeReview();
+    await endMergeOverlay();
     if (err instanceof Error && err.message.includes("already initialized")) {
       return;
     }
     toastFail("Could not open review", err);
   }
+}
+
+/** Hide merge review, restore IDE roots, then run the overlay back callback. */
+export async function endMergeOverlay(): Promise<void> {
+  const back = reviewBack;
+  reviewBack = undefined;
+  useIdeShellStore().endMergeReview();
+  await restoreAfterReview();
+  back?.();
 }
 
 /** Open the VS Code merge editor. No ancestor on disk: pass A as base. */
@@ -218,14 +227,16 @@ export async function openMergeEditor(opts: {
   const b = monaco.Uri.file(opts.input2);
   const out = monaco.Uri.file(opts.result);
   const cmds = await vscode.commands.getCommands(true);
-  if (cmds.includes("_open.mergeEditor")) {
-    await vscode.commands.executeCommand("_open.mergeEditor", {
-      base: a.toString(),
-      input1: { uri: a.toString(), title: "A" },
-      input2: { uri: b.toString(), title: "B" },
-      output: out.toString(),
-    });
+  const names = ["_open.mergeEditor", "vscode.openMergeEditor", "_workbench.openMergeEditor"];
+  const cmd = names.find((n) => cmds.includes(n)) ?? "";
+  if (!cmd) {
+    toastFail("Merge editor is not available.");
     return;
   }
-  await vscode.commands.executeCommand("vscode.diff", a, b, "A \u2194 B");
+  await vscode.commands.executeCommand(cmd, {
+    base: a.toString(),
+    input1: { uri: a.toString(), title: "A" },
+    input2: { uri: b.toString(), title: "B" },
+    output: out.toString(),
+  });
 }

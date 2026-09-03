@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Ad-hoc two-file/dir merge using MergeService + workbench diffs for manual review.
+ * Ad-hoc two-file/dir merge using MergeService + the workbench merge editor.
  */
 import { computed, ref, watch } from "vue";
 import { useMutation, useQuery } from "@pinia/colada";
@@ -8,7 +8,7 @@ import FileSelector from "../components/FileSelector.vue";
 import { MergePreview, Merge } from "@services/mergeservice";
 import { PreviewItem, MergerOptions } from "@services/models";
 import { GetUserDownloadsDir } from "@services/fileservice";
-import { openDiff, openMergeEditor, startMergeOverlay } from "../ide/commands";
+import { openMergeEditor, startMergeOverlay } from "../ide/commands";
 import { useRouter } from "vue-router";
 
 defineOptions({ name: "ToolsMergePage" });
@@ -33,6 +33,7 @@ const mergeOptions = computed<MergerOptions>(() => ({
 
 const {
   mutateAsync: previewMut,
+  reset: resetPreview,
   isLoading: previewing,
   error: previewError,
   data: previewItems,
@@ -42,6 +43,7 @@ const {
 
 const {
   mutateAsync: mergeMut,
+  reset: resetMerge,
   isLoading: merging,
   error: mergeError,
   data: mergeResults,
@@ -59,14 +61,10 @@ function runPreview(): void {
   void previewMut();
 }
 
-/** 2-way preview of one pair in the chrome-hidden workbench. */
-async function previewItem(item: PreviewItem): Promise<void> {
-  await startMergeOverlay({
-    files: [item.pathA, item.pathB, item.outputPath],
-    label: "Back to Merge",
-    back: () => { void router.push({ name: "tools-merge" }); },
-    open: () => openDiff(item.pathA, item.pathB, item.relPath),
-  });
+/** Reset preview and results; keep selected paths. */
+function cancelMerge(): void {
+  resetPreview();
+  resetMerge();
 }
 
 /** Review one pair in the VS Code merge editor. */
@@ -83,7 +81,7 @@ async function reviewItem(item: PreviewItem): Promise<void> {
   });
 }
 
-/** Run merge on previewed items (auto) or open first diff (manual). */
+/** Run merge on previewed items (auto) or open the first merge editor (manual). */
 async function runMerge(): Promise<void> {
   const items = previewItems.value ?? [];
   if (!items.length) return;
@@ -102,7 +100,7 @@ async function runMerge(): Promise<void> {
       <div>
         <h1 class="text-xl font-bold">Ad-hoc Merge</h1>
         <p class="text-sm text-muted">
-          Merge two paths; manual mode opens workbench diffs
+          Merge two paths; manual mode opens the merge editor
         </p>
       </div>
 
@@ -152,6 +150,13 @@ async function runMerge(): Promise<void> {
               :disabled="!(previewItems ?? []).length"
               @click="runMerge"
             />
+            <UButton
+              label="Cancel"
+              color="neutral"
+              variant="outline"
+              :disabled="!(previewItems ?? []).length && !(mergeResults ?? []).length"
+              @click="cancelMerge"
+            />
           </div>
         </div>
       </UCard>
@@ -180,10 +185,10 @@ async function runMerge(): Promise<void> {
               </UBadge>
               <UButton
                 v-if="manualMode"
-                label="Diff"
+                label="Merge"
                 size="xs"
                 variant="outline"
-                @click="previewItem(item)"
+                @click="reviewItem(item)"
               />
             </div>
           </div>

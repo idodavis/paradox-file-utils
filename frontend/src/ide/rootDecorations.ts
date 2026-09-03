@@ -7,8 +7,8 @@
 import * as vscode from "vscode";
 import { registerExtension, ExtensionHostKind } from "@codingame/monaco-vscode-api/extensions";
 import { ReadFileBase64 } from "@services/fileservice";
-import type { IdeRoot, IdeRootKind } from "./fsBridge";
-import { useWorkspaceStore } from "../stores/workspace";
+import { normFs, type IdeRoot } from "./fsBridge";
+import { thumbMime, useWorkspaceStore } from "../stores/workspace";
 import iconCk3 from "@assets/Icon_CK3.png?url";
 import iconEu5 from "@assets/Icon_EUV.png?url";
 import iconVic3 from "@assets/Icon_Vic3.png?url";
@@ -59,16 +59,11 @@ let roots: IdeRoot[] = [];
 let registered = false;
 const changeEmitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
 
-/** Normalize path for root identity comparison. */
-function normPath(path: string): string {
-  return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-}
-
 /** Hex for a root or origin: custom #RRGGBB, else game/staging default, else palette. */
 export function originHex(origin: {
-  kind: IdeRootKind;
+  kind: string;
   path: string;
-  originId?: string;
+  origin?: string;
   color?: string;
   wrapIndex?: number;
 }): string {
@@ -104,18 +99,18 @@ export function originHexByOriginId(id: string): string {
     return originHex({
       kind: "mod",
       path: mod.path,
-      originId: mod.id,
+      origin: mod.id,
       color: mod.color,
       wrapIndex: i,
     });
   }
-  const root = roots.find((r) => r.originId === key);
+  const root = roots.find((r) => r.origin === key);
   if (root) return originHex(root);
   return COLOR_DEFAULTS[GAME_COLOR_ID]!;
 }
 
 function wrapIndexFor(root: {
-  kind: IdeRootKind;
+  kind: string;
   path: string;
   wrapIndex?: number;
 }): number {
@@ -125,7 +120,7 @@ function wrapIndexFor(root: {
     return ((root.wrapIndex % n) + n) % n;
   }
   const mods = roots.filter((r) => r.kind === "mod");
-  const i = mods.findIndex((r) => normPath(r.path) === normPath(root.path));
+  const i = mods.findIndex((r) => normFs(r.path) === normFs(root.path));
   return (i < 0 ? 0 : i) % n;
 }
 
@@ -138,10 +133,8 @@ function tooltipFor(root: IdeRoot): string {
       return "Staging";
     case "mod":
       return `Mod: ${root.label}`;
-    default: {
-      const _exhaustive: never = root.kind;
-      return _exhaustive;
-    }
+    default:
+      return root.label;
   }
 }
 
@@ -172,8 +165,8 @@ class RootDecorationProvider implements vscode.FileDecorationProvider {
   provideFileDecoration(
     uri: vscode.Uri,
   ): vscode.ProviderResult<vscode.FileDecoration> {
-    const path = normPath(uri.fsPath || uri.path);
-    const root = roots.find((r) => normPath(r.path) === path);
+    const path = normFs(uri.fsPath || uri.path);
+    const root = roots.find((r) => normFs(r.path) === path);
     if (!root) return undefined;
     const deco = new vscode.FileDecoration(undefined, tooltipFor(root));
     deco.propagate = false;
@@ -206,21 +199,6 @@ function explorerRootSel(label: string): string {
 function iconRule(label: string, url: string): string {
   const sel = `${explorerRootSel(label)} .monaco-icon-label::before`;
   return `${sel} { background-image: url("${url}") !important; }`;
-}
-
-function thumbMime(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  switch (ext) {
-    case "png":
-      return "image/png";
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "svg":
-      return "image/svg+xml";
-    default:
-      return "application/octet-stream";
-  }
 }
 
 function dotRule(label: string, hex: string): string {

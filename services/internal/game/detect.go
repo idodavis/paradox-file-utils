@@ -30,8 +30,9 @@ var (
 )
 
 type launcherSettings struct {
-	RawVersion string `json:"rawVersion"`
-	Version    string `json:"version"`
+	RawVersion   string `json:"rawVersion"`
+	Version      string `json:"version"`
+	GameDataPath string `json:"gameDataPath"`
 }
 
 // ReadGameVersion reads rawVersion (then version, stripping a parenthetical
@@ -53,6 +54,94 @@ func ReadGameVersion(installPath string) string {
 		v = v[:i]
 	}
 	return strings.TrimSpace(v)
+}
+
+// UserDataDir is the OS user-data folder for gameID (script_docs, default mod/).
+// First existing candidate wins; if none exist, the preferred conventional path.
+func UserDataDir(gameID, installPath string) string {
+	cands := userDataCandidates(gameID, installPath)
+	for _, p := range cands {
+		if dirExists(p) {
+			return p
+		}
+	}
+	if len(cands) > 0 {
+		return cands[0]
+	}
+	return ""
+}
+
+func userDataCandidates(gameID, installPath string) []string {
+	info := Get(gameID)
+	if info == nil {
+		return nil
+	}
+	name := info.DocsFolderName
+	var cands []string
+	add := func(p string) {
+		if p != "" {
+			cands = append(cands, filepath.Clean(p))
+		}
+	}
+	add(launcherGameDataPath(installPath))
+	home, homeErr := os.UserHomeDir()
+	nativeDocs := ""
+	if homeErr == nil {
+		nativeDocs = filepath.Join(home, "Documents", "Paradox Interactive", name)
+	}
+	switch runtime.GOOS {
+	case "windows", "darwin":
+		add(nativeDocs)
+	default:
+		xdg := os.Getenv("XDG_DATA_HOME")
+		if xdg == "" && homeErr == nil {
+			xdg = filepath.Join(home, ".local", "share")
+		}
+		if xdg != "" {
+			add(filepath.Join(xdg, "Paradox Interactive", name))
+		}
+		add(nativeDocs)
+		appID := strconv.Itoa(info.SteamAppID)
+		for _, steam := range steamLibraries() {
+			add(filepath.Join(
+				steam, "steamapps", "compatdata", appID,
+				"pfx", "drive_c", "users", "steamuser",
+				"Documents", "Paradox Interactive", name,
+			))
+		}
+	}
+	return cands
+}
+
+func launcherGameDataPath(installPath string) string {
+	if installPath == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(installPath, "launcher", "launcher-settings.json"))
+	if err != nil {
+		return ""
+	}
+	var ls launcherSettings
+	if sonic.Unmarshal(data, &ls) != nil {
+		return ""
+	}
+	return expandGameDataPath(ls.GameDataPath)
+}
+
+func expandGameDataPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	if strings.Contains(p, "%USER_DOCUMENTS%") {
+		home, err := os.UserHomeDir()
+		docs := ""
+		if err == nil {
+			docs = filepath.Join(home, "Documents")
+		}
+		p = strings.ReplaceAll(p, "%USER_DOCUMENTS%", docs)
+	}
+	return filepath.Clean(filepath.FromSlash(p))
 }
 
 // DescriptorPath is the expected descriptor file for gameID under a mod root.
@@ -141,6 +230,7 @@ func defaultSteamRoots() []string {
 		return []string{
 			filepath.Join(home, ".steam", "steam"),
 			filepath.Join(home, ".local", "share", "Steam"),
+			filepath.Join(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam"),
 		}
 	}
 }

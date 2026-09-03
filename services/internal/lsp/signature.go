@@ -31,7 +31,7 @@ func SignatureHelp(s *session.Session, path string, line, col int) *SignatureHel
 	}
 	usage := s.TokenUsage(key)
 	if usage == "" {
-		if d := s.Resolve(key); d != nil && game.IsCallKind(d.Type) {
+		if d := s.Resolve(key); d != nil && game.IsCallKind(d.Kind) {
 			usage = s.TokenUsage(d.Key)
 		}
 	}

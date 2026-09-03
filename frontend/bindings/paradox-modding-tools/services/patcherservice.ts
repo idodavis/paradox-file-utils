@@ -22,6 +22,13 @@ export function ApplyPatchRun(runID: string): $CancellablePromise<void> {
 }
 
 /**
+ * CancelPatchRun drops a run and its staging dir.
+ */
+export function CancelPatchRun(runID: string): $CancellablePromise<void> {
+    return $Call.ByID(3140939787, runID);
+}
+
+/**
  * PreviewPatchRun scans mod vs target vanilla, classifies files, writes preview staging.
  */
 export function PreviewPatchRun(runID: string): $CancellablePromise<$models.PatchRunPreview | null> {

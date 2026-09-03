@@ -129,7 +129,7 @@ func requiredLocDiags(s *session.Session, path string) []Diagnostic {
 	li := s.Parsed(path).Lines()
 	var out []Diagnostic
 	for _, d := range s.DefsInFile(path) {
-		for _, key := range game.RequiredLocKeys(d.Type, d.Key) {
+		for _, key := range game.RequiredLocKeys(d.Kind, d.Key) {
 			if locDefined(s, key) {
 				continue
 			}
@@ -166,7 +166,7 @@ func modDeclaresNamespace(s *session.Session, ns string) bool {
 		return false
 	}
 	for _, d := range s.FindDefs(ns+".", 8, true, false) {
-		if game.CanonicalKind(d.Type) == "event" &&
+		if game.CanonicalKind(d.Kind) == "event" &&
 			strings.HasPrefix(d.Key, ns+".") {
 			return true
 		}

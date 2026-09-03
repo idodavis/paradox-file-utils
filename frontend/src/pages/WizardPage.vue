@@ -21,7 +21,6 @@ import {
   FindGameInstalls,
   DeleteGameInstall,
   SetInstallVersion,
-  GetInstallCacheInfo,
   SetWorkspaceLocLang,
 } from "@services/workspaceservice";
 
@@ -63,7 +62,7 @@ const stepItems: StepperItem[] = [
 /** Install options for the radio group. */
 const installItems = computed(() =>
   installs.value.map((i) => ({
-    label: `${i.name} (${i.version || "latest"})${cacheAt.value[i.id] ? " — cache ready" : ""}`,
+    label: `${i.name} (${i.version || "latest"})${i.scannedAt ? " — cache ready" : ""}`,
     value: i.id,
   })),
 );
@@ -102,17 +101,9 @@ const {
       ListGameInstalls(selectedGame.value),
       FindGameInstalls(selectedGame.value),
     ]);
-    const listedInstalls = listed ?? [];
-    const infos = await Promise.all(
-      listedInstalls.map(async (i) => {
-        const info = await GetInstallCacheInfo(i.id);
-        return [i.id, info?.scannedAt ?? ""] as const;
-      }),
-    );
     return {
-      installs: listedInstalls,
+      installs: listed ?? [],
       detected: detected ?? [],
-      cacheAt: Object.fromEntries(infos),
     };
   },
   enabled: () => step.value >= 2,
@@ -120,7 +111,6 @@ const {
 
 const installs = computed(() => installPack.value?.installs ?? []);
 const detectedInstalls = computed(() => installPack.value?.detected ?? []);
-const cacheAt = computed(() => installPack.value?.cacheAt ?? {});
 
 watch(installs, (list) => {
   const keep = selectedInstallId.value;
@@ -352,8 +342,8 @@ const error = computed(
                   <template v-else>no file — default latest, pin optional</template>
                 </p>
                 <p class="text-xs text-muted">
-                  {{ cacheAt[selectedInstall.id]
-                    ? `cache ready (${cacheAt[selectedInstall.id]})` : "cache not scanned" }}
+                  {{ selectedInstall.scannedAt
+                    ? `cache ready (${selectedInstall.scannedAt})` : "cache not scanned" }}
                 </p>
                 <UButton label="Delete" size="xs" color="error" variant="ghost" :loading="busy"
                   @click="deleteSelectedInstall()" />

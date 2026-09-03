@@ -199,7 +199,7 @@ func locItems(s *session.Session, prefix string) []CompletionItem {
 		seen[k] = true
 		out = append(out, documentedVal(s, k, "loc key", ""))
 	}
-	for _, k := range s.LocKeys(false) {
+	for _, k := range s.LocKeys() {
 		add(k)
 		if len(out) >= maxComplete {
 			return out
@@ -330,10 +330,10 @@ func vocabAndDefs(s *session.Session, prefix, vocabKind, defType string) []Compl
 		}
 	}
 	for _, d := range s.FindDefs(prefix, maxComplete, true, true) {
-		if game.CanonicalKind(d.Type) != defType {
+		if game.CanonicalKind(d.Kind) != defType {
 			continue
 		}
-		add(d.Key, d.Type)
+		add(d.Key, d.Kind)
 		if len(out) >= maxComplete {
 			break
 		}
@@ -345,14 +345,14 @@ func defsOfType(s *session.Session, prefix, defType string) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
 	for _, d := range s.FindDefs(prefix, maxComplete, true, true) {
-		if game.CanonicalKind(d.Type) != defType || d.Key == "" || seen[d.Key] {
+		if game.CanonicalKind(d.Kind) != defType || d.Key == "" || seen[d.Key] {
 			continue
 		}
 		if !lowerPrefix(d.Key, prefix) {
 			continue
 		}
 		seen[d.Key] = true
-		out = append(out, documentedVal(s, d.Key, d.Type, d.Type))
+		out = append(out, documentedVal(s, d.Key, d.Kind, d.Kind))
 		if len(out) >= maxComplete {
 			break
 		}

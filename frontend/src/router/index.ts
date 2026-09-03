@@ -11,6 +11,7 @@ import LocCoveragePage from "../pages/LocCoveragePage.vue";
 import PatcherPage from "../pages/PatcherPage.vue";
 import ToolsMergePage from "../pages/ToolsMergePage.vue";
 import WorkspaceSettingsPage from "../pages/WorkspaceSettingsPage.vue";
+import { PAGE_CATALOG } from "../workspaceTools";
 import { useWorkspaceStore } from "../stores/workspace";
 
 const routes = [
@@ -22,88 +23,55 @@ const routes = [
     path: "/library",
     name: "library",
     component: LibraryPage,
-    meta: {
-      title: "Library",
-      description: "Browse and manage your modding workspaces.",
-    },
+    meta: PAGE_CATALOG.library,
   },
   {
     path: "/wizard",
     name: "wizard",
     component: WizardPage,
-    meta: {
-      title: "Create Workspace",
-      description: "Set up a new modding workspace.",
-    },
+    meta: PAGE_CATALOG.wizard,
   },
   {
     path: "/workspace/:id",
     name: "workspace-ide",
     components: { ide: WorkspaceIdePage },
-    meta: {
-      title: "Workspace",
-      description: "View and edit files in your workspace.",
-      workspaceTool: true,
-    },
+    meta: PAGE_CATALOG["workspace-ide"],
   },
   {
     path: "/workspace/:id/graph",
     name: "event-graph",
     component: EventGraphPage,
-    meta: {
-      title: "Event Graph",
-      description: "Browse event and on_action links in the workspace.",
-      workspaceTool: true,
-    },
+    meta: PAGE_CATALOG["event-graph"],
   },
   {
     path: "/workspace/:id/conflicts",
     name: "conflicts",
     component: ConflictPage,
-    meta: {
-      title: "Conflicts",
-      description: "FIOS/LIOS overlapping definitions.",
-      workspaceTool: true,
-    },
+    meta: PAGE_CATALOG.conflicts,
   },
   {
     path: "/workspace/:id/loc",
     name: "loc-coverage",
     component: LocCoveragePage,
-    meta: {
-      title: "Loc Coverage",
-      description: "Missing, orphaned, and untranslated localization keys.",
-      workspaceTool: true,
-    },
+    meta: PAGE_CATALOG["loc-coverage"],
   },
   {
     path: "/workspace/:id/patcher",
     name: "patcher",
     component: PatcherPage,
-    meta: {
-      title: "Mod Patcher",
-      description: "Update mods between game versions.",
-      workspaceTool: true,
-    },
+    meta: PAGE_CATALOG.patcher,
   },
   {
     path: "/workspace/:id/settings",
     name: "workspace-settings",
     component: WorkspaceSettingsPage,
-    meta: {
-      title: "Workspace Settings",
-      description: "Configure this workspace.",
-      workspaceTool: true,
-    },
+    meta: PAGE_CATALOG["workspace-settings"],
   },
   {
     path: "/tools/merge",
     name: "tools-merge",
     component: ToolsMergePage,
-    meta: {
-      title: "Ad-hoc Merge",
-      description: "Merge two files or directories without a workspace.",
-    },
+    meta: PAGE_CATALOG["tools-merge"],
   },
   {
     path: "/settings",
@@ -122,7 +90,7 @@ const router = createRouter({
 });
 
 router.beforeEach((to) => {
-  if (!to.meta.workspaceTool) return true;
+  if (!to.meta.workspace) return true;
   const id = to.params.id;
   if (typeof id !== "string" || !id) return true;
   const ws = useWorkspaceStore();

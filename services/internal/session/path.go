@@ -53,16 +53,11 @@ func RelPath(root, file string) (rel string, ok bool) {
 	return file[len(root)+1:], true
 }
 
-// FileKind classifies a root-relative path for indexing (script, gui, loc, …).
-func FileKind(rel, name string) string {
-	return catalog.ClassifyRel(rel, name)
-}
-
 // KindFor returns the catalog file kind for an absolute path.
 func (s *Session) KindFor(path string) string {
 	_, rel, ok := s.Locate(path)
 	if !ok {
 		rel = path
 	}
-	return FileKind(strings.ReplaceAll(rel, "\\", "/"), filepath.Base(path))
+	return catalog.ClassifyRel(strings.ReplaceAll(rel, "\\", "/"), filepath.Base(path))
 }

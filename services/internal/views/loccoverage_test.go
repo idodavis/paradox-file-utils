@@ -125,7 +125,7 @@ ns.1 = { type = character_event title = used_key }
 	})})
 	for _, row := range Coverage(s) {
 		for _, m := range row.Issues {
-			if strings.Contains(strings.ToLower(m.File), "descriptor.mod") ||
+			if strings.Contains(strings.ToLower(m.Path), "descriptor.mod") ||
 				m.Key == "t" && m.Kind == "missing" {
 				t.Fatalf("descriptor name leaked: %+v", m)
 			}
@@ -142,7 +142,7 @@ ns.1 = { type = character_event title = used_key }
 	})})
 	for _, row := range Coverage(s) {
 		for _, m := range row.Issues {
-			if strings.Contains(strings.ToLower(m.File), "metadata.json") {
+			if strings.Contains(strings.ToLower(m.Path), "metadata.json") {
 				t.Fatalf("metadata leaked: %+v", m)
 			}
 		}

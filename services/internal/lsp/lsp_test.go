@@ -171,17 +171,17 @@ t.2 = { title = k.t }
 		"common/scripted_triggers/t.txt":  "my_trig = { always = yes }\n",
 		"common/traits/00.txt":            "brave = { category = personality }\n",
 	}, &catalog.VanillaCache{
-		FieldDocs: map[string]string{
+		FieldInfo: map[string]string{
 			"type": "Invite", "add_gold": "Gives gold.",
 		},
-		FieldDocsByKind: map[string]map[string]string{
+		FieldInfoByKind: map[string]map[string]string{
 			"event": {"type": "presentation", "title": "Dynamic"},
 		},
 		Structures: map[string][]string{"event": {"immediate"}},
 		Effects:    []string{"add_gold"},
-		Defs:       []catalog.Def{{Type: "loc_key", Key: "type", Path: vfile, Line: 1}},
+		Defs:       []catalog.Def{{Kind: "loc_key", Key: "type", Path: vfile, Line: 1}},
 	}, &catalog.VanillaLoc{
-		Sites: map[string]catalog.LocEntry{"type": {File: vfile, Line: 1, Value: "Type"}},
+		Sites: map[string]catalog.LocEntry{"type": {Path: vfile, Line: 1, Value: "Type"}},
 	})
 	f := filepath.Join(root, "events", "x.txt")
 	col := strings.Index(body, "event")
@@ -202,6 +202,9 @@ t.2 = { title = k.t }
 	}
 	line, col = lineCol(body, "immediate")
 	wantHover(t, s, f, line, col, "event key", "`immediate`")
+	if h := Hover(s, f, line, col); h == nil || h.OriginName != "Crusader Kings III" {
+		t.Fatalf("immediate originName=%#v", h)
+	}
 	line, col = lineCol(body, "add_gold")
 	wantHover(t, s, f, line, col, "**effect**", "`add_gold`", "Gives gold")
 	line, col = lineCol(body, "my_trig")
@@ -235,7 +238,7 @@ func TestHoverCallKindAndPortrait(t *testing.T) {
 		"common/scripted_triggers/x.txt": trig,
 		"events/p.txt":                   "ns.1 = {\n\tright_portrait = none\n}\n",
 	}, &catalog.VanillaCache{
-		FieldDocs: map[string]string{"left_portrait": "Left side portrait."},
+		FieldInfo: map[string]string{"left_portrait": "Left side portrait."},
 	}, nil)
 	tf := filepath.Join(root, "common", "scripted_triggers", "x.txt")
 	line, col := lineCol(trig, "scripted_trigger")
@@ -454,7 +457,7 @@ func TestCompleteSlots(t *testing.T) {
 		Structures: map[string][]string{"event": {"immediate", "option", "title"}},
 		Effects:    []string{"add_gold"},
 		Triggers:   []string{"is_adult"},
-		FieldDocs:  map[string]string{"immediate": "runs first"},
+		FieldInfo:  map[string]string{"immediate": "runs first"},
 	}
 	vloc := &catalog.VanillaLoc{Sites: map[string]catalog.LocEntry{
 		"test.1.t": {Value: "Hi"},
@@ -531,7 +534,7 @@ func TestCompleteSlots(t *testing.T) {
 	}, &catalog.VanillaCache{
 		FieldValueKinds: map[string]string{"theme": "event_themes"},
 		Defs: []catalog.Def{
-			{Type: "event_themes", Key: "seduction", Path: "t.txt", Line: 0},
+			{Kind: "event_themes", Key: "seduction", Path: "t.txt", Line: 0},
 		},
 	}, nil)
 	f = filepath.Join(root, "events", "x.txt")
@@ -549,7 +552,7 @@ func TestCompleteEmptyPrefixAndFallback(t *testing.T) {
 	cache := &catalog.VanillaCache{
 		Structures: map[string][]string{"event": {"immediate", "option"}},
 		Defs: []catalog.Def{
-			{Type: "trait", Key: "ambitious", Path: "t.txt", Line: 0},
+			{Kind: "trait", Key: "ambitious", Path: "t.txt", Line: 0},
 		},
 	}
 	vloc := &catalog.VanillaLoc{Sites: map[string]catalog.LocEntry{
@@ -587,7 +590,7 @@ func TestCompleteEmptyPrefixAndFallback(t *testing.T) {
 func TestSignatureHelpAndSchemaDiags(t *testing.T) {
 	cache := &catalog.VanillaCache{
 		TokenUsage: map[string]string{"add_gold": "add_gold = { $VALUE$ }"},
-		FieldDocs:  map[string]string{"add_gold": "gold"},
+		FieldInfo:  map[string]string{"add_gold": "gold"},
 	}
 	s, root := buildSession(t, "ck3", map[string]string{
 		"events/x.txt":         "namespace = ns\nns.1 = {\n\timmediate = { add_gold = {  trigger_event = ns.99 }\n}\n",

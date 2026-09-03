@@ -30,6 +30,7 @@ function asRefs(item: AccordionItem): EventRefInfo[] {
   return (item as AccordionItem & { refs?: EventRefInfo[] }).refs ?? [];
 }
 
+/** Reroot graph kinds; otherwise open the definition in the IDE. */
 function onRef(r: EventRefInfo): void {
   if (GRAPH_KINDS.has(r.kind)) {
     emit("reroot", r.name);
@@ -44,7 +45,11 @@ function onRef(r: EventRefInfo): void {
     v-if="items.length"
     type="multiple"
     :items="items"
-    :ui="{ trigger: 'text-xs', body: 'text-xs' }"
+    :ui="{
+      trigger: 'px-2 py-1.5 text-xs font-medium',
+      trailingIcon: 'size-3.5',
+      body: 'px-2 text-xs',
+    }"
   >
     <template #body="{ item }">
       <button

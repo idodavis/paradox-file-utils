@@ -4,10 +4,6 @@
 package services
 
 import (
-	"fmt"
-	"path/filepath"
-
-	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/lsp"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -32,8 +28,7 @@ func (s *IdeService) DidChange(workspaceID, path, text string) error {
 }
 
 // DidClose drops an editor buffer overlay.
-func (s *IdeService) DidClose(workspaceID, path string) (err error) {
-	defer recoverErr(&err)
+func (s *IdeService) DidClose(workspaceID, path string) error {
 	if live := s.Session.pool().Get(workspaceID); live != nil {
 		live.DidClose(path)
 	}
@@ -131,79 +126,3 @@ func (s *IdeService) WorkspaceSymbols(workspaceID, query string) ([]lsp.SymbolIn
 	})
 }
 
-func (w *WorkspaceService) getScriptRoot(installID string) (string, error) {
-	var path, gameID string
-	w.Store.Read(func(c *Config) {
-		if inst := findInstall(c, installID); inst != nil {
-			path, gameID = inst.Path, inst.GameID
-		}
-	})
-	if path == "" {
-		return "", fmt.Errorf("install not found")
-	}
-	info := game.Get(gameID)
-	if info == nil {
-		return "", fmt.Errorf("unknown game: %s", gameID)
-	}
-	return filepath.Join(path, info.ScriptRoot), nil
-}
-
-// IdeRoot is one folder in the workspace IDE multi-root set.
-type IdeRoot struct {
-	Label     string `json:"label"`
-	Path      string `json:"path"`
-	ReadOnly  bool   `json:"readOnly"`
-	Kind      string `json:"kind"`
-	OriginId  string `json:"originId,omitempty"`
-	Color     string `json:"color,omitempty"`
-	Thumbnail string `json:"thumbnail,omitempty"`
-}
-
-// gameFilesLabel is the explorer folder name for the install (registry Name).
-func gameFilesLabel(gameID string) string {
-	if g := game.Get(gameID); g != nil && g.Name != "" {
-		return g.Name
-	}
-	return "Game"
-}
-
-// GetIdeRoots returns game / mod / staging folders for the workspace IDE.
-func (w *WorkspaceService) GetIdeRoots(workspaceID string) ([]IdeRoot, error) {
-	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace id is required")
-	}
-	ws, err := w.GetWorkspace(workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	var roots []IdeRoot
-	mods := append([]WorkspaceMod(nil), ws.Mods...)
-	sortWorkspaceMods(mods)
-	for _, mod := range mods {
-		if mod.IsBroken || mod.Path == "" {
-			continue
-		}
-		label := mod.Name
-		if label == "" {
-			label = "Mod"
-		}
-		roots = append(roots, IdeRoot{
-			Label: label, Path: mod.Path, Kind: "mod",
-			OriginId: mod.ID, Color: mod.Color, Thumbnail: mod.Thumbnail,
-		})
-	}
-	if ws.StagingDir != "" {
-		roots = append(roots, IdeRoot{
-			Label: "Staging", Path: ws.StagingDir, Kind: "staging",
-			OriginId: "staging", Color: ws.StagingColor,
-		})
-	}
-	if root, e := w.getScriptRoot(ws.InstallID); e == nil && root != "" {
-		roots = append(roots, IdeRoot{
-			Label: gameFilesLabel(ws.GameID), Path: root,
-			ReadOnly: true, Kind: "game", OriginId: game.OriginVanilla,
-			Color: ws.GameColor,
-		})
-	}
-	return roots, nil
-}

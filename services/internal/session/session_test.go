@@ -84,7 +84,7 @@ func TestQueries(t *testing.T) {
 		Structures: map[string][]string{"event": {"immediate"}},
 		Vocabulary: []string{"add_gold"},
 		Effects:    []string{"add_gold"},
-		FieldDocs:  map[string]string{"immediate": "runs first"},
+		FieldInfo:  map[string]string{"immediate": "runs first"},
 	}
 	s := NewWithLoc("ws", "ck3", "english", cache, nil, []catalog.ModInput{
 		{Origin: "mod", Root: root, Name: "M", Order: 0},
@@ -93,7 +93,7 @@ func TestQueries(t *testing.T) {
 	s.DidOpen(loc, "l_english:\n k.t:0 \"Hi\"\n")
 
 	must(t, s.DefaultLang() == "english" && s.DefCount() >= 2 && s.Resolve("t.1") != nil, "defs")
-	must(t, s.ResolveMatching("t.1", func(d catalog.Def) bool { return d.Type == "event" }) != nil,
+	must(t, s.ResolveMatching("t.1", func(d catalog.Def) bool { return d.Kind == "event" }) != nil,
 		"ResolveMatching")
 	must(t, len(s.ModDefsOf("t.1")) > 0 && len(s.FindDefs("t.1", 10, true, false)) > 0 &&
 		len(s.DefsInFile(ev)) > 0, "ModDefsOf/FindDefs/DefsInFile")
@@ -101,7 +101,7 @@ func TestQueries(t *testing.T) {
 	v, locValOK := s.DefaultLoc("k.t")
 	_, locFileOK := s.LocFile("mod", "english")
 	must(t, locOK && locValOK && v == "Hi" && locFileOK, "loc site/default/file")
-	must(t, len(s.LocKeys(false)) > 0 && s.LocByLang()["english"]["k.t"].Value == "Hi",
+	must(t, len(s.LocKeys()) > 0 && s.LocByLang()["english"]["k.t"].Value == "Hi",
 		"LocKeys/LocByLang")
 	must(t, len(s.RefsTo("k.t")) > 0 && len(s.RefsInFile(ev)) > 0 && len(s.LocRefs()) > 0, "refs")
 	must(t, len(s.EdgesFrom("t.1")) > 0 && len(s.EdgesTo("t.2")) > 0, "edges")
@@ -124,6 +124,30 @@ func TestQueries(t *testing.T) {
 	s.ReplaceCache(&catalog.VanillaCache{InstallPath: "/y", GameVersion: "2"})
 	inst, _, _, _ = s.CacheInfo()
 	must(t, inst == "/y", "ReplaceCache")
+}
+
+func TestLocateVanilla(t *testing.T) {
+	install := writeFiles(t, map[string]string{
+		"game/events/x.txt":                     "x.1 = {}\n",
+		"game/in_game/events/character/foo.txt": "y.1 = {}\n",
+	})
+	ck3 := filepath.Join(install, "game", "events", "x.txt")
+	eu5 := filepath.Join(install, "game", "in_game", "events", "character", "foo.txt")
+
+	s := NewWithLoc("ws", "ck3", "english", &catalog.VanillaCache{
+		InstallPath: install,
+	}, nil, nil)
+	origin, rel, ok := s.Locate(ck3)
+	must(t, ok && origin == "vanilla" && filepath.ToSlash(rel) == "events/x.txt",
+		"ck3 vanilla locate")
+
+	s5 := NewWithLoc("ws", "eu5", "english", &catalog.VanillaCache{
+		InstallPath: install,
+	}, nil, nil)
+	origin, rel, ok = s5.Locate(eu5)
+	must(t, ok && origin == "vanilla" &&
+		filepath.ToSlash(rel) == "in_game/events/character/foo.txt",
+		"eu5 vanilla locate")
 }
 
 func TestEdgesFromConcurrent(t *testing.T) {

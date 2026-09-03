@@ -51,15 +51,15 @@ export interface GameInfo {
     "scriptDocsSubdir"?: string;
 
     /**
-     * ScriptDocsFormat is "classic" (CK3 `_*.info`) or "markdown" (Vic3/EU5 `*.md`).
-     */
-    "scriptDocsFormat"?: string;
-
-    /**
      * EntryModes are EU5 database entry-mode prefixes (INJECT:, REPLACE:, ...).
      */
     "entryModes"?: string[] | null;
     "steamAppId"?: number;
+
+    /**
+     * FirstWins is the FIOS sentence for Conflicts / Settings load-order copy.
+     */
+    "firstWins"?: string;
 }
 
 /**

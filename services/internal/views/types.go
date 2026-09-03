@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -33,7 +34,7 @@ type EventGraphSuggestions struct {
 	Namespaces []SuggestionItem `json:"namespaces"`
 }
 
-// SuggestionItem is one picker entry. Origin is "" for vanilla, else a mod id.
+// SuggestionItem is one picker entry. Origin is "vanilla" or a mod id.
 type SuggestionItem struct {
 	ID     string `json:"id"`
 	Origin string `json:"origin"`
@@ -63,7 +64,7 @@ type EventGraphEdge struct {
 type EventLocField struct {
 	Key  string `json:"key"`
 	Text string `json:"text,omitempty"`
-	File string `json:"file,omitempty"`
+	Path string `json:"path,omitempty"`
 	Line int    `json:"line,omitempty"`
 }
 
@@ -123,7 +124,7 @@ type RefKindGroup struct {
 type EventDetail struct {
 	ID        string             `json:"id"`
 	Kind      string             `json:"kind,omitempty"`
-	File       string             `json:"file"`
+	Path       string             `json:"path"`
 	Rel        string             `json:"rel,omitempty"`
 	Origin     string             `json:"origin,omitempty"`
 	OriginName string             `json:"originName,omitempty"`
@@ -146,7 +147,7 @@ type LocIssueRow struct {
 	Language   string `json:"language"`
 	Kind       string `json:"kind"`
 	Key        string `json:"key"`
-	File       string `json:"file,omitempty"`
+	Path       string `json:"path,omitempty"`
 	Rel        string `json:"rel,omitempty"`
 	Line       int    `json:"line,omitempty"`
 	Value      string `json:"value,omitempty"`
@@ -165,7 +166,7 @@ type LocCoverage struct {
 type LocLookup struct {
 	Key        string `json:"key"`
 	Text       string `json:"text"`
-	File       string `json:"file,omitempty"`
+	Path       string `json:"path,omitempty"`
 	Line       int    `json:"line,omitempty"`
 	Origin     string `json:"origin,omitempty"`
 	OriginName string `json:"originName,omitempty"`
@@ -191,6 +192,13 @@ func titleOf(s *session.Session, id string) string {
 		}
 	}
 	return ""
+}
+
+func originID(origin string) string {
+	if origin == "" {
+		return game.OriginVanilla
+	}
+	return origin
 }
 
 func clip(s string, n int) string {

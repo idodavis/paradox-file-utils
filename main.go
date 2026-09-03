@@ -31,6 +31,8 @@ func main() {
 	patcherSvc := &services.PatcherService{Store: store, FileService: fileSvc, MergeService: mergeSvc}
 	ideSvc := &services.IdeService{Session: sessSvc}
 	viewsSvc := &services.ViewsService{Session: sessSvc}
+	wikiSvc := &services.WikiService{Session: sessSvc}
+	searchSvc := &services.SearchService{}
 
 	app := application.New(application.Options{
 		Name:        "paradox-modding-tools",
@@ -44,6 +46,8 @@ func main() {
 			application.NewService(viewsSvc),
 			application.NewService(patcherSvc),
 			application.NewService(mergeSvc),
+			application.NewService(wikiSvc),
+			application.NewService(searchSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
@@ -67,6 +71,8 @@ func main() {
 	}); err != nil {
 		log.Fatalf("updater.Init: %v", err)
 	}
+
+	sessSvc.StartWikiWarm(version)
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Paradox Modding Tools",

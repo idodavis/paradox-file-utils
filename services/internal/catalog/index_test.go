@@ -3,6 +3,7 @@
 package catalog
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -90,7 +91,7 @@ test.1 = {
 	t.Run("saved scope not indexed", func(t *testing.T) {
 		ex := extractCK3("events/x.txt", saved, "modA")
 		for _, d := range ex.Defs {
-			if d.Type == "saved_scope" {
+			if d.Kind == "saved_scope" {
 				t.Fatalf("saved_scope def: %+v", d)
 			}
 		}
@@ -209,11 +210,14 @@ func TestBuildIndex(t *testing.T) {
 	parent, child := t.TempDir(), t.TempDir()
 	writeMod(t, parent, "common/traits/00.txt", "brave = { category = personality }\n")
 	writeMod(t, child, "common/traits/01.txt", "craven = { category = personality }\n")
-	cache := &VanillaCache{Defs: []Def{{Type: "trait", Key: "vanilla_trait", Path: "v.txt"}}}
-	idx := BuildIndex("ck3", []ModInput{
+	cache := &VanillaCache{Defs: []Def{{Kind: "trait", Key: "vanilla_trait", Path: "v.txt"}}}
+	idx, err := BuildIndex(context.Background(), "ck3", []ModInput{
 		{Origin: "parent", Root: parent, Order: 0},
 		{Origin: "child", Root: child, Order: 1},
 	}, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var braveOrigin string
 	for _, d := range idx.Defs {
 		if d.Key == "brave" {
@@ -229,7 +233,10 @@ func TestBuildIndex(t *testing.T) {
 
 	root := t.TempDir()
 	writeMod(t, root, "localization/english/events.yml", "l_english:\n test.1.t:0 \"Hello\"\n")
-	locIdx := BuildIndex("ck3", []ModInput{{Origin: "mod", Root: root, Order: 0}}, nil)
+	locIdx, err := BuildIndex(context.Background(), "ck3", []ModInput{{Origin: "mod", Root: root, Order: 0}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := locIdx.Loc["english"]["test.1.t"].Value; got != "Hello" {
 		t.Fatalf("Loc from header = %v", locIdx.Loc)
 	}
@@ -237,8 +244,8 @@ func TestBuildIndex(t *testing.T) {
 
 func TestVoteFieldValueKinds(t *testing.T) {
 	defs := []Def{
-		{Type: "event_theme", Key: "seduction"},
-		{Type: "trait", Key: "brave"},
+		{Kind: "event_theme", Key: "seduction"},
+		{Kind: "trait", Key: "brave"},
 	}
 	ok := VoteFieldValueKinds(map[string]map[string]bool{
 		"theme": {"seduction": true},

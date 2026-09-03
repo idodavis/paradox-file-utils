@@ -13,7 +13,7 @@ import (
 type OverrideSite struct {
 	Origin     string `json:"origin"`
 	OriginName string `json:"originName,omitempty"`
-	File       string `json:"file"`
+	Path       string `json:"path"`
 	Rel        string `json:"rel,omitempty"`
 	Line       int    `json:"line"`
 }
@@ -44,10 +44,11 @@ func OverrideRows(s *session.Session) []OverrideRow {
 	for _, c := range contests {
 		sites := make([]OverrideSite, 0, len(c.Defs))
 		for _, d := range c.Defs {
+			o := originID(d.Origin)
 			sites = append(sites, OverrideSite{
-				Origin:     d.Origin,
-				OriginName: s.OriginName(d.Origin),
-				File:       d.Path,
+				Origin:     o,
+				OriginName: s.OriginName(o),
+				Path:       d.Path,
 				Rel:        s.DisplayRel(d.Path),
 				Line:       d.Line,
 			})
@@ -56,8 +57,8 @@ func OverrideRows(s *session.Session) []OverrideRow {
 			Kind:       c.Kind,
 			Name:       c.Name,
 			Rule:       c.Rule,
-			Winner:     c.Winner,
-			WinnerName: s.OriginName(c.Winner),
+			Winner:     originID(c.Winner),
+			WinnerName: s.OriginName(originID(c.Winner)),
 			Sites:      sites,
 			Overlay:    c.Overlay,
 		})

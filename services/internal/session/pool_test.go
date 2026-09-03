@@ -63,6 +63,28 @@ func TestEnsureSessionEmptyIDDoesNotDrop(t *testing.T) {
 	}
 }
 
+func TestEnsureSessionReturnsExistingBeforeDrop(t *testing.T) {
+	var builds int32
+	pool := NewPool(func(id string) (*Session, error) {
+		atomic.AddInt32(&builds, 1)
+		return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+	}, nil)
+	first, err := pool.EnsureSession("ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := pool.EnsureSession("ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatal("second EnsureSession rebuilt the live session")
+	}
+	if atomic.LoadInt32(&builds) != 1 {
+		t.Fatalf("builds = %d, want 1", atomic.LoadInt32(&builds))
+	}
+}
+
 func TestDropAll(t *testing.T) {
 	pool := NewPool(func(id string) (*Session, error) {
 		return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil

@@ -30,9 +30,9 @@ func Hover(s *session.Session, path string, line, col int) *HoverResult {
 			return h
 		}
 		if ck := game.CanonicalKind(a.Key.Text); game.IsCallKind(ck) {
-			return &HoverResult{
+			return vanillaSite(s, &HoverResult{
 				Contents: hoverCard(kindLabel(ck), a.Key.Text, "", hoverExtra(s, a.Key.Text, ck)),
-			}
+			})
 		}
 		docs := s.FieldDoc(a.Key.Text, at.kind)
 		m := memberSetsFor(s, at.kind)
@@ -40,7 +40,7 @@ func Hover(s *session.Session, path string, line, col int) *HoverResult {
 			return nil
 		}
 		head := kindLabel(at.kind) + " key"
-		return &HoverResult{Contents: hoverCard(head, a.Key.Text, "", docs)}
+		return vanillaSite(s, &HoverResult{Contents: hoverCard(head, a.Key.Text, "", docs)})
 	}
 	if at.word == "" {
 		return nil
@@ -49,7 +49,7 @@ func Hover(s *session.Session, path string, line, col int) *HoverResult {
 		return h
 	}
 	if extra := s.FieldDoc(at.word, ""); extra != "" {
-		return &HoverResult{Contents: hoverCard("field", at.word, "", extra)}
+		return vanillaSite(s, &HoverResult{Contents: hoverCard("field", at.word, "", extra)})
 	}
 	return nil
 }
@@ -63,14 +63,14 @@ func namedHoverAllow(s *session.Session, word string, allowLoc bool) *HoverResul
 		d = resolveNonLoc(s, word)
 	}
 	if d != nil {
-		if d.Type == "loc_key" {
+		if d.Kind == "loc_key" {
 			return locHover(s, word)
 		}
-		if d.Type == "saved_scope" {
+		if d.Kind == "saved_scope" {
 			return savedScopeHover(word)
 		}
 		h := &HoverResult{
-			Contents: hoverCard(kindLabel(d.Type), d.Key, "", hoverExtra(s, word, d.Type)),
+			Contents: hoverCard(kindLabel(d.Kind), d.Key, "", hoverExtra(s, word, d.Kind)),
 		}
 		attachSite(h, s, d.Path, d.Line, d.Origin, d.Start)
 		return h
@@ -79,21 +79,21 @@ func namedHoverAllow(s *session.Session, word string, allowLoc bool) *HoverResul
 		return locHover(s, word)
 	}
 	if ck := memberSetsFor(s, "").catalogKind(word); ck != "" {
-		return &HoverResult{
+		return vanillaSite(s, &HoverResult{
 			Contents: hoverCard(ck, word, "", hoverExtra(s, word, "")),
-		}
+		})
 	}
 	for _, k := range s.Vocab("datafunction") {
 		if k == word {
-			return &HoverResult{
+			return vanillaSite(s, &HoverResult{
 				Contents: hoverCard("data function", word, "", hoverExtra(s, word, "")),
-			}
+			})
 		}
 	}
 	if ck := game.CanonicalKind(word); game.IsCallKind(ck) {
-		return &HoverResult{
+		return vanillaSite(s, &HoverResult{
 			Contents: hoverCard(kindLabel(ck), word, "", hoverExtra(s, word, ck)),
-		}
+		})
 	}
 	return nil
 }
@@ -162,6 +162,15 @@ func mdEscape(s string) string {
 	return strings.Join(lines, "\n")
 }
 
+func vanillaSite(s *session.Session, h *HoverResult) *HoverResult {
+	if h == nil {
+		return nil
+	}
+	h.Origin = game.OriginVanilla
+	h.OriginName = s.OriginName(game.OriginVanilla)
+	return h
+}
+
 func attachSite(h *HoverResult, s *session.Session, path string, line int, origin string, start int) {
 	if h == nil || path == "" {
 		return
@@ -173,6 +182,7 @@ func attachSite(h *HoverResult, s *session.Session, path string, line int, origi
 		origin = game.OriginVanilla
 	}
 	h.Origin = origin
+	h.OriginName = s.OriginName(origin)
 	if start > 0 {
 		h.Col = s.Parsed(path).Lines().PositionAt(start).Character
 	}

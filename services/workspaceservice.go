@@ -28,13 +28,19 @@ func (w *WorkspaceService) ListGames() game.GameList {
 	return game.GameList{OriginVanilla: game.OriginVanilla, Games: game.All()}
 }
 
-// ListGameInstalls returns all installs for a game.
+// ListGameInstalls returns all installs for a game, with VanillaCache scannedAt.
 func (w *WorkspaceService) ListGameInstalls(gameID string) ([]GameInstall, error) {
 	var out []GameInstall
 	w.Store.Read(func(c *Config) {
 		for _, inst := range c.Installs {
 			if inst.GameID == gameID {
-				out = append(out, inst)
+				cp := inst
+				ver := cp.Version
+				if ver == "" {
+					ver = "latest"
+				}
+				cp.ScannedAt = catalog.PeekCacheScannedAt(cp.ID, ver)
+				out = append(out, cp)
 			}
 		}
 	})
@@ -115,6 +121,7 @@ func (w *WorkspaceService) GetWorkspace(id string) (*Workspace, error) {
 	if ws == nil {
 		return nil, fmt.Errorf("workspace not found")
 	}
+	sortWorkspaceMods(ws.Mods)
 	return ws, nil
 }
 
@@ -198,7 +205,8 @@ func (w *WorkspaceService) rebuildSession(id string) error {
 		return nil
 	}
 	w.Session.pool().Drop(id)
-	return w.Session.EnsureSession(id)
+	_, err := w.Session.EnsureSession(id)
+	return err
 }
 
 // AddWorkspaceMod adds a mod to a workspace.
@@ -228,7 +236,7 @@ func (w *WorkspaceService) AddWorkspaceMod(
 	return &mod, nil
 }
 
-// DefaultModParent is Documents/Paradox Interactive/<game>/mod, or "".
+// DefaultModParent is UserDataDir/<game>/mod, or "".
 func (w *WorkspaceService) DefaultModParent(gameID string) string {
 	return game.DefaultModParent(gameID)
 }
@@ -251,29 +259,13 @@ func (w *WorkspaceService) CreateMod(
 		return "", fmt.Errorf("parent folder is required")
 	}
 	root := filepath.Join(parentDir, game.ModSlug(name))
-	if err := game.WriteNewMod(
-		gameID, root, name, supportedVersion, locLang, description, thumbnailSrc,
-	); err != nil {
+	if err := game.WriteNewMod(game.NewModOpts{
+		GameID: gameID, Root: root, Name: name, SupportedVersion: supportedVersion,
+		LocLang: locLang, Description: description, ThumbnailSrc: thumbnailSrc,
+	}); err != nil {
 		return "", err
 	}
 	return root, nil
-}
-
-// ListWorkspaceMods returns all mods for a workspace, sorted by SortOrder then Name.
-func (w *WorkspaceService) ListWorkspaceMods(workspaceID string) ([]WorkspaceMod, error) {
-	var mods []WorkspaceMod
-	var ok bool
-	w.Store.Read(func(c *Config) {
-		if ws := findWorkspace(c, workspaceID); ws != nil {
-			ok = true
-			mods = append([]WorkspaceMod(nil), ws.Mods...)
-			sortWorkspaceMods(mods)
-		}
-	})
-	if !ok {
-		return nil, fmt.Errorf("workspace not found")
-	}
-	return mods, nil
 }
 
 // RemoveWorkspaceMod detaches a mod from a workspace.
@@ -431,8 +423,8 @@ func (w *WorkspaceService) FindGameInstalls(gameID string) []game.DetectedInstal
 	return game.FindInstalls(gameID)
 }
 
-// UpdateGameInstall updates path and docs_path, then refreshes version.
-func (w *WorkspaceService) UpdateGameInstall(id, path, docsPath string) (*GameInstall, error) {
+// UpdateGameInstall updates path, then refreshes version.
+func (w *WorkspaceService) UpdateGameInstall(id, path string) (*GameInstall, error) {
 	if path != "" {
 		if _, err := os.Stat(path); err != nil {
 			return nil, fmt.Errorf("invalid path: %w", err)
@@ -447,7 +439,6 @@ func (w *WorkspaceService) UpdateGameInstall(id, path, docsPath string) (*GameIn
 		if path != "" {
 			inst.Path = path
 		}
-		inst.DocsPath = docsPath
 		inst.VersionDetected = game.ReadGameVersion(inst.Path)
 		cp := *inst
 		out = &cp
@@ -491,28 +482,75 @@ func (w *WorkspaceService) EnsureStagingDir(workspaceID string) (string, error) 
 	return dir, nil
 }
 
-// InstallCacheInfo is VanillaCache persist metadata for Settings/wizard cards.
-type InstallCacheInfo struct {
-	ScannedAt string `json:"scannedAt"`
+// IdeRoot is one folder in the workspace IDE multi-root set.
+type IdeRoot struct {
+	Label     string `json:"label"`
+	Path      string `json:"path"`
+	ReadOnly  bool   `json:"readOnly"`
+	Kind      string `json:"kind"`
+	Origin    string `json:"origin,omitempty"`
+	Color     string `json:"color,omitempty"`
+	Thumbnail string `json:"thumbnail,omitempty"`
 }
 
-// GetInstallCacheInfo returns scannedAt for the install's VanillaCache, or empty.
-func (w *WorkspaceService) GetInstallCacheInfo(installID string) (*InstallCacheInfo, error) {
-	var inst *GameInstall
-	w.Store.Read(func(c *Config) {
-		if found := findInstall(c, installID); found != nil {
-			cp := *found
-			inst = &cp
+// IdeRoots is the IDE boot DTO: folders plus tab restore.
+type IdeRoots struct {
+	Roots          []IdeRoot `json:"roots"`
+	ResetIdeOnOpen bool      `json:"resetIdeOnOpen"`
+	IdeOpenFiles   []string  `json:"ideOpenFiles,omitempty"`
+	IdeActiveFile  string    `json:"ideActiveFile,omitempty"`
+}
+
+// GetIdeRoots returns game / mod / staging folders and tab restore for the IDE.
+func (w *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace id is required")
+	}
+	ws, err := w.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	out := &IdeRoots{
+		ResetIdeOnOpen: ws.ResetIdeOnOpen,
+		IdeOpenFiles:   append([]string(nil), ws.IdeOpenFiles...),
+		IdeActiveFile:  ws.IdeActiveFile,
+	}
+	for _, mod := range ws.Mods {
+		if mod.IsBroken || mod.Path == "" {
+			continue
 		}
+		label := mod.Name
+		if label == "" {
+			label = "Mod"
+		}
+		out.Roots = append(out.Roots, IdeRoot{
+			Label: label, Path: mod.Path, Kind: "mod",
+			Origin: mod.ID, Color: mod.Color, Thumbnail: mod.Thumbnail,
+		})
+	}
+	if ws.StagingDir != "" {
+		out.Roots = append(out.Roots, IdeRoot{
+			Label: "Staging", Path: ws.StagingDir, Kind: "staging",
+			Origin: "staging", Color: ws.StagingColor,
+		})
+	}
+	var scriptRoot string
+	var rootErr error
+	w.Store.Read(func(c *Config) {
+		scriptRoot, rootErr = installScriptRoot(c, ws.InstallID)
 	})
-	if inst == nil {
-		return nil, fmt.Errorf("install not found")
+	if rootErr == nil && scriptRoot != "" {
+		label := "Game"
+		if g := game.Get(ws.GameID); g != nil && g.Name != "" {
+			label = g.Name
+		}
+		out.Roots = append(out.Roots, IdeRoot{
+			Label: label, Path: scriptRoot,
+			ReadOnly: true, Kind: "game", Origin: game.OriginVanilla,
+			Color: ws.GameColor,
+		})
 	}
-	ver := inst.Version
-	if ver == "" {
-		ver = "latest"
-	}
-	return &InstallCacheInfo{ScannedAt: catalog.PeekCacheScannedAt(inst.ID, ver)}, nil
+	return out, nil
 }
 
 // DeleteGameInstall removes an install if no workspace uses it.

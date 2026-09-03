@@ -34,12 +34,13 @@ type Diagnostic struct {
 
 // HoverResult is hover card markdown. Origin/rel/path/line describe the def site.
 type HoverResult struct {
-	Contents string `json:"contents"`
-	Origin   string `json:"origin,omitempty"`
-	Rel      string `json:"rel,omitempty"`
-	Path     string `json:"path,omitempty"`
-	Line     int    `json:"line,omitempty"`
-	Col      int    `json:"col,omitempty"`
+	Contents   string `json:"contents"`
+	Origin     string `json:"origin,omitempty"`
+	OriginName string `json:"originName,omitempty"`
+	Rel        string `json:"rel,omitempty"`
+	Path       string `json:"path,omitempty"`
+	Line       int    `json:"line,omitempty"`
+	Col        int    `json:"col,omitempty"`
 }
 
 // CompletionItem is one completion suggestion.
@@ -132,8 +133,8 @@ func resolveAt(s *session.Session, path string, line, col int) (atPos, bool) {
 	chain := jomini.NodeAtOffset(res.Root, off)
 	if len(chain) > 0 {
 		if a, ok := chain[0].(*jomini.Assignment); ok && !a.Key.Quoted {
-			if d := s.Resolve(a.Key.Text); d != nil && d.Type != "" && d.Type != "loc_key" {
-				at.kind = d.Type
+			if d := s.Resolve(a.Key.Text); d != nil && d.Kind != "" && d.Kind != "loc_key" {
+				at.kind = d.Kind
 			}
 		}
 		fillCompleteSlot(&at, chain, off)
@@ -279,7 +280,7 @@ func locDefined(s *session.Session, key string) bool {
 
 func resolveNonLoc(s *session.Session, word string) *catalog.Def {
 	return s.ResolveMatching(word, func(d catalog.Def) bool {
-		return d.Type != "loc_key" && d.Type != "saved_scope"
+		return d.Kind != "loc_key" && d.Kind != "saved_scope"
 	})
 }
 

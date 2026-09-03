@@ -7,14 +7,10 @@ import { useLocalStorage } from "@vueuse/core";
 import {
   ListWorkspaces,
   GetWorkspace,
-  ListWorkspaceMods,
   MarkBrokenPaths,
   ListGames,
 } from "@services/workspaceservice";
-import {
-  EnsureSession,
-  GetModelStatus,
-} from "@services/sessionservice";
+import { EnsureSession } from "@services/sessionservice";
 import { ReadFileBase64 } from "@services/fileservice";
 import { Workspace, WorkspaceMod } from "@services/models";
 import type { GameInfo } from "@services/internal/game/models";
@@ -34,7 +30,8 @@ export const LOC_LANG_ITEMS: { label: string; value: string }[] = [
   { label: "Japanese", value: "japanese" },
 ];
 
-function thumbMime(path: string): string {
+/** MIME type for a mod thumbnail path (png/jpeg/svg). */
+export function thumbMime(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   switch (ext) {
     case "png":
@@ -93,6 +90,11 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   /** Full title from the registry, or "Game". */
   function gameName(id: string): string {
     return games.value.find((g) => g.id === id)?.name ?? "Game";
+  }
+
+  /** FIOS sentence from GameInfo.firstWins. */
+  function firstWins(id: string): string {
+    return games.value.find((g) => g.id === id)?.firstWins ?? "";
   }
 
   function applyGameList(list: {
@@ -163,13 +165,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
         return;
       }
       try {
-        const [ws, mods] = await Promise.all([
-          GetWorkspace(id),
-          ListWorkspaceMods(id),
-        ]);
+        const rec = await GetWorkspace(id);
         if (token !== loadToken) return;
-        activeWorkspace.value = ws;
-        workspaceMods.value = mods ?? [];
+        activeWorkspace.value = rec;
+        workspaceMods.value = rec?.mods ?? [];
       } catch {
         if (token !== loadToken) return;
         if (activeWorkspaceId.value === id) activeWorkspaceId.value = "";
@@ -202,9 +201,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     const id = activeWorkspaceId.value;
     if (!id) return false;
     try {
-      await EnsureSession(id);
-      const st = await GetModelStatus(id);
-      return Boolean(st?.live);
+      const health = await EnsureSession(id);
+      return Boolean(health?.indexReady);
     } catch {
       return false;
     }
@@ -251,6 +249,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     workspacesByGame,
     shortName,
     gameName,
+    firstWins,
     refresh,
     loadActiveWorkspace,
     setActiveWorkspace,

@@ -90,18 +90,27 @@ function safeLine(doc: vscode.TextDocument, line: number): string {
   return doc.lineAt(line).text;
 }
 
+/** Wrap LSP documentation as trusted markdown. */
+function withDoc(text: string): vscode.MarkdownString {
+  const md = new vscode.MarkdownString(text, true);
+  md.supportHtml = true;
+  return md;
+}
+
 /** Location line from Go origin + rel (1-based line). */
 function hoverSiteMarkdown(h: HoverResult): string {
-  const origin = h.origin || "vanilla";
+  const origin = h.origin || "";
   const rel = h.rel ?? "";
-  if (!origin && !rel) return "";
-  const raw = originHexByOriginId(origin);
+  const label = escHtml(h.originName || "");
+  if (!label && !rel) return "";
+  const key = origin || "vanilla";
+  const raw = originHexByOriginId(key);
   const hex = /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : "#5B9A8B";
-  const icon = origin === "vanilla" || origin === "staging"
+  const icon = key === "vanilla" || key === "staging"
     ? "$(root-folder)"
     : "$(package)";
-  const label = escHtml(origin);
-  const site = `<span style="color:${hex};">${icon} ${label}</span>`;
+  const name = label || escHtml(key === "vanilla" ? "Game" : key);
+  const site = `<span style="color:${hex};">${icon} ${name}</span>`;
   const pathBit = hoverOpenLink(h, rel);
   return pathBit ? `${site} · ${pathBit}` : site;
 }
@@ -283,7 +292,7 @@ export function registerLanguageClient(
             c.detail = it.detail;
             c.sortText = String(i).padStart(4, "0");
             if (it.documentation) {
-              c.documentation = it.documentation;
+              c.documentation = withDoc(it.documentation);
             }
             if (it.insertText) {
               c.insertText = it.insertText.includes("$")

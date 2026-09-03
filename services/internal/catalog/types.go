@@ -6,14 +6,14 @@ package catalog
 import "strings"
 
 // CacheFormatVersion is the on-disk schema of VanillaCache.
-const CacheFormatVersion = 12
+const CacheFormatVersion = 13
 
 // LocFormatVersion is the on-disk schema of a vanilla loc sidecar.
-const LocFormatVersion = 2
+const LocFormatVersion = 3
 
-// Def is one named object: Type/Key, absolute Path, 0-based Line, Origin ("" = vanilla).
+// Def is one named object: Kind/Key, absolute Path, 0-based Line, Origin ("" = vanilla).
 type Def struct {
-	Type   string `json:"type"`
+	Kind   string `json:"kind"`
 	Key    string `json:"key"`
 	Path   string `json:"path"`
 	Line   int    `json:"line"`
@@ -55,7 +55,7 @@ type ModInput struct {
 // LocEntry is one localization value with its source file and line.
 type LocEntry struct {
 	Value string `json:"value"`
-	File  string `json:"file"`
+	Path  string `json:"path"`
 	Line  int    `json:"line"`
 }
 
@@ -74,32 +74,33 @@ type VanillaCache struct {
 	GameVersion   string `json:"gameVersion"`
 	ScannedAt     string `json:"scannedAt"`
 
-	Defs            []Def                        `json:"defs"`
-	FieldDocs       map[string]string            `json:"fieldDocs"`
-	FieldDocsByKind map[string]map[string]string `json:"fieldDocsByKind"`
-	Structures      map[string][]string          `json:"structures"`
-	StructureBlocks map[string][]string          `json:"structureBlocks,omitempty"`
-	Vocabulary      []string                     `json:"vocabulary"`
-	Effects         []string                     `json:"effects"`
-	Triggers        []string                     `json:"triggers"`
-	GUITypes        []string                     `json:"guiTypes"`
-	GUIProps        []string                     `json:"guiProps"`
-	MetaKeys        []string                     `json:"metaKeys"`
-	Edges           []Edge                       `json:"edges,omitempty"`
-	LocRefs         []Ref                        `json:"locRefs,omitempty"`
-	FieldValueKinds   map[string]string              `json:"fieldValueKinds,omitempty"`
-	FieldEnumsByKind  map[string]map[string][]string `json:"fieldEnumsByKind,omitempty"`
-	TokenUsage        map[string]string              `json:"tokenUsage,omitempty"`
-	TokenScopes     map[string]string            `json:"tokenScopes,omitempty"`
-	DataFunctions   []string                     `json:"dataFunctions,omitempty"`
+	Defs             []Def                          `json:"defs"`
+	FieldInfo        map[string]string              `json:"fieldInfo"`
+	FieldInfoByKind  map[string]map[string]string   `json:"fieldInfoByKind"`
+	Structures       map[string][]string            `json:"structures"`
+	StructureBlocks  map[string][]string            `json:"structureBlocks,omitempty"`
+	Vocabulary       []string                       `json:"vocabulary"`
+	Effects          []string                       `json:"effects"`
+	Triggers         []string                       `json:"triggers"`
+	GUITypes         []string                       `json:"guiTypes"`
+	GUIProps         []string                       `json:"guiProps"`
+	MetaKeys         []string                       `json:"metaKeys"`
+	Edges            []Edge                         `json:"edges,omitempty"`
+	LocRefs          []Ref                          `json:"locRefs,omitempty"`
+	FieldValueKinds  map[string]string              `json:"fieldValueKinds,omitempty"`
+	FieldEnumsByKind map[string]map[string][]string `json:"fieldEnumsByKind,omitempty"`
+	TokenUsage       map[string]string              `json:"tokenUsage,omitempty"`
+	TokenDoc         map[string]string              `json:"tokenDoc,omitempty"`
+	TokenScopes      map[string]string              `json:"tokenScopes,omitempty"`
+	DataFunctions    []string                       `json:"dataFunctions,omitempty"`
 
 	// Built by PrepareCache on load/scan; not persisted.
-	effectSet     map[string]bool            `json:"-"`
-	triggerSet    map[string]bool            `json:"-"`
-	vocabSet      map[string]bool            `json:"-"`
-	guiTypesSet   map[string]bool            `json:"-"`
-	guiPropsSet   map[string]bool            `json:"-"`
-	metaKeysSet   map[string]bool            `json:"-"`
+	effectSet          map[string]bool            `json:"-"`
+	triggerSet         map[string]bool            `json:"-"`
+	vocabSet           map[string]bool            `json:"-"`
+	guiTypesSet        map[string]bool            `json:"-"`
+	guiPropsSet        map[string]bool            `json:"-"`
+	metaKeysSet        map[string]bool            `json:"-"`
 	structureSets      map[string]map[string]bool `json:"-"`
 	structureBlockSets map[string]map[string]bool `json:"-"`
 }
@@ -115,11 +116,14 @@ func PrepareCache(c *VanillaCache) {
 	if c == nil {
 		return
 	}
-	if c.FieldDocs == nil {
-		c.FieldDocs = map[string]string{}
+	if c.FieldInfo == nil {
+		c.FieldInfo = map[string]string{}
 	}
-	if c.FieldDocsByKind == nil {
-		c.FieldDocsByKind = map[string]map[string]string{}
+	if c.FieldInfoByKind == nil {
+		c.FieldInfoByKind = map[string]map[string]string{}
+	}
+	if c.TokenDoc == nil {
+		c.TokenDoc = map[string]string{}
 	}
 	if c.Structures == nil {
 		c.Structures = map[string][]string{}
@@ -133,9 +137,10 @@ func PrepareCache(c *VanillaCache) {
 	if c.FieldEnumsByKind == nil {
 		c.FieldEnumsByKind = map[string]map[string][]string{}
 	}
-	c.FieldDocs = normalizeDocMap(c.FieldDocs)
-	for kind, m := range c.FieldDocsByKind {
-		c.FieldDocsByKind[kind] = normalizeDocMap(m)
+	c.FieldInfo = normalizeDocMap(c.FieldInfo)
+	c.TokenDoc = normalizeDocMap(c.TokenDoc)
+	for kind, m := range c.FieldInfoByKind {
+		c.FieldInfoByKind[kind] = normalizeDocMap(m)
 	}
 	c.effectSet, c.triggerSet = sliceSet(c.Effects), sliceSet(c.Triggers)
 	c.vocabSet, c.guiTypesSet = sliceSet(c.Vocabulary), sliceSet(c.GUITypes)

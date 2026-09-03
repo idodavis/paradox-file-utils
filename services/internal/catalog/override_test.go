@@ -15,46 +15,46 @@ func TestWinner(t *testing.T) {
 		{
 			"LIOS last mod", "",
 			[]Def{
-				{Type: "trait", Key: "brave", Origin: "a"},
-				{Type: "trait", Key: "brave", Origin: "b"},
-				{Type: "trait", Key: "brave", Origin: ""},
+				{Kind: "trait", Key: "brave", Origin: "a"},
+				{Kind: "trait", Key: "brave", Origin: "b"},
+				{Kind: "trait", Key: "brave", Origin: ""},
 			},
 			map[string]int{"a": 0, "b": 1}, "b",
 		},
 		{
 			"FIOS gui", "ck3",
 			[]Def{
-				{Type: "gui_type", Key: "widget", Origin: "b"},
-				{Type: "gui_type", Key: "widget", Origin: "a"},
+				{Kind: "gui_type", Key: "widget", Origin: "b"},
+				{Kind: "gui_type", Key: "widget", Origin: "a"},
 			},
 			map[string]int{"a": 0, "b": 1}, "a",
 		},
 		{
 			"vanilla only", "",
-			[]Def{{Type: "trait", Key: "x", Origin: ""}},
+			[]Def{{Kind: "trait", Key: "x", Origin: ""}},
 			map[string]int{}, "",
 		},
 		{
 			"vic3 event FIOS", "vic3",
 			[]Def{
-				{Type: "event", Key: "e.1", Origin: "b"},
-				{Type: "event", Key: "e.1", Origin: "a"},
+				{Kind: "event", Key: "e.1", Origin: "b"},
+				{Kind: "event", Key: "e.1", Origin: "a"},
 			},
 			map[string]int{"a": 0, "b": 1}, "a",
 		},
 		{
 			"eu5 gui_type LIOS", "eu5",
 			[]Def{
-				{Type: "gui_type", Key: "widget", Origin: "a"},
-				{Type: "gui_type", Key: "widget", Origin: "b"},
+				{Kind: "gui_type", Key: "widget", Origin: "a"},
+				{Kind: "gui_type", Key: "widget", Origin: "b"},
 			},
 			map[string]int{"a": 0, "b": 1}, "b",
 		},
 		{
 			"ck3 event LIOS", "ck3",
 			[]Def{
-				{Type: "event", Key: "e.1", Origin: "a"},
-				{Type: "event", Key: "e.1", Origin: "b"},
+				{Kind: "event", Key: "e.1", Origin: "a"},
+				{Kind: "event", Key: "e.1", Origin: "b"},
 			},
 			map[string]int{"a": 0, "b": 1}, "b",
 		},
@@ -70,10 +70,10 @@ func TestWinner(t *testing.T) {
 }
 
 func TestContests(t *testing.T) {
-	vanilla := []Def{{Type: "trait", Key: "brave", Origin: "", Path: "vanilla.txt", Line: 9}}
+	vanilla := []Def{{Kind: "trait", Key: "brave", Origin: "", Path: "vanilla.txt", Line: 9}}
 	modPair := []Def{
-		{Type: "trait", Key: "brave", Origin: "a", Path: "a.txt", Line: 1},
-		{Type: "trait", Key: "brave", Origin: "b", Path: "b.txt", Line: 2},
+		{Kind: "trait", Key: "brave", Origin: "a", Path: "a.txt", Line: 1},
+		{Kind: "trait", Key: "brave", Origin: "b", Path: "b.txt", Line: 2},
 	}
 	tests := []struct {
 		name    string
@@ -89,33 +89,33 @@ func TestContests(t *testing.T) {
 		{"mod vs mod LIOS", "", modPair, nil, []string{"a", "b"}, 1, false, "b", 2},
 		{"vanilla shadow conflict", "", modPair, vanilla, []string{"a", "b"}, 1, false, "b", 2},
 		{"vanilla overlay only", "",
-			[]Def{{Type: "trait", Key: "brave", Origin: "a", Path: "a.txt", Line: 1}},
+			[]Def{{Kind: "trait", Key: "brave", Origin: "a", Path: "a.txt", Line: 1}},
 			vanilla, []string{"a"}, 1, true, "", 1},
 		{
 			"skip loc and isolated kinds", "",
 			[]Def{
-				{Type: "loc_key", Key: "brave", Origin: "a", Path: "a.yml"},
-				{Type: "loc_key", Key: "brave", Origin: "b", Path: "b.yml"},
-				{Type: "mod_descriptor", Key: "name", Origin: "a", Path: "a.mod"},
-				{Type: "mod_descriptor", Key: "name", Origin: "b", Path: "b.mod"},
-				{Type: "trait", Key: "same", Origin: "a", Path: "t.txt"},
-				{Type: "event", Key: "same", Origin: "b", Path: "e.txt"},
+				{Kind: "loc_key", Key: "brave", Origin: "a", Path: "a.yml"},
+				{Kind: "loc_key", Key: "brave", Origin: "b", Path: "b.yml"},
+				{Kind: "mod_descriptor", Key: "name", Origin: "a", Path: "a.mod"},
+				{Kind: "mod_descriptor", Key: "name", Origin: "b", Path: "b.mod"},
+				{Kind: "trait", Key: "same", Origin: "a", Path: "t.txt"},
+				{Kind: "event", Key: "same", Origin: "b", Path: "e.txt"},
 			},
 			nil, []string{"a", "b"}, 0, false, "", 0,
 		},
 		{
 			"vic3 event FIOS", "vic3",
 			[]Def{
-				{Type: "event", Key: "e.1", Origin: "a", Path: "a.txt", Line: 1},
-				{Type: "event", Key: "e.1", Origin: "b", Path: "b.txt", Line: 2},
+				{Kind: "event", Key: "e.1", Origin: "a", Path: "a.txt", Line: 1},
+				{Kind: "event", Key: "e.1", Origin: "b", Path: "b.txt", Line: 2},
 			},
 			nil, []string{"a", "b"}, 1, false, "a", 2,
 		},
 		{
 			"eu5 gui_type LIOS", "eu5",
 			[]Def{
-				{Type: "gui_type", Key: "w", Origin: "a", Path: "a.gui", Line: 1},
-				{Type: "gui_type", Key: "w", Origin: "b", Path: "b.gui", Line: 2},
+				{Kind: "gui_type", Key: "w", Origin: "a", Path: "a.gui", Line: 1},
+				{Kind: "gui_type", Key: "w", Origin: "b", Path: "b.gui", Line: 2},
 			},
 			nil, []string{"a", "b"}, 1, false, "b", 2,
 		},

@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"paradox-modding-tools/services/internal/game"
 	jomini "paradox-modding-tools/services/internal/parser/jomini"
 )
@@ -60,9 +58,8 @@ type ResolvedConflict struct {
 	Reason   string `json:"reason"`   // "directive", "keyList", "default"
 }
 
-// MergeConflictChunk is a unit of content used while iterating merge conflicts.
-// ObjA/ObjB are internal-only; JSON output omits them.
-type MergeConflictChunk struct {
+// mergeConflictChunk is a unit of content used while iterating merge conflicts.
+type mergeConflictChunk struct {
 	Type       string        `json:"type"` // "unchanged", "added", or "conflict"
 	TextA      string        `json:"textA"`
 	TextB      string        `json:"textB"`
@@ -216,7 +213,7 @@ func determinePrecedence(a, b scriptObject) (string, string) {
 }
 
 // mergeFileItems builds conflict chunks by comparing parsed objects from fileA and fileB.
-func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOptions) ([]MergeConflictChunk, error) {
+func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOptions) ([]mergeConflictChunk, error) {
 	objectsA, err := parseFileObjects(fileAPath)
 	if err != nil {
 		return nil, fmt.Errorf("parsing file A: %w", err)
@@ -232,11 +229,11 @@ func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOp
 		}
 	}
 	keysInA := make(map[string]bool, len(objectsA))
-	var items []MergeConflictChunk
+	var items []mergeConflictChunk
 
 	for _, entA := range objectsA {
 		a := entA
-		chunk := MergeConflictChunk{
+		chunk := mergeConflictChunk{
 			Type: "unchanged", TextA: a.RawText,
 			StartLineA: a.StartLine, EndLineA: a.EndLine, ObjA: &a,
 		}
@@ -256,7 +253,7 @@ func (m *MergeService) mergeFileItems(fileAPath, fileBPath string, opts MergerOp
 		for _, entB := range objectsB {
 			if entB.Key != "" && !keysInA[entB.Key] {
 				b := entB
-				items = append(items, MergeConflictChunk{
+				items = append(items, mergeConflictChunk{
 					Type: "added", TextB: b.RawText,
 					StartLineB: b.StartLine, EndLineB: b.EndLine, ObjB: &b,
 				})
@@ -336,81 +333,4 @@ func canonicalScriptValue(s string) string {
 
 func scriptValuesEqual(a, b string) bool {
 	return a == b || canonicalScriptValue(a) == canonicalScriptValue(b)
-}
-
-func (p *PatcherService) previewOne(
-	staging, rel, modP, tgt string, prev *PatchRunPreview,
-) (PatchRunFile, error) {
-	f := PatchRunFile{
-		ID: uuid.New().String(), RelPath: rel, ModPath: modP, TargetPath: tgt,
-	}
-	if tgt == "" {
-		f.Status = "mod_only"
-		prev.SkippedCount++
-		return f, nil
-	}
-	out := filepath.Join(staging, rel)
-	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
-		return f, fmt.Errorf("create preview dir: %w", err)
-	}
-	r := p.MergeService.mergeAndWrite(
-		modP, tgt, out, rel, MergerOptions{AddAdditionalEntries: true})
-	if r.Error != "" {
-		f.Status, f.Stats = "error", PatchRunFileStats{Error: r.Error}
-		return f, nil
-	}
-	f.PreviewPath, f.Stats = r.OutputPath, PatchRunFileStats{
-		Changed: r.Changed, Added: r.Added, Conflicts: len(r.ResolvedConflicts)}
-	if f.Stats.Conflicts > 0 || f.Stats.Changed > 3 {
-		f.Status = "review"
-		prev.ReviewCount++
-	} else {
-		f.Status = "safe"
-		prev.SafeCount++
-	}
-	return f, nil
-}
-
-func (p *PatcherService) runAndMod(runID string) (*PatchRun, string, error) {
-	var run *PatchRun
-	var modPath string
-	p.Store.Read(func(c *Config) {
-		if r := findRun(c, runID); r != nil {
-			cp := *r
-			run = &cp
-			if m := findMod(c, r.ModID); m != nil {
-				modPath = m.Path
-			}
-		}
-	})
-	if run == nil {
-		return nil, "", fmt.Errorf("patch run not found")
-	}
-	if modPath == "" {
-		return nil, "", fmt.Errorf("mod not found")
-	}
-	return run, modPath, nil
-}
-
-func (p *PatcherService) resolveTargetPath(run *PatchRun) (string, error) {
-	installID := run.TargetInstallID
-	var instPath, gameID string
-	p.Store.Read(func(c *Config) {
-		if installID == "" {
-			if ws := findWorkspace(c, run.WorkspaceID); ws != nil {
-				installID = ws.InstallID
-			}
-		}
-		if inst := findInstall(c, installID); inst != nil {
-			instPath, gameID = inst.Path, inst.GameID
-		}
-	})
-	if instPath == "" {
-		return "", nil
-	}
-	info := game.Get(gameID)
-	if info == nil {
-		return "", fmt.Errorf("unknown game %s", gameID)
-	}
-	return filepath.Join(instPath, info.ScriptRoot), nil
 }

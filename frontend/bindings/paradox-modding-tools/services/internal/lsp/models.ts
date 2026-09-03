@@ -53,6 +53,7 @@ export interface FoldingRange {
 export interface HoverResult {
     "contents": string;
     "origin"?: string;
+    "originName"?: string;
     "rel"?: string;
     "path"?: string;
     "line"?: number;

@@ -101,9 +101,9 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 		d := s.Resolve(id)
 		n := EventGraphNode{ID: id, Kind: "unknown"}
 		if d != nil {
-			n.Kind = game.CanonicalKind(d.Type)
-			n.Origin = d.Origin
-			n.OriginName = s.OriginName(d.Origin)
+			n.Kind = game.CanonicalKind(d.Kind)
+			n.Origin = originID(d.Origin)
+			n.OriginName = s.OriginName(n.Origin)
 		}
 		n.Title = titleOf(s, id)
 		if c := firesCount[id]; c > 0 {
@@ -227,7 +227,7 @@ func suggestionsOf(vocab map[string]string, namespace string) EventGraphSuggesti
 		if namespace != "" && !strings.HasPrefix(id, namespace+".") {
 			continue
 		}
-		ids = append(ids, SuggestionItem{ID: id, Origin: origin})
+		ids = append(ids, SuggestionItem{ID: id, Origin: originID(origin)})
 	}
 	slices.SortFunc(ids, func(a, b SuggestionItem) int {
 		if n := cmp.Compare(a.ID, b.ID); n != 0 {
@@ -250,7 +250,7 @@ func suggestionsOf(vocab map[string]string, namespace string) EventGraphSuggesti
 	namespaces := make([]SuggestionItem, 0)
 	for n, origins := range nsSeen {
 		for origin := range origins {
-			namespaces = append(namespaces, SuggestionItem{ID: n, Origin: origin})
+			namespaces = append(namespaces, SuggestionItem{ID: n, Origin: originID(origin)})
 		}
 	}
 	slices.SortFunc(namespaces, func(a, b SuggestionItem) int {

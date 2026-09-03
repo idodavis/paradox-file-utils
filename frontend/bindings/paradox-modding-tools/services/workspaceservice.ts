@@ -54,7 +54,7 @@ export function CreateWorkspace(gameID: string, name: string, installID: string)
 }
 
 /**
- * DefaultModParent is Documents/Paradox Interactive/<game>/mod, or "".
+ * DefaultModParent is UserDataDir/<game>/mod, or "".
  */
 export function DefaultModParent(gameID: string): $CancellablePromise<string> {
     return $Call.ByID(1639189285, gameID);
@@ -96,17 +96,10 @@ export function FindGameInstalls(gameID: string): $CancellablePromise<game$0.Det
 }
 
 /**
- * GetIdeRoots returns game / mod / staging folders for the workspace IDE.
+ * GetIdeRoots returns game / mod / staging folders and tab restore for the IDE.
  */
-export function GetIdeRoots(workspaceID: string): $CancellablePromise<$models.IdeRoot[] | null> {
+export function GetIdeRoots(workspaceID: string): $CancellablePromise<$models.IdeRoots | null> {
     return $Call.ByID(720395743, workspaceID);
-}
-
-/**
- * GetInstallCacheInfo returns scannedAt for the install's VanillaCache, or empty.
- */
-export function GetInstallCacheInfo(installID: string): $CancellablePromise<$models.InstallCacheInfo | null> {
-    return $Call.ByID(1009986005, installID);
 }
 
 /**
@@ -117,7 +110,7 @@ export function GetWorkspace(id: string): $CancellablePromise<$models.Workspace 
 }
 
 /**
- * ListGameInstalls returns all installs for a game.
+ * ListGameInstalls returns all installs for a game, with VanillaCache scannedAt.
  */
 export function ListGameInstalls(gameID: string): $CancellablePromise<$models.GameInstall[] | null> {
     return $Call.ByID(3468235284, gameID);
@@ -128,13 +121,6 @@ export function ListGameInstalls(gameID: string): $CancellablePromise<$models.Ga
  */
 export function ListGames(): $CancellablePromise<game$0.GameList> {
     return $Call.ByID(1635414117);
-}
-
-/**
- * ListWorkspaceMods returns all mods for a workspace, sorted by SortOrder then Name.
- */
-export function ListWorkspaceMods(workspaceID: string): $CancellablePromise<$models.WorkspaceMod[] | null> {
-    return $Call.ByID(1179220170, workspaceID);
 }
 
 /**
@@ -187,10 +173,10 @@ export function SetWorkspaceLocLang(id: string, lang: string): $CancellablePromi
 }
 
 /**
- * UpdateGameInstall updates path and docs_path, then refreshes version.
+ * UpdateGameInstall updates path, then refreshes version.
  */
-export function UpdateGameInstall(id: string, path: string, docsPath: string): $CancellablePromise<$models.GameInstall | null> {
-    return $Call.ByID(1401884060, id, path, docsPath);
+export function UpdateGameInstall(id: string, path: string): $CancellablePromise<$models.GameInstall | null> {
+    return $Call.ByID(1401884060, id, path);
 }
 
 /**

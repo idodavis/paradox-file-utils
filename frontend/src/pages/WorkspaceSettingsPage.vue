@@ -14,9 +14,7 @@ import {
   CountWorkspacesUsingInstall,
   DetectGameVersion,
   EnsureStagingDir,
-  GetInstallCacheInfo,
   ListGameInstalls,
-  ListWorkspaceMods,
   GetWorkspace,
   RemoveWorkspaceMod,
   ReorderWorkspaceMods,
@@ -38,7 +36,6 @@ import { LOC_LANG_ITEMS, useWorkspaceStore } from "../stores/workspace";
 import { WORKSPACE_TOOLS } from "../workspaceTools";
 import { refreshIdeRootDecorations } from "../ide/workbenchHost";
 import { originHex } from "../ide/rootDecorations";
-import type { IdeRoot } from "../ide/fsBridge";
 
 defineOptions({ name: "WorkspaceSettingsPage" });
 
@@ -67,7 +64,6 @@ const newInstallVersion = ref("latest");
 const newDetected = ref("");
 const draftVersion = ref("latest");
 const draftPath = ref("");
-const draftDocs = ref("");
 
 const pageItems: { label: string; value: string }[] = WORKSPACE_TOOLS.map((t) => ({
   label: t.label,
@@ -87,26 +83,16 @@ const {
     wsStore.setActiveWorkspace(wsId);
     const workspace = await GetWorkspace(wsId);
     if (!workspace) throw new Error("workspace not found");
-    const [modRows, installs, sharing] = await Promise.all([
-      ListWorkspaceMods(wsId),
+    const [installs, sharing] = await Promise.all([
       ListGameInstalls(workspace.gameId),
       CountWorkspacesUsingInstall(workspace.installId),
     ]);
     const listed = installs ?? [];
-    const cacheAt = Object.fromEntries(
-      await Promise.all(
-        listed.map(async (i) => {
-          const info = await GetInstallCacheInfo(i.id);
-          return [i.id, info?.scannedAt ?? ""] as const;
-        }),
-      ),
-    );
     return {
       workspace,
-      mods: modRows ?? [],
+      mods: workspace.mods ?? [],
       installs: listed,
       sharing: sharing ?? [],
-      cacheAt,
     };
   },
   enabled: () => !!id.value,
@@ -129,7 +115,6 @@ function applyWorkspace(): void {
   const inst = p.installs.find((i) => i.id === w.installId);
   draftVersion.value = inst?.version || "latest";
   draftPath.value = inst?.path ?? "";
-  draftDocs.value = inst?.docsPath ?? "";
 }
 
 watch(page, applyWorkspace, { immediate: true });
@@ -228,7 +213,7 @@ const { mutateAsync: saveVersion, isLoading: savingVersion } = useMutation({
 const { mutateAsync: saveInstallPaths, isLoading: savingPaths } = useMutation({
   mutation: async () => {
     if (!installId.value) return;
-    await UpdateGameInstall(installId.value, draftPath.value, draftDocs.value);
+    await UpdateGameInstall(installId.value, draftPath.value);
   },
   onSuccess: () => { toastOk("Install paths saved."); void refetch(); },
 });
@@ -270,8 +255,8 @@ const persistMod = useDebounceFn(async (mod: WorkspaceMod) => {
     mod.thumbnail ?? "",
   );
   await wsStore.refresh();
-  const roots = ((await GetIdeRoots(id.value)) ?? []) as IdeRoot[];
-  refreshIdeRootDecorations(roots);
+  const rec = await GetIdeRoots(id.value);
+  refreshIdeRootDecorations(rec?.roots ?? []);
 }, 400);
 
 async function addMod(): Promise<void> {
@@ -313,8 +298,8 @@ const persistColors = useDebounceFn(async () => {
     gameColor.value, stagingColor.value,
   );
   await wsStore.refresh();
-  const roots = ((await GetIdeRoots(id.value)) ?? []) as IdeRoot[];
-  refreshIdeRootDecorations(roots);
+  const rec = await GetIdeRoots(id.value);
+  refreshIdeRootDecorations(rec?.roots ?? []);
 }, 400);
 
 /** Field descriptions for the settings page (filter + UFormField). */
@@ -331,11 +316,9 @@ const COPY = {
     "Version of the game that this install is. Your pin wins over auto-detection.",
   installPath:
     "Top level Folder of the game; needed for scanning the game and supporting most features.",
-  docsPath:
-    "Script_docs folder, used for certain language features.",
   addInstall:
     "Register another copy of the same game (Steam vs Paradox, version folders).",
-  mods: "Generally, Last listed wins (LISO). Drag the grip. Color and thumbnail paint explorer and origin chips.",
+  mods: "Generally, Last listed wins (LIOS). Drag the grip. Color and thumbnail paint explorer and origin chips.",
   modColor:
     "Same color in explorer roots, conflict/loc/graph origin chips. Empty uses the palette.",
   modThumb:
@@ -379,26 +362,11 @@ const showMods = computed(() =>
   matchesFilter("Mods", COPY.mods, "Color", COPY.modColor, "Thumbnail", COPY.modThumb),
 );
 
-/** First-wins kinds for this workspace's game (mirrors game.IsFIOS). */
-function firstWinsNote(gameId: string): string {
-  switch (gameId) {
-    case "ck3":
-      return "GUI types and templates are first-wins.";
-    case "vic3":
-      return "GUI types, templates, and events are first-wins.";
-    case "eu5":
-      return "Events are first-wins; GUI types last-wins.";
-    default:
-      return "GUI types and templates are first-wins.";
-  }
-}
-
 const loadOrderCopy = computed(() => {
-  const extra = firstWinsNote(page.value?.workspace.gameId ?? "");
-  return (
-    `Last listed wins for most kinds. ${extra} ` +
-    "Vanilla loses to any mod. Staging is not in this list. Conflicts labels each row."
-  );
+  const extra = wsStore.firstWins(page.value?.workspace.gameId ?? "");
+  return extra
+    ? `Last listed wins for most kinds. ${extra} Vanilla loses to any mod. Staging is not in this list. Conflicts labels each row.`
+    : "Last listed wins for most kinds. Vanilla loses to any mod. Staging is not in this list. Conflicts labels each row.";
 });
 const showStaging = computed(() =>
   matchesFilter(
@@ -479,11 +447,15 @@ function onModColor(mod: WorkspaceMod, hex: string): void {
   void persistMod(mod);
 }
 
+/** #rrggbb for a native color input (palette when color is empty). */
+function originPickerHex(kind: string, color: string, wrapIndex?: number): string {
+  return originHex({ kind, path: "", color, wrapIndex }).toLowerCase();
+}
+
 /** Palette or custom hex for a mod card's color picker. */
-function modOriginHex(mod: WorkspaceMod, idx: number): string {
-  return originHex({
-    kind: "mod", path: mod.path, color: mod.color, wrapIndex: idx,
-  });
+function modPickerHex(mod: WorkspaceMod): string {
+  const i = mods.value.findIndex((m) => m.id === mod.id);
+  return originPickerHex("mod", mod.color ?? "", i < 0 ? 0 : i);
 }
 
 function clearModColor(mod: WorkspaceMod): void {
@@ -504,7 +476,7 @@ function clearModThumb(mod: WorkspaceMod): void {
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <WorkspaceToolBar :workspace-id="id" title="Workspace Settings" />
+    <WorkspaceToolBar :workspace-id="id" />
     <div class="flex min-h-0 flex-1">
       <aside class="flex w-52 shrink-0 flex-col gap-3 border-e border-default p-3">
         <UInput v-model="filter" icon="i-lucide-search" placeholder="Filter settings…" class="w-full" />
@@ -550,9 +522,16 @@ function clearModThumb(mod: WorkspaceMod): void {
             <div class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
               <UFormField label="Explorer color (game)" :description="COPY.gameColor">
                 <div class="flex items-center gap-2">
-                  <input type="color" class="size-8 cursor-pointer rounded border border-default"
-                    :value="originHex({ kind: 'game', path: '', color: gameColor })"
-                    @input="gameColor = ($event.target as HTMLInputElement).value; persistColors()">
+                  <span
+                    class="relative size-8 overflow-hidden rounded border border-default"
+                    :style="{ backgroundColor: originPickerHex('game', gameColor) }"
+                  >
+                    <input type="color"
+                      :key="'game-' + originPickerHex('game', gameColor)"
+                      :value="originPickerHex('game', gameColor)"
+                      class="absolute inset-0 size-full cursor-pointer opacity-0"
+                      @input="gameColor = ($event.target as HTMLInputElement).value; persistColors()">
+                  </span>
                   <UButton v-if="gameColor" label="Reset color" size="xs" variant="ghost"
                     @click="gameColor = ''; persistColors()" />
                 </div>
@@ -570,16 +549,13 @@ function clearModThumb(mod: WorkspaceMod): void {
               </UFormField>
               <template v-if="selectedInstall">
                 <p class="text-xs text-muted md:col-span-2">
-                  {{ page?.cacheAt[selectedInstall.id]
-                    ? `cache scanned ${page.cacheAt[selectedInstall.id]}`
+                  {{ selectedInstall.scannedAt
+                    ? `cache scanned ${selectedInstall.scannedAt}`
                     : "cache not scanned" }}
                 </p>
                 <FileSelector v-model="draftPath" mode="folder" label="Install path" :description="COPY.installPath"
                   dialog-title="Select game install folder"
                   placeholder="C:\Program Files (x86)\Steam\steamapps\common\GAME_NAME" />
-                <FileSelector v-model="draftDocs" mode="folder" label="Docs path" :description="COPY.docsPath"
-                  dialog-title="Select script_docs folder"
-                  placeholder="C:\Users\idhis\Documents\Paradox Interactive\GAME_NAME\docs(or logs)" />
                 <div class="md:col-span-2">
                   <UButton label="Save paths" size="xs" variant="outline" :loading="savingPaths"
                     @click="saveInstallPaths()" />
@@ -606,7 +582,7 @@ function clearModThumb(mod: WorkspaceMod): void {
           </div>
 
           <div v-else-if="section === 'mods'" class="space-y-3">
-            <UAlert color="neutral" variant="subtle" title="Generally, Last listed wins (LISO). Drag the grip."
+            <UAlert color="neutral" variant="subtle" title="Generally, Last listed wins (LIOS). Drag the grip."
               :description="loadOrderCopy" />
             <div ref="modListEl" class="space-y-2">
               <div v-for="(mod, idx) in mods" :key="mod.id" class="space-y-2 rounded border border-default p-2">
@@ -625,9 +601,16 @@ function clearModThumb(mod: WorkspaceMod): void {
                 <div class="grid grid-cols-1 gap-x-6 gap-y-3 md:grid-cols-2">
                   <UFormField label="Color" :description="COPY.modColor">
                     <div class="flex items-center gap-2">
-                      <input type="color" class="size-8 cursor-pointer rounded border border-default"
-                        :value="modOriginHex(mod, idx)"
-                        @input="onModColor(mod, ($event.target as HTMLInputElement).value)">
+                      <span
+                        class="relative size-8 overflow-hidden rounded border border-default"
+                        :style="{ backgroundColor: modPickerHex(mod) }"
+                      >
+                        <input type="color"
+                          :key="mod.id + '-' + modPickerHex(mod)"
+                          :value="modPickerHex(mod)"
+                          class="absolute inset-0 size-full cursor-pointer opacity-0"
+                          @input="onModColor(mod, ($event.target as HTMLInputElement).value)">
+                      </span>
                       <UButton v-if="mod.color" label="Reset color" size="xs" variant="ghost"
                         @click="clearModColor(mod)" />
                     </div>
@@ -661,9 +644,16 @@ function clearModThumb(mod: WorkspaceMod): void {
               dialog-title="Select staging folder" />
             <UFormField label="Explorer color (staging)" :description="COPY.stagingColor">
               <div class="flex items-center gap-2">
-                <input type="color" class="size-8 cursor-pointer rounded border border-default"
-                  :value="originHex({ kind: 'staging', path: '', color: stagingColor })"
-                  @input="stagingColor = ($event.target as HTMLInputElement).value; persistColors()">
+                <span
+                  class="relative size-8 overflow-hidden rounded border border-default"
+                  :style="{ backgroundColor: originPickerHex('staging', stagingColor) }"
+                >
+                  <input type="color"
+                    :key="'staging-' + originPickerHex('staging', stagingColor)"
+                    :value="originPickerHex('staging', stagingColor)"
+                    class="absolute inset-0 size-full cursor-pointer opacity-0"
+                    @input="stagingColor = ($event.target as HTMLInputElement).value; persistColors()">
+                </span>
                 <UButton v-if="stagingColor" label="Reset color" size="xs" variant="ghost"
                   @click="stagingColor = ''; persistColors()" />
               </div>

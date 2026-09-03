@@ -6,8 +6,6 @@
  */
 export interface DirEntry {
     "name": string;
-    "relPath": string;
-    "fullPath": string;
     "isDir": boolean;
 }
 
@@ -70,9 +68,9 @@ export interface GameInstall {
     "path": string;
     "version": string;
     "versionDetected": string;
-    "docsPath": string;
     "isBroken": boolean;
     "createdAt": string;
+    "scannedAt"?: string;
 }
 
 /**
@@ -83,16 +81,19 @@ export interface IdeRoot {
     "path": string;
     "readOnly": boolean;
     "kind": string;
-    "originId"?: string;
+    "origin"?: string;
     "color"?: string;
     "thumbnail"?: string;
 }
 
 /**
- * InstallCacheInfo is VanillaCache persist metadata for Settings/wizard cards.
+ * IdeRoots is the IDE boot DTO: folders plus tab restore.
  */
-export interface InstallCacheInfo {
-    "scannedAt": string;
+export interface IdeRoots {
+    "roots": IdeRoot[] | null;
+    "resetIdeOnOpen": boolean;
+    "ideOpenFiles"?: string[] | null;
+    "ideActiveFile"?: string;
 }
 
 /**
@@ -104,7 +105,7 @@ export interface LanguageHealth {
     "gameVersion": string;
     "cacheStale": boolean;
     "scannedAt": string;
-    "docsPresent": boolean;
+    "scriptDocsEffects": number;
     "indexReady": boolean;
     "defCount": number;
     "dumpHint": string;
@@ -115,13 +116,6 @@ export interface LanguageHealth {
  */
 export interface MergerOptions {
     "addAdditionalEntries": boolean;
-}
-
-/**
- * ModelStatus reports whether a workspace session is live.
- */
-export interface ModelStatus {
-    "live": boolean;
 }
 
 /**

@@ -19,9 +19,9 @@ import * as catalog$0 from "./internal/catalog/models.js";
 import * as $models from "./models.js";
 
 /**
- * EnsureSession builds or returns the live session for workspaceID.
+ * EnsureSession builds or returns the live session and its language health.
  */
-export function EnsureSession(workspaceID: string): $CancellablePromise<void> {
+export function EnsureSession(workspaceID: string): $CancellablePromise<$models.LanguageHealth | null> {
     return $Call.ByID(2736629943, workspaceID);
 }
 
@@ -33,15 +33,15 @@ export function GetLanguageHealth(workspaceID: string): $CancellablePromise<$mod
 }
 
 /**
- * GetModelStatus reports whether a live session exists for the workspace.
- */
-export function GetModelStatus(workspaceID: string): $CancellablePromise<$models.ModelStatus | null> {
-    return $Call.ByID(4011313920, workspaceID);
-}
-
-/**
  * RebuildInstallSemantics scans an install into VanillaCache + loc sidecar.
  */
 export function RebuildInstallSemantics(installID: string): $CancellablePromise<catalog$0.VanillaCache | null> {
     return $Call.ByID(521221046, installID);
+}
+
+/**
+ * StartWikiWarm runs a silent incremental wiki refresh for sidecars already on disk.
+ */
+export function StartWikiWarm(version: string): $CancellablePromise<void> {
+    return $Call.ByID(1347112660, version);
 }

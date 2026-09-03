@@ -27,22 +27,14 @@ import {
   DeletePath,
   RenamePath,
 } from "@services/fileservice";
+import type { IdeRoot } from "@services/models";
 
 type Uri = monaco.Uri;
 
+export type { IdeRoot };
+
 /** Role of a multi-root IDE folder (explorer color tags). */
 export type IdeRootKind = "game" | "mod" | "staging";
-
-/** Workspace root with optional read-only policy (game install). */
-export type IdeRoot = {
-  label: string;
-  path: string;
-  readOnly: boolean;
-  kind: IdeRootKind;
-  originId?: string;
-  color?: string;
-  thumbnail?: string;
-};
 
 type Disposable = { dispose(): void };
 
@@ -76,7 +68,8 @@ function b64FromBytes(data: Uint8Array): string {
   return btoa(parts.join(""));
 }
 
-function normFs(p: string): string {
+/** Normalize a filesystem path for root-identity comparison. */
+export function normFs(p: string): string {
   let s = p.replace(/\\/g, "/");
   if (s.startsWith("/") && /^\/[A-Za-z]:/.test(s)) s = s.slice(1);
   return s.replace(/\/+$/, "").toLowerCase();
@@ -229,8 +222,8 @@ export class WailsFileSystemProvider
   private modRootOrigin(path: string): string | undefined {
     const key = normFs(path);
     return this.roots.find(
-      (r) => r.kind === "mod" && r.originId && normFs(r.path) === key,
-    )?.originId;
+      (r) => r.kind === "mod" && r.origin && normFs(r.path) === key,
+    )?.origin;
   }
 
   async delete(resource: Uri, _opts: IFileDeleteOptions): Promise<void> {

@@ -3,13 +3,16 @@
 package services
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 
-	"paradox-modding-tools/services/internal/catalog"
+	"github.com/bytedance/sonic"
+
+	"paradox-modding-tools/services/internal/game"
 )
 
 const (
@@ -37,9 +40,9 @@ type GameInstall struct {
 	Path            string `json:"path"`
 	Version         string `json:"version"`
 	VersionDetected string `json:"versionDetected"`
-	DocsPath        string `json:"docsPath"`
 	IsBroken        bool   `json:"isBroken"`
 	CreatedAt       string `json:"createdAt"`
+	ScannedAt       string `json:"scannedAt,omitempty"`
 }
 
 // Workspace is a user-defined mod working environment tied to a game.
@@ -135,13 +138,49 @@ func emptyConfig() Config {
 
 func newStore(path string) *Store {
 	s := &Store{path: path, cfg: emptyConfig()}
-	if c, err := catalog.LoadJSON[Config](path, configFormatVersion); err == nil && c != nil {
-		s.cfg = *c
+	if c, err := loadConfig(path); err == nil {
+		s.cfg = c
 		if s.cfg.Settings == nil {
 			s.cfg.Settings = map[string]map[string]string{}
 		}
 	}
 	return s
+}
+
+func loadConfig(path string) (Config, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+	n, err := sonic.Get(raw, "formatVersion")
+	got, nerr := n.Int64()
+	if err != nil || nerr != nil {
+		return Config{}, fmt.Errorf("missing formatVersion")
+	}
+	if int(got) != configFormatVersion {
+		return Config{}, fmt.Errorf("format %d != %d", got, configFormatVersion)
+	}
+	var dst Config
+	if err := sonic.Unmarshal(raw, &dst); err != nil {
+		return Config{}, err
+	}
+	return dst, nil
+}
+
+func saveConfig(path string, cfg *Config) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	raw, err := sonic.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+		return err
+	}
+	_ = os.Remove(path)
+	return os.Rename(tmp, path)
 }
 
 // OpenStore loads config.json (missing or version mismatch → empty; drops SQLite).
@@ -175,7 +214,7 @@ func (s *Store) Mutate(fn func(*Config) error) error {
 	if s.cfg.Settings == nil {
 		s.cfg.Settings = map[string]map[string]string{}
 	}
-	return catalog.SaveJSON(s.path, &s.cfg)
+	return saveConfig(s.path, &s.cfg)
 }
 
 func cloneWorkspace(w Workspace) Workspace {
@@ -202,6 +241,18 @@ func findInstall(c *Config, id string) *GameInstall {
 		}
 	}
 	return nil
+}
+
+func installScriptRoot(c *Config, installID string) (string, error) {
+	inst := findInstall(c, installID)
+	if inst == nil {
+		return "", fmt.Errorf("install not found")
+	}
+	info := game.Get(inst.GameID)
+	if info == nil {
+		return "", fmt.Errorf("unknown game: %s", inst.GameID)
+	}
+	return filepath.Join(inst.Path, info.ScriptRoot), nil
 }
 func findWorkspace(c *Config, id string) *Workspace {
 	for i := range c.Workspaces {

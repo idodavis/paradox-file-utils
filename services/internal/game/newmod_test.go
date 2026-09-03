@@ -18,7 +18,10 @@ func TestModSlug(t *testing.T) {
 
 func TestWriteNewModCK3(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "my_cool_mod")
-	if err := WriteNewMod("ck3", root, "My Cool Mod", "1.16.2", "english", "", ""); err != nil {
+	if err := WriteNewMod(NewModOpts{
+		GameID: "ck3", Root: root, Name: "My Cool Mod",
+		SupportedVersion: "1.16.2", LocLang: "english",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(root, "descriptor.mod"))
@@ -62,14 +65,19 @@ func TestWriteNewModCK3(t *testing.T) {
 	if !strings.Contains(string(locRaw), "l_english:") {
 		t.Fatalf("loc: %q", locRaw)
 	}
-	if err := WriteNewMod("ck3", root, "My Cool Mod", "", "english", "", ""); err == nil {
+	if err := WriteNewMod(NewModOpts{
+		GameID: "ck3", Root: root, Name: "My Cool Mod", LocLang: "english",
+	}); err == nil {
 		t.Fatal("want already-exists")
 	}
 }
 
 func TestWriteNewModVic3OmitsLatest(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "v")
-	if err := WriteNewMod("vic3", root, "V", "latest", "french", "A desc", ""); err != nil {
+	if err := WriteNewMod(NewModOpts{
+		GameID: "vic3", Root: root, Name: "V",
+		SupportedVersion: "latest", LocLang: "french", Description: "A desc",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(root, ".metadata", "metadata.json"))
@@ -102,7 +110,10 @@ func TestWriteNewModThumbnail(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := filepath.Join(t.TempDir(), "m")
-	if err := WriteNewMod("ck3", root, "M", "1", "english", "", src); err != nil {
+	if err := WriteNewMod(NewModOpts{
+		GameID: "ck3", Root: root, Name: "M",
+		SupportedVersion: "1", LocLang: "english", ThumbnailSrc: src,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "thumbnail.png")); err != nil {

@@ -10,7 +10,7 @@
  * chat, AI, extension gallery/marketplace, remote, tasks, output panel,
  * welcome/walkthrough, emmet, speech, survey, update.
  * Keep: editor, explorer, problems, search, hover/complete/def/refs, folding,
- * themes, file icons, multi-diff (merge review).
+ * themes, file icons, multi-diff and merge editor (review).
  */
 import {
   initialize as initializeMonacoService,
@@ -66,6 +66,7 @@ import * as vscode from "vscode";
 import {
   WailsFileSystemProvider,
   setModRootDeletedHook,
+  normFs,
   type IdeRoot,
 } from "./fsBridge";
 import {
@@ -78,6 +79,7 @@ import { currentWorkbenchTheme, workbenchThemeId, normalizeThemeFamily } from ".
 import { useColorMode } from "@vueuse/core";
 import { registerParadoxLanguages } from "./paradoxLanguages";
 import { registerLanguageClient } from "./languageClient";
+import { setIdeActiveFile } from "../composables/useIdeActiveFile";
 import { registerRootDecorations, setDecoratedRoots } from "./rootDecorations";
 import { useWorkspaceStore } from "../stores/workspace";
 import { useIdeShellStore } from "../stores/ideShell";
@@ -215,7 +217,7 @@ setModRootDeletedHook(async (originId) => {
   const wsId = mountedWorkspaceId || useWorkspaceStore().activeWorkspaceId;
   if (!wsId) return;
   await RemoveWorkspaceMod(wsId, originId);
-  const roots = ((await GetIdeRoots(wsId)) ?? []) as IdeRoot[];
+  const roots = (await GetIdeRoots(wsId))?.roots ?? [];
   if (!roots.length) return;
   await setWorkbenchRoots(roots, currentWorkbenchTheme());
 });
@@ -298,7 +300,10 @@ function constructOptions(): IWorkbenchConstructionOptions {
       enableTelemetry: false,
     },
     defaultLayout: {
-      views: [{ id: "workbench.explorer.fileView" }, { id: "workbench.panel.markers.view" }],
+      views: [
+        { id: "workbench.explorer.fileView" },
+        { id: "workbench.panel.markers.view" },
+      ],
       force: true,
     },
     configurationDefaults: {
@@ -392,11 +397,7 @@ function attachIdeParts(): void {
       }),
     );
   }
-}
-
-/** Normalize a filesystem path for folder-identity comparison. */
-function normPath(path: string): string {
-  return path.replace(/\\/g, "/").toLowerCase();
+  setPartVisibility(Parts.AUXILIARYBAR_PART, false);
 }
 
 /** Whether workbench folders already match the app-owned roots. */
@@ -405,7 +406,7 @@ function foldersMatch(roots: IdeRoot[]): boolean {
   if (folders.length !== roots.length) return false;
   return roots.every((root, i) => {
     const folder = folders[i];
-    return !!folder && normPath(folder.uri.fsPath) === normPath(root.path);
+    return !!folder && normFs(folder.uri.fsPath) === normFs(root.path);
   });
 }
 
@@ -586,8 +587,8 @@ function collectOpenFiles(): { files: string[]; active: string } {
 
 function pathUnderRoots(path: string): boolean {
   return currentRoots.some((r) => {
-    const a = normPath(path);
-    const b = normPath(r.path);
+    const a = normFs(path);
+    const b = normFs(r.path);
     return a === b || a.startsWith(`${b}/`);
   });
 }
@@ -659,6 +660,11 @@ function syncEditorReadOnly(ed: monaco.editor.ICodeEditor): void {
   ed.updateOptions({ readOnly: fsProvider.isReadOnly(path) });
 }
 
+function syncActiveFile(): void {
+  const ed = vscode.window.activeTextEditor;
+  setIdeActiveFile(ed?.document.uri.fsPath ?? "");
+}
+
 function hookEditorReadOnly(): void {
   if (editorHooked) return;
   editorHooked = true;
@@ -668,10 +674,12 @@ function hookEditorReadOnly(): void {
   });
   vscode.window.onDidChangeActiveTextEditor(() => {
     for (const ed of monaco.editor.getEditors()) syncEditorReadOnly(ed);
+    syncActiveFile();
   });
   vscode.workspace.onDidOpenTextDocument(() => {
     for (const ed of monaco.editor.getEditors()) syncEditorReadOnly(ed);
   });
+  syncActiveFile();
 }
 
 function hookIdeSessionPersist(): void {
@@ -825,13 +833,18 @@ async function runInitialize(theme: string): Promise<void> {
     readyResolve();
   } catch (err) {
     if (monacoLifecycle.servicesInitialized || isAlreadyInitialized(err)) {
-      attachIdeParts();
-      workbenchReady = true;
-      readyResolve();
+      recoverAlreadyInitialized();
       return;
     }
     throw err;
   }
+}
+
+/** Single already-initialized recovery: attach parts and mark ready. */
+function recoverAlreadyInitialized(): void {
+  attachIdeParts();
+  workbenchReady = true;
+  readyResolve();
 }
 
 /** Refresh explorer colors without remounting folders. */
@@ -886,8 +899,7 @@ async function applyWorkbenchRoots(
   if (!initPromise) {
     initPromise = runInitialize(themeName).catch((err) => {
       if (monacoLifecycle.servicesInitialized || isAlreadyInitialized(err)) {
-        workbenchReady = true;
-        readyResolve();
+        recoverAlreadyInitialized();
         return;
       }
       initPromise = null;

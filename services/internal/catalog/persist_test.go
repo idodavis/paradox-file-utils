@@ -3,6 +3,7 @@
 package catalog
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,11 +13,11 @@ import (
 func TestCache(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vanilla-inst-1_0.json")
 	in := &VanillaCache{
-		FormatVersion: CacheFormatVersion,
-		InstallID:     "inst",
-		GameID:        "ck3",
-		GameVersion:   "1.0",
-		Defs:            []Def{{Type: "trait", Key: "brave", Path: "a.txt", Line: 3}},
+		FormatVersion:   CacheFormatVersion,
+		InstallID:       "inst",
+		GameID:          "ck3",
+		GameVersion:     "1.0",
+		Defs:            []Def{{Kind: "trait", Key: "brave", Path: "a.txt", Line: 3}},
 		Vocabulary:      []string{"add_gold"},
 		LocRefs:         []Ref{{Key: "k.t", Kind: "loc", Path: "e.txt", Line: 1, Start: 2, End: 5}},
 		FieldValueKinds: map[string]string{"theme": "event_theme"},
@@ -70,9 +71,9 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.FieldDocs["k"] = "v"
-	c.FieldDocsByKind["event"] = map[string]string{"type": "t"}
-	if c.FieldDocs["k"] != "v" || c.FieldDocsByKind["event"]["type"] != "t" {
+	c.FieldInfo["k"] = "v"
+	c.FieldInfoByKind["event"] = map[string]string{"type": "t"}
+	if c.FieldInfo["k"] != "v" || c.FieldInfoByKind["event"]["type"] != "t" {
 		t.Fatalf("nil maps not initialized: %+v", c)
 	}
 
@@ -80,16 +81,16 @@ func TestCache(t *testing.T) {
 		Effects:         []string{"add_gold"},
 		Triggers:        []string{"is_adult"},
 		Structures:      map[string][]string{"event": {"immediate"}},
-		FieldDocs:       map[string]string{"Type": "global"},
-		FieldDocsByKind: map[string]map[string]string{"event": {"Title": "kind"}},
+		FieldInfo:       map[string]string{"Type": "global"},
+		FieldInfoByKind: map[string]map[string]string{"event": {"Title": "kind"}},
 	}
 	PrepareCache(prep)
 	if !prep.effectSet["add_gold"] || !prep.triggerSet["is_adult"] ||
 		!prep.structureSets["event"]["immediate"] {
 		t.Fatalf("sets not built")
 	}
-	if prep.FieldDocs["type"] != "global" || prep.FieldDocsByKind["event"]["title"] != "kind" {
-		t.Fatalf("docs not normalized: %+v %+v", prep.FieldDocs, prep.FieldDocsByKind)
+	if prep.FieldInfo["type"] != "global" || prep.FieldInfoByKind["event"]["title"] != "kind" {
+		t.Fatalf("docs not normalized: %+v %+v", prep.FieldInfo, prep.FieldInfoByKind)
 	}
 
 	p, err := vanillaJSON("vanilla", "inst-1", "1.19.0")
@@ -109,7 +110,7 @@ func TestCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	dropLegacyWorkspaceCaches(dir)
-	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+	if _, err := os.Stat(legacy); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("legacy cache-*.json should be removed")
 	}
 	if _, err := os.Stat(keep); err != nil {
@@ -118,7 +119,7 @@ func TestCache(t *testing.T) {
 
 	locIn := &VanillaLoc{
 		FormatVersion: LocFormatVersion,
-		Sites:         map[string]LocEntry{"k": {File: "a.yml", Line: 1, Value: "v"}},
+		Sites:         map[string]LocEntry{"k": {Path: "a.yml", Line: 1, Value: "v"}},
 	}
 	locPath := filepath.Join(t.TempDir(), "sidecar.json")
 	if err := SaveJSON(locPath, locIn); err != nil {
@@ -130,5 +131,15 @@ func TestCache(t *testing.T) {
 	}
 	if got.Sites["k"].Value != "v" || got.Sites["k"].Line != 1 {
 		t.Fatalf("loc sidecar = %+v", got)
+	}
+
+	staleLoc := filepath.Join(t.TempDir(), "loc-v2.json")
+	if err := os.WriteFile(staleLoc, []byte(`{"formatVersion":2,"sites":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadJSON[VanillaLoc](staleLoc, LocFormatVersion); err == nil {
+		t.Fatal("expected format mismatch")
+	} else if err.Error() != fmt.Sprintf("format 2 != %d", LocFormatVersion) {
+		t.Fatalf("mismatch error = %v", err)
 	}
 }

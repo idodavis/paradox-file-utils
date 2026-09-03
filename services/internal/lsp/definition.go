@@ -24,7 +24,7 @@ func Definition(s *session.Session, path string, line, col int) []Location {
 		}
 		if file, ln, _, ok := s.LocSite(key); ok {
 			return []Location{defLocation(s, catalog.Def{
-				Type: "loc_key", Key: key, Path: file, Line: ln,
+				Kind: "loc_key", Key: key, Path: file, Line: ln,
 			})}
 		}
 		if end > start {
@@ -52,7 +52,7 @@ func Definition(s *session.Session, path string, line, col int) []Location {
 		return nil
 	}
 	if d := s.Resolve(at.word); d != nil {
-		if d.Type == "saved_scope" {
+		if d.Kind == "saved_scope" {
 			return nil
 		}
 		return definitionSites(s, at.word, d)
@@ -60,7 +60,7 @@ func Definition(s *session.Session, path string, line, col int) []Location {
 	if locDefined(s, at.word) {
 		if file, line, _, ok := s.LocSite(at.word); ok {
 			return []Location{defLocation(s, catalog.Def{
-				Type: "loc_key", Key: at.word, Path: file, Line: line,
+				Kind: "loc_key", Key: at.word, Path: file, Line: line,
 			})}
 		}
 	}
@@ -127,7 +127,7 @@ func definitionSites(s *session.Session, key string, winner *catalog.Def) []Loca
 	seen := map[string]bool{}
 	var out []Location
 	add := func(d catalog.Def) {
-		if d.Key != key || d.Type == "saved_scope" {
+		if d.Key != key || d.Kind == "saved_scope" {
 			return
 		}
 		loc := defLocation(s, d)
@@ -199,14 +199,14 @@ func identReferences(s *session.Session, word string) []Location {
 	hasLocDef := false
 	for _, d := range s.ModDefsOf(word) {
 		add(defLocation(s, d))
-		if d.Type == "loc_key" {
+		if d.Kind == "loc_key" {
 			hasLocDef = true
 		}
 	}
 	if !hasLocDef {
 		if file, ln, _, ok := s.LocSite(word); ok {
 			add(defLocation(s, catalog.Def{
-				Type: "loc_key", Key: word, Path: file, Line: ln,
+				Kind: "loc_key", Key: word, Path: file, Line: ln,
 			}))
 		}
 	}
@@ -247,7 +247,7 @@ const maxWorkspaceSymbols = 200
 func DocumentSymbols(s *session.Session, path string) []SymbolInformation {
 	var out []SymbolInformation
 	for _, d := range s.DefsInFile(path) {
-		if d.Type == "saved_scope" {
+		if d.Kind == "saved_scope" {
 			continue
 		}
 		out = append(out, SymbolInformation{Name: d.Key, Location: defLocation(s, d)})
@@ -260,7 +260,7 @@ func WorkspaceSymbols(s *session.Session, query string) []SymbolInformation {
 	var out []SymbolInformation
 	for _, d := range s.FindDefs(query, maxWorkspaceSymbols, false, false) {
 		out = append(out, SymbolInformation{
-			Name: d.Key, Location: defLocation(s, d), ContainerName: d.Type,
+			Name: d.Key, Location: defLocation(s, d), ContainerName: d.Kind,
 		})
 	}
 	return out

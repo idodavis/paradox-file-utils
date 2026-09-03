@@ -14,19 +14,13 @@ import (
 
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
-// DefaultModParent is Documents/Paradox Interactive/<DocsFolderName>/mod.
+// DefaultModParent is UserDataDir/<game>/mod, or "".
 func DefaultModParent(gameID string) string {
-	info := Get(gameID)
-	if info == nil {
+	ud := UserDataDir(gameID, "")
+	if ud == "" {
 		return ""
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(
-		home, "Documents", "Paradox Interactive", info.DocsFolderName, "mod",
-	)
+	return filepath.Join(ud, "mod")
 }
 
 // ModSlug is a filesystem-safe folder name from a display name.
@@ -75,31 +69,35 @@ func descOrName(description, name string) string {
 	return description
 }
 
+// NewModOpts is the WriteNewMod argument bundle.
+type NewModOpts struct {
+	GameID, Root, Name, SupportedVersion, LocLang, Description, ThumbnailSrc string
+}
+
 // WriteNewMod creates root with a descriptor, empty common/ and events/, loc stub,
 // readmes, and an optional thumbnail copied in with picture= on the descriptor.
-func WriteNewMod(
-	gameID, root, name, supportedVersion, locLang, description, thumbnailSrc string,
-) error {
-	info := Get(gameID)
+func WriteNewMod(opts NewModOpts) error {
+	info := Get(opts.GameID)
 	if info == nil {
-		return fmt.Errorf("unknown game %s", gameID)
+		return fmt.Errorf("unknown game %s", opts.GameID)
 	}
-	name = strings.TrimSpace(name)
+	name := strings.TrimSpace(opts.Name)
 	if name == "" {
 		return fmt.Errorf("name is required")
 	}
-	desc := DescriptorPath(gameID, root)
+	root := opts.Root
+	desc := DescriptorPath(opts.GameID, root)
 	if _, err := os.Stat(desc); err == nil {
 		return fmt.Errorf("mod already exists: %s", desc)
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err
 	}
-	picture, err := copyThumbnail(root, thumbnailSrc)
+	picture, err := copyThumbnail(root, opts.ThumbnailSrc)
 	if err != nil {
 		return err
 	}
-	if err := writeDescriptor(info, root, name, pinVersion(supportedVersion), picture); err != nil {
+	if err := writeDescriptor(info, root, name, pinVersion(opts.SupportedVersion), picture); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(root, "common"), 0o755); err != nil {
@@ -108,11 +106,11 @@ func WriteNewMod(
 	if err := os.MkdirAll(filepath.Join(root, "events"), 0o755); err != nil {
 		return err
 	}
-	body := descOrName(description, name)
+	body := descOrName(opts.Description, name)
 	if err := writeReadmes(root, name, body); err != nil {
 		return err
 	}
-	lang := locLangOrEnglish(locLang)
+	lang := locLangOrEnglish(opts.LocLang)
 	locDir := filepath.Join(root, "localization", lang)
 	if err := os.MkdirAll(locDir, 0o755); err != nil {
 		return err

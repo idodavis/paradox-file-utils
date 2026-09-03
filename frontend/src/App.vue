@@ -28,7 +28,7 @@ import IdeStatusStrip from "./components/IdeStatusStrip.vue";
 import { applyEditorFontSize, applyWorkbenchTheme } from "./ide/themeBridge";
 import { useIdeShellStore } from "./stores/ideShell";
 import DisplayPopover from "./components/DisplayPopover.vue";
-import { HELP_COPY } from "./help/content";
+import { endMergeOverlay } from "./ide/commands";
 import { workspaceHomeRoute } from "./workspaceTools";
 
 const route = useRoute();
@@ -39,7 +39,6 @@ const ideShell = useIdeShellStore();
 
 const colorMode = useColorMode();
 const currentFamily = shallowRef<PmtThemeFamily>("pmt");
-const themeHydrated = shallowRef(false);
 const appearance = computed(() =>
   colorMode.value === "dark" ? ("dark" as const) : ("light" as const),
 );
@@ -53,18 +52,9 @@ const currentFamilyLabel = computed(() => familyLabel(currentFamily.value));
 const version = ref("...");
 const helpOpen = ref(false);
 
-const KEEP_ALIVE_PAGES = [
-  "LibraryPage", "EventGraphPage", "ConflictPage", "LocCoveragePage",
-  "PatcherPage", "ToolsMergePage",
-];
-
-const currentTitle = computed(() => String(route.meta.title ?? "Tools"));
-const currentDescription = computed(
-  () => String(route.meta.description ?? ""),
-);
-const helpParagraphs = computed(
-  () => HELP_COPY[String(route.name)]?.paragraphs ?? [],
-);
+const currentTitle = computed(() => route.meta.title ?? "Tools");
+const currentDescription = computed(() => route.meta.description ?? "");
+const helpParagraphs = computed(() => route.meta.help ?? []);
 const isLibrary = computed(() => route.name === "library");
 const showWorkbench = computed(
   () => route.name === "workspace-ide" || ideShell.mergeReview,
@@ -157,15 +147,13 @@ async function loadVersion(): Promise<void> {
   }
 }
 
-/** Apply and persist a palette family; sync workbench when ready. */
+/** Persist a user-picked palette family; CSS apply is the family/color-mode watch. */
 async function onThemeChange(theme: string | null): Promise<void> {
-  if (!themeHydrated.value || !theme) return;
+  if (!theme) return;
   const family = normalizeThemeFamily(theme);
+  if (family === currentFamily.value) return;
   setFamily(family);
   await saveFamily(family);
-  if (isWorkbenchReady()) {
-    await applyWorkbenchTheme(workbenchThemeId(family, appearance.value));
-  }
 }
 
 /** Swatch colors for a SelectMenu theme item. */
@@ -219,10 +207,6 @@ onMounted(async () => {
     colorMode.store.value = "dark";
   }
   setFamily(family);
-  themeHydrated.value = true;
-  if (isWorkbenchReady()) {
-    await applyWorkbenchTheme(workbenchThemeId(family, appearance.value));
-  }
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (link) link.href = appIcon;
 });
@@ -293,18 +277,27 @@ onMounted(async () => {
               </router-view>
             </div>
             <div v-if="ideShell.mergeReview" class="flex shrink-0 items-center gap-2 border-b border-default px-2 py-1">
-              <UButton :label="ideShell.bannerLabel" icon="i-lucide-arrow-left" size="sm" color="neutral"
-                variant="ghost" @click="ideShell.endMergeReview()" />
-              <span class="text-xs text-muted">Reviewing diffs in workbench</span>
+              <UButton :label="ideShell.label" icon="i-lucide-arrow-left" size="sm" color="neutral"
+                variant="ghost" @click="endMergeOverlay()" />
+              <span class="text-xs text-muted">Reviewing merge</span>
             </div>
           </template>
         </IdeWorkbenchLayout>
         <div class="absolute inset-0 overflow-hidden bg-default"
           :class="showWorkbench ? 'z-0 pointer-events-none' : 'z-20'">
           <router-view v-slot="{ Component }">
-            <KeepAlive :max="10" :include="KEEP_ALIVE_PAGES">
-              <component :is="Component" v-if="Component" :key="String(route.name)" />
+            <KeepAlive :max="10">
+              <component
+                :is="Component"
+                v-if="Component && route.meta.keepAlive"
+                :key="String(route.name)"
+              />
             </KeepAlive>
+            <component
+              :is="Component"
+              v-if="Component && !route.meta.keepAlive"
+              :key="String(route.name)"
+            />
           </router-view>
         </div>
       </main>

@@ -7,11 +7,13 @@ import { storeToRefs } from "pinia";
 import { useSettingsStore } from "../stores/settings";
 import { WORKSPACE_TOOLS, type WorkspaceToolName } from "../workspaceTools";
 import { applyEditorFontSize } from "../ide/themeBridge";
+import { GUIDE_PREF_ITEMS, type GuidePref, useGuidePrefs } from "../composables/useGuidePrefs";
 
 const settings = useSettingsStore();
 const {
   fontScale, editorFontSize, ideUiFontSize, visibleTools, saving,
 } = storeToRefs(settings);
+const { toastPref, setToastPref } = useGuidePrefs();
 
 const scale = ref(fontScale.value);
 const font = ref(editorFontSize.value);
@@ -140,6 +142,15 @@ function reloadUi(): void {
               @update:model-value="onToolCheck(tool.name, $event)"
             />
           </div>
+        </UFormField>
+        <UFormField label="Guide toast">
+          <USelect
+            :model-value="toastPref"
+            :items="[...GUIDE_PREF_ITEMS]"
+            value-key="value"
+            class="w-full"
+            @update:model-value="(v: string) => setToastPref(v as GuidePref)"
+          />
         </UFormField>
         <UButton
           label="Reload UI"

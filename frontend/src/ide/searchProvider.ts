@@ -18,7 +18,7 @@ import {
   type ITextQuery,
 } from "@codingame/monaco-vscode-api/vscode/vs/workbench/services/search/common/search";
 import { ISearchService } from "@codingame/monaco-vscode-api/vscode/vs/workbench/services/search/common/search.service";
-import { FileSearch, TextSearch } from "@services/fileservice";
+import { FileSearch, TextSearch } from "@services/searchservice";
 import type { TextSearchFolder } from "@services/models";
 import type { CancellationToken } from "vscode";
 

@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -25,7 +24,7 @@ func Coverage(s *session.Session) []LocCoverage {
 	for lang, m := range s.LocByLang() {
 		entries := map[string]locSite{}
 		for k, v := range m {
-			entries[k] = locSite{key: k, value: v.Value, file: v.File, line: v.Line}
+			entries[k] = locSite{key: k, value: v.Value, file: v.Path, line: v.Line}
 		}
 		byLang[lang] = entries
 	}
@@ -34,16 +33,7 @@ func Coverage(s *session.Session) []LocCoverage {
 	}
 
 	referenced := map[string]locSite{}
-	used := map[string]bool{}
-	for _, r := range s.AllLocRefs() {
-		if r.Kind != "loc" && r.Kind != "loc-broad" && r.Kind != "loc-convention" {
-			continue
-		}
-		if skipLocIssueFile(s, r.Path) {
-			continue
-		}
-		used[r.Key] = true
-	}
+	used := s.UsedLocKeys()
 	for _, r := range s.LocRefs() {
 		if r.Kind != "loc" {
 			continue
@@ -78,9 +68,10 @@ func Coverage(s *session.Session) []LocCoverage {
 				return
 			}
 			origin, _, _ := s.Locate(site.file)
+			origin = originID(origin)
 			row.Issues = append(row.Issues, LocIssueRow{
 				Language: lang, Kind: kind, Key: site.key,
-				File: site.file, Rel: s.DisplayRel(site.file),
+				Path: site.file, Rel: s.DisplayRel(site.file),
 				Line: site.line, Value: value, Origin: origin,
 				OriginName: s.OriginName(origin),
 			})
@@ -134,24 +125,7 @@ func locPresent(
 
 func inheritKeys(s *session.Session, lang string) map[string]bool {
 	out := map[string]bool{}
-	if lang == s.DefaultLang() {
-		for _, k := range s.LocKeys(true) {
-			out[k] = true
-		}
-		return out
-	}
-	_, _, ver, installID := s.CacheInfo()
-	if installID == "" {
-		return out
-	}
-	if ver == "" {
-		ver = "latest"
-	}
-	vl, err := catalog.LoadVanillaLoc(installID, ver, lang)
-	if err != nil || vl == nil {
-		return out
-	}
-	for k := range vl.Sites {
+	for _, k := range s.InheritedLocKeys(lang) {
 		out[k] = true
 	}
 	return out
@@ -183,10 +157,10 @@ func Lookup(s *session.Session, key string) *LocLookup {
 	text := locValue(s, key)
 	hit := &LocLookup{Key: key, Text: text}
 	if file, line, origin, ok := s.LocSite(key); ok {
-		hit.File, hit.Line, hit.Origin = file, line, origin
-		hit.OriginName = s.OriginName(origin)
+		hit.Path, hit.Line, hit.Origin = file, line, originID(origin)
+		hit.OriginName = s.OriginName(hit.Origin)
 	}
-	if hit.Text == "" && hit.File == "" {
+	if hit.Text == "" && hit.Path == "" {
 		return nil
 	}
 	return hit

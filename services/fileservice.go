@@ -57,7 +57,7 @@ func (f *FileService) collectFilesFromPath(inputPath string, exts []string) (map
 		files[filepath.ToSlash(rel)] = path
 		return nil
 	})
-	if walkErr != nil && walkErr != fs.SkipAll {
+	if walkErr != nil && !errors.Is(walkErr, fs.SkipAll) {
 		return nil, fmt.Errorf("Tree walk error in %s: %w", inputPath, walkErr)
 	}
 	return files, nil
@@ -88,10 +88,8 @@ func (f *FileService) collectAndMatchPaths(pathA, pathB string, exts []string) (
 
 // DirEntry is one immediate child of a directory (for lazy file trees).
 type DirEntry struct {
-	Name     string `json:"name"`
-	RelPath  string `json:"relPath"`
-	FullPath string `json:"fullPath"`
-	IsDir    bool   `json:"isDir"`
+	Name  string `json:"name"`
+	IsDir bool   `json:"isDir"`
 }
 
 // CreateDir creates a directory (parents created as needed).
@@ -201,9 +199,8 @@ func (f *FileService) ListDirectory(dirPath string) ([]DirEntry, error) {
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		full := filepath.Join(dirPath, name)
 		out = append(out, DirEntry{
-			Name: name, RelPath: name, FullPath: full, IsDir: e.IsDir(),
+			Name: name, IsDir: e.IsDir(),
 		})
 	}
 	slices.SortFunc(out, func(a, b DirEntry) int {

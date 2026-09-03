@@ -7,14 +7,15 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
+	"runtime/debug"
+	"strings"
 	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/services/internal/catalog"
-	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/session"
+	"paradox-modding-tools/services/internal/wiki"
 )
 
 // SessionService owns the session pool and install-scan RPC.
@@ -26,29 +27,25 @@ type SessionService struct {
 
 	mu         sync.Mutex
 	scanCancel context.CancelFunc
-}
-
-// ModelStatus reports whether a workspace session is live.
-type ModelStatus struct {
-	Live bool `json:"live"`
+	wikiCancel context.CancelFunc
 }
 
 // LanguageHealth is the compact Library/IDE index status strip.
 type LanguageHealth struct {
-	InstallID   string `json:"installId"`
-	InstallOk   bool   `json:"installOk"`
-	GameVersion string `json:"gameVersion"`
-	CacheStale  bool   `json:"cacheStale"`
-	ScannedAt   string `json:"scannedAt"`
-	DocsPresent bool   `json:"docsPresent"`
-	IndexReady  bool   `json:"indexReady"`
-	DefCount    int    `json:"defCount"`
-	DumpHint    string `json:"dumpHint"`
+	InstallID         string `json:"installId"`
+	InstallOk         bool   `json:"installOk"`
+	GameVersion       string `json:"gameVersion"`
+	CacheStale        bool   `json:"cacheStale"`
+	ScannedAt         string `json:"scannedAt"`
+	ScriptDocsEffects int    `json:"scriptDocsEffects"`
+	IndexReady        bool   `json:"indexReady"`
+	DefCount          int    `json:"defCount"`
+	DumpHint          string `json:"dumpHint"`
 }
 
 func recoverErr(err *error) {
 	if r := recover(); r != nil {
-		*err = fmt.Errorf("%v", r)
+		*err = fmt.Errorf("%v\n%s", r, debug.Stack())
 	}
 }
 
@@ -113,12 +110,10 @@ func (s *SessionService) buildSession(id string) (*session.Session, error) {
 		if ver == "" {
 			ver = "latest"
 		}
+		// Stale formatVersion discards the file (no migration). Do not fail
+		// the session — that leaves the IDE unmounted until a UI reload.
 		cache, _ = catalog.LoadCache(inst.ID, ver)
-		loaded, locErr := catalog.LoadVanillaLoc(inst.ID, ver, lang)
-		if locErr != nil && !os.IsNotExist(locErr) {
-			return nil, locErr
-		}
-		vloc = loaded
+		vloc, _ = catalog.LoadVanillaLoc(inst.ID, ver, lang)
 	}
 	inputs := make([]catalog.ModInput, 0, len(ws.Mods))
 	mods := append([]WorkspaceMod(nil), ws.Mods...)
@@ -136,6 +131,7 @@ func (s *SessionService) buildSession(id string) (*session.Session, error) {
 		emitLang("fs:changed", map[string]any{"path": path, "deleted": deleted})
 	})
 	_ = sess.StartWatch()
+	_, _ = wiki.LoadGuides(ws.GameID)
 	return sess, nil
 }
 
@@ -143,14 +139,16 @@ func (s *SessionService) sess(id string) (*session.Session, error) {
 	return s.pool().EnsureSession(id)
 }
 
-// EnsureSession builds or returns the live session for workspaceID.
-func (s *SessionService) EnsureSession(workspaceID string) (err error) {
+// EnsureSession builds or returns the live session and its language health.
+func (s *SessionService) EnsureSession(workspaceID string) (_ *LanguageHealth, err error) {
 	defer recoverErr(&err)
 	if workspaceID == "" {
-		return fmt.Errorf("workspace id is required")
+		return nil, fmt.Errorf("workspace id is required")
 	}
-	_, err = s.sess(workspaceID)
-	return err
+	if _, err = s.sess(workspaceID); err != nil {
+		return nil, err
+	}
+	return s.languageHealth(workspaceID)
 }
 
 func (s *SessionService) cancel() {
@@ -179,10 +177,6 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 	if ver == "" {
 		ver = "latest"
 	}
-	docs := inst.DocsPath
-	if docs == "" {
-		docs = scriptDocsDir(inst.GameID)
-	}
 	s.cancel()
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
@@ -190,14 +184,20 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 	s.mu.Unlock()
 	defer cancel()
 
-	c, vloc, err := catalog.Scan(ctx, inst.ID, inst.GameID, inst.Path, ver, docs, "english",
-		func(pct int, msg string) {
+	c, vloc, err := catalog.Scan(ctx, catalog.ScanRequest{
+		InstallID: inst.ID, GameID: inst.GameID, InstallPath: inst.Path,
+		Version: ver, LocLang: "english",
+		OnProgress: func(pct int, msg string) {
+			if pct > 80 {
+				pct = 80
+			}
 			emitLang("lang:scan-progress", map[string]any{
 				"installId": installID,
 				"pct":       pct,
 				"msg":       msg,
 			})
-		})
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +206,37 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 	}
 	if err := catalog.SaveVanillaLoc(inst.ID, ver, "english", vloc); err != nil {
 		return nil, err
+	}
+
+	wikiVer := inst.Version
+	if wikiVer == "" || strings.EqualFold(wikiVer, "latest") {
+		wikiVer = inst.VersionDetected
+	}
+	if wiki.Needed(inst.GameID, wikiVer) {
+		if !wiki.HasSidecar(inst.GameID) {
+			emitLang("wiki:first", map[string]any{"gameId": inst.GameID})
+		}
+		werr := wiki.RefreshIfNeeded(ctx, inst.GameID, wikiVer, func(done, total int, kind string) {
+			pct := 80
+			if total > 0 {
+				pct = 80 + 20*done/total
+			}
+			emitLang("lang:scan-progress", map[string]any{
+				"installId": installID,
+				"pct":       pct,
+				"msg":       fmt.Sprintf("Wiki %s %d/%d", kind, done, total),
+			})
+		})
+		wmsg := ""
+		if werr != nil {
+			wmsg = clipMsg(werr.Error(), 120)
+			emitLang("lang:scan-progress", map[string]any{
+				"installId": installID,
+				"pct":       100,
+				"msg":       wmsg,
+			})
+		}
+		emitLang("wiki:updated", map[string]any{"gameId": inst.GameID, "ok": werr == nil, "err": wmsg})
 	}
 
 	var workspaceIDs []string
@@ -233,29 +264,20 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 	return c, nil
 }
 
-// GetModelStatus reports whether a live session exists for the workspace.
-func (s *SessionService) GetModelStatus(workspaceID string) (_ *ModelStatus, err error) {
-	defer recoverErr(&err)
-	st := &ModelStatus{}
-	if live := s.pool().Get(workspaceID); live != nil {
-		st.Live = true
-	}
-	return st, nil
+// GetLanguageHealth returns install/cache/session status for the workspace.
+func (s *SessionService) GetLanguageHealth(workspaceID string) (*LanguageHealth, error) {
+	return s.languageHealth(workspaceID)
 }
 
-// GetLanguageHealth returns install/cache/session status for the workspace.
-func (s *SessionService) GetLanguageHealth(workspaceID string) (_ *LanguageHealth, err error) {
-	defer recoverErr(&err)
+func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace id is required")
 	}
 	h := &LanguageHealth{}
-	var ws Workspace
 	var inst *GameInstall
 	var found bool
 	s.Store.Read(func(c *Config) {
 		if w := findWorkspace(c, workspaceID); w != nil {
-			ws = cloneWorkspace(*w)
 			found = true
 			if w.InstallID != "" {
 				if i := findInstall(c, w.InstallID); i != nil {
@@ -268,11 +290,6 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (_ *LanguageHealt
 	if !found {
 		return nil, fmt.Errorf("workspace not found")
 	}
-	docs := scriptDocsDir(ws.GameID)
-	h.DocsPresent = docs != ""
-	if !h.DocsPresent {
-		h.DumpHint = "Open the game, run script_docs in the console, then Rescan."
-	}
 	if inst != nil {
 		h.InstallID = inst.ID
 		h.GameVersion = inst.Version
@@ -280,7 +297,8 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (_ *LanguageHealt
 			h.InstallOk = true
 		}
 	}
-	if live := s.pool().Get(workspaceID); live != nil {
+	live := s.pool().Get(workspaceID)
+	if live != nil {
 		h.IndexReady = true
 		h.DefCount = live.DefCount()
 		_, scanned, ver, _ := live.CacheInfo()
@@ -290,34 +308,26 @@ func (s *SessionService) GetLanguageHealth(workspaceID string) (_ *LanguageHealt
 		if ver != "" && h.GameVersion != "" {
 			h.CacheStale = ver != h.GameVersion
 		}
-	} else if inst != nil {
+	}
+	if inst != nil {
 		ver := h.GameVersion
 		if ver == "" {
 			ver = "latest"
 		}
 		if c, e := catalog.LoadCache(inst.ID, ver); e == nil && c != nil {
-			h.ScannedAt = c.ScannedAt
-			h.CacheStale = c.GameVersion != h.GameVersion && h.GameVersion != ""
+			h.ScriptDocsEffects = len(c.Effects)
+			if h.ScannedAt == "" {
+				h.ScannedAt = c.ScannedAt
+			}
+			if live == nil {
+				h.CacheStale = c.GameVersion != h.GameVersion && h.GameVersion != ""
+			}
 		}
 	}
+	if h.ScriptDocsEffects == 0 {
+		h.DumpHint = "Open the game, run script_docs in the console, then Rescan."
+	}
 	return h, nil
-}
-
-// scriptDocsDir resolves the per-game in-game script_docs dump folder, or "".
-func scriptDocsDir(gameID string) string {
-	info := game.Get(gameID)
-	if info == nil {
-		return ""
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	dir := filepath.Join(home, "Documents", "Paradox Interactive", info.DocsFolderName, info.ScriptDocsSubdir)
-	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		return ""
-	}
-	return dir
 }
 
 // loadVanillaLoc returns the loc sidecar, harvesting and saving if it is missing.
@@ -339,4 +349,30 @@ func loadVanillaLoc(
 	}
 	_ = catalog.SaveVanillaLoc(installID, version, lang, v)
 	return v, nil
+}
+
+// StartWikiWarm runs a silent incremental wiki refresh for sidecars already on disk.
+func (s *SessionService) StartWikiWarm(version string) {
+	wiki.SetUserAgent(version)
+	s.mu.Lock()
+	if s.wikiCancel != nil {
+		s.wikiCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.wikiCancel = cancel
+	s.mu.Unlock()
+	go wiki.RefreshExisting(ctx, func(gameID string, err error) {
+		msg := ""
+		if err != nil {
+			msg = clipMsg(err.Error(), 120)
+		}
+		emitLang("wiki:updated", map[string]any{"gameId": gameID, "ok": err == nil, "err": msg})
+	})
+}
+
+func clipMsg(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }

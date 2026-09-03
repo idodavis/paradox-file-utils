@@ -5,4 +5,3 @@
 //
 // Files: registry.go, detect.go, rules.go, prefix.go (ParsePrefixed / scope:).
 package game
-

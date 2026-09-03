@@ -16,10 +16,10 @@ import type { LocIssueRow } from "@services/internal/views/models";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import DetailPane from "../components/DetailPane.vue";
-import OriginBadge from "../components/OriginBadge.vue";
+import OriginBadge, { PILL_UI } from "../components/OriginBadge.vue";
 import OriginSelectMenu from "../components/OriginSelectMenu.vue";
 import { useOpenInIde } from "../composables/useOpenInIde";
-import { useLiveEnabled } from "../composables/useSessionQuery";
+import { useLiveEnabled } from "../composables/useLiveEnabled";
 import { originHex, originHexByOriginId } from "../ide/rootDecorations";
 import { useWorkspaceStore } from "../stores/workspace";
 
@@ -53,15 +53,6 @@ const originItems = computed(() =>
     color: originHex({ kind: "mod", path: m.path, color: m.color, wrapIndex: i }),
     thumbnail: ws.thumbUrls[m.id],
   })),
-);
-watch(
-  liveMods,
-  (mods) => {
-    const ids = mods.map((m) => m.id);
-    const keep = originIds.value.filter((id) => ids.includes(id));
-    originIds.value = keep.length ? keep : ids;
-  },
-  { immediate: true },
 );
 
 const {
@@ -145,7 +136,7 @@ function kindColor(kind: string): "error" | "warning" | "info" {
 
 /** Stable table row id for single selection. */
 function locRowId(row: LocIssueRow): string {
-  return `${row.kind}:${row.key}:${row.file}:${row.line}`;
+  return `${row.kind}:${row.key}:${row.path}:${row.line}`;
 }
 
 /** Select one loc issue for the detail pane. */
@@ -157,7 +148,7 @@ function onRowSelect(_e: Event, row: { original: LocIssueRow; id: string }): voi
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <WorkspaceToolBar :workspace-id="workspaceId" title="Loc Coverage" active="loc-coverage">
+    <WorkspaceToolBar :workspace-id="workspaceId">
       <template #trailing>
         <LanguageHealthStrip v-if="workspaceId" :workspace-id="workspaceId" />
       </template>
@@ -216,14 +207,19 @@ function onRowSelect(_e: Event, row: { original: LocIssueRow; id: string }): voi
           @select="onRowSelect"
         >
           <template #kind-cell="{ row }">
-            <UBadge :color="kindColor(row.original.kind)" variant="subtle" size="xs">
+            <UBadge
+              :color="kindColor(row.original.kind)"
+              variant="subtle"
+              size="xs"
+              :ui="PILL_UI"
+            >
               {{ row.original.kind }}
             </UBadge>
           </template>
           <template #origin-cell="{ row }">
             <OriginBadge
-              :label="row.original.originName || row.original.origin || 'vanilla'"
-              :hex="originHexByOriginId(row.original.origin || 'vanilla')"
+              :label="row.original.originName || row.original.origin || ''"
+              :hex="originHexByOriginId(row.original.origin ?? '')"
             />
           </template>
         </UTable>
@@ -232,19 +228,28 @@ function onRowSelect(_e: Event, row: { original: LocIssueRow; id: string }): voi
         <DetailPane
           :workspace-id="workspaceId"
           :title="selected?.key"
-          :file="selected?.file"
+          :file="selected?.path"
           :rel="selected?.rel"
           :line="selected?.line"
         >
+          <template
+            v-if="selected && (selected.originName || selected.origin)"
+            #origin
+          >
+            <OriginBadge
+              :label="selected.originName || selected.origin || ''"
+              :hex="originHexByOriginId(selected.origin ?? '')"
+            />
+          </template>
           <template v-if="selected" #badges>
-            <UBadge :color="kindColor(selected.kind)" variant="subtle" size="xs">
+            <UBadge
+              :color="kindColor(selected.kind)"
+              variant="subtle"
+              size="xs"
+              :ui="PILL_UI"
+            >
               {{ selected.kind }}
             </UBadge>
-            <OriginBadge
-              v-if="selected.originName || selected.origin"
-              :label="selected.originName || selected.origin || 'vanilla'"
-              :hex="originHexByOriginId(selected.origin || 'vanilla')"
-            />
           </template>
           <p v-if="selected?.value" class="text-xs text-default">
             “{{ selected.value }}”

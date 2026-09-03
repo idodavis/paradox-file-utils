@@ -10,7 +10,7 @@ func TestKeyIdentityStripsEU5Prefix(t *testing.T) {
 	}{
 		{"eu5", "INJECT:foo", "foo"},
 		{"eu5", "REPLACE:bar", "bar"},
-		{"", "INJECT:foo", "foo"},        // merge: game-agnostic strip
+		{"", "INJECT:foo", "foo"},           // merge: game-agnostic strip
 		{"ck3", "INJECT:foo", "INJECT:foo"}, // ck3 has no entry modes -> untouched
 		{"eu5", "plain", "plain"},
 		{"eu5", "\"quoted\"", "quoted"},

@@ -10,8 +10,6 @@ import { WORKSPACE_TOOLS } from "../workspaceTools";
 
 const props = defineProps<{
   workspaceId: string;
-  title: string;
-  active?: string;
 }>();
 
 const route = useRoute();
@@ -19,6 +17,7 @@ const router = useRouter();
 const settings = useSettingsStore();
 
 const id = computed(() => props.workspaceId || String(route.params.id ?? ""));
+const title = computed(() => route.meta.title ?? "");
 
 /** History back unless the previous entry is the create-workspace wizard. */
 function goBack(): void {
@@ -40,7 +39,7 @@ const toolItems = computed<NavigationMenuItem[]>(() => {
   return shown.map((t) => ({
     label: t.label,
     icon: t.icon,
-    active: props.active ? props.active === t.name : route.name === t.name,
+    active: route.name === t.name,
     to: { name: t.name, params: { id: id.value } },
   }));
 });

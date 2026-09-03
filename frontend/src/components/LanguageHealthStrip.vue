@@ -30,7 +30,11 @@ const {
       {{ health.gameVersion
       }}<template v-if="health.cacheStale"> (cache stale)</template>
     </span>
-    <span>{{ health.docsPresent ? "script_docs found" : "no dumps" }}</span>
+    <span>{{
+      health.scriptDocsEffects
+        ? `${health.scriptDocsEffects} script_docs`
+        : "no script_docs"
+    }}</span>
     <span v-if="health.indexReady">{{ health.defCount }} defs</span>
     <span v-else>index pending</span>
     <UButton
@@ -54,7 +58,7 @@ const {
       />
       <span class="shrink-0 text-xs text-muted">{{ scanMsg }}</span>
     </div>
-    <span v-if="!health.docsPresent && health.dumpHint" class="opacity-80">
+    <span v-if="!health.scriptDocsEffects && health.dumpHint" class="opacity-80">
       {{ health.dumpHint }}
     </span>
   </div>

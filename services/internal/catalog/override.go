@@ -33,7 +33,7 @@ func Winner(gameID string, defs []Def, order map[string]int) *Def {
 	if len(mods) == 0 {
 		return vanilla
 	}
-	fios := game.IsFIOS(gameID, mods[0].Type)
+	fios := game.IsFIOS(gameID, mods[0].Kind)
 	best := 0
 	for i := 1; i < len(mods); i++ {
 		ri, rb := order[mods[i].Origin], order[mods[best].Origin]
@@ -58,18 +58,18 @@ func Contests(gameID string, workspace, vanilla []Def, order []string) []Contest
 	orderMap := OrderMap(order)
 	by := map[string][]Def{}
 	for _, d := range workspace {
-		if skipOverrideKind(d.Type) {
+		if skipOverrideKind(d.Kind) {
 			continue
 		}
-		k := d.Type + "\x00" + d.Key
+		k := d.Kind + "\x00" + d.Key
 		by[k] = append(by[k], d)
 	}
 	vanillaBy := map[string][]Def{}
 	for _, d := range vanilla {
-		if skipOverrideKind(d.Type) {
+		if skipOverrideKind(d.Kind) {
 			continue
 		}
-		k := d.Type + "\x00" + d.Key
+		k := d.Kind + "\x00" + d.Key
 		if _, ok := by[k]; ok {
 			vanillaBy[k] = append(vanillaBy[k], d)
 		}
@@ -95,11 +95,11 @@ func Contests(gameID string, workspace, vanilla []Def, order []string) []Contest
 			continue
 		}
 		rule := "LIOS"
-		if game.IsFIOS(gameID, w.Type) {
+		if game.IsFIOS(gameID, w.Kind) {
 			rule = "FIOS"
 		}
 		rows = append(rows, Contest{
-			Kind:     w.Type,
+			Kind:     w.Kind,
 			Name:     w.Key,
 			Rule:     rule,
 			Winner:   w.Origin,

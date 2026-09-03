@@ -15,32 +15,34 @@ const box = computed(() => nodeBox(props.data ?? {}));
 const isRoot = computed(() => props.data?.role === "root");
 const isMore = computed(() => props.data?.kind === "more");
 const hex = computed(() => originHexByOriginId(props.data?.origin ?? ""));
-const headerTint = computed(() => {
+
+/** Header strip tint and kind glyph. */
+const header = computed(() => {
   switch (props.data?.kind) {
     case "event":
-      return "color-mix(in oklab, var(--ui-info) 20%, transparent)";
+      return {
+        tint: "color-mix(in oklab, var(--ui-info) 20%, transparent)",
+        icon: "i-lucide-scroll-text",
+      };
     case "on_action":
-      return "color-mix(in oklab, var(--ui-accent) 20%, transparent)";
+      return {
+        tint: "color-mix(in oklab, var(--ui-accent) 20%, transparent)",
+        icon: "i-lucide-timer",
+      };
     case "decision":
-      return "color-mix(in oklab, var(--ui-warning) 20%, transparent)";
+      return {
+        tint: "color-mix(in oklab, var(--ui-warning) 20%, transparent)",
+        icon: "i-lucide-scale",
+      };
+    case "scripted_effect":
+      return {
+        tint: "color-mix(in oklab, var(--ui-success) 20%, transparent)",
+        icon: "i-lucide-zap",
+      };
     case "more":
-      return undefined;
+      return { icon: "i-lucide-ellipsis" };
     default:
-      return undefined;
-  }
-});
-const headerIcon = computed(() => {
-  switch (props.data?.kind) {
-    case "event":
-      return "i-lucide-circle";
-    case "on_action":
-      return "i-lucide-hexagon";
-    case "decision":
-      return "i-lucide-diamond";
-    case "more":
-      return "";
-    default:
-      return "i-lucide-dot";
+      return { icon: "i-lucide-circle-dashed" };
   }
 });
 const badge = computed(() => props.data?.originName || "");
@@ -63,11 +65,11 @@ const badge = computed(() => props.data?.originName || "");
       :connectable="false"
     />
     <div
-      class="flex h-5 items-center gap-1 border-b px-2 text-[10px] text-muted"
+      class="flex h-5 items-center gap-1 border-b px-1.5 text-[10px] text-muted"
       :class="isMore ? 'border-dashed border-muted' : 'border-default'"
-      :style="headerTint ? { backgroundColor: headerTint } : undefined"
+      :style="header.tint ? { backgroundColor: header.tint } : undefined"
     >
-      <span v-if="headerIcon" :class="headerIcon" class="size-3 shrink-0" />
+      <UIcon :name="header.icon" class="size-2.5 shrink-0" />
       <span class="truncate">{{ isMore ? "" : props.data?.kind }}</span>
     </div>
     <div class="px-2 py-1">

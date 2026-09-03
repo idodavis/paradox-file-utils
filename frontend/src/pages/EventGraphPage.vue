@@ -15,7 +15,9 @@ import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import GraphCanvas from "../components/graph/GraphCanvas.vue";
 import EventDetailPanel from "../components/graph/EventDetailPanel.vue";
 import GameIcon from "../components/GameIcon.vue";
-import { useLiveEnabled } from "../composables/useSessionQuery";
+import OriginSelectMenu from "../components/OriginSelectMenu.vue";
+import { PILL_UI } from "../components/OriginBadge.vue";
+import { useLiveEnabled } from "../composables/useLiveEnabled";
 import type { GraphLayoutMode } from "../composables/useGraphLayout";
 import { originHex } from "../ide/rootDecorations";
 import { useWorkspaceStore } from "../stores/workspace";
@@ -32,22 +34,29 @@ const liveMods = computed(() =>
   ws.workspaceMods.filter((m) => !m.isBroken && m.path),
 );
 const originItems = computed(() => [
-  ...liveMods.value.map((m) => ({ label: m.name, id: m.id, path: m.path })),
   {
-    label: ws.gameName(ws.activeWorkspace?.gameId ?? ws.currentGameId),
     id: vanilla.value,
+    label: ws.gameName(ws.activeWorkspace?.gameId ?? ws.currentGameId),
+    color: originHex({
+      kind: "game",
+      path: "",
+      color: ws.activeWorkspace?.gameColor,
+    }),
+    gameId: ws.activeWorkspace?.gameId ?? ws.currentGameId,
   },
+  ...liveMods.value.map((m, i) => ({
+    id: m.id,
+    label: m.name,
+    color: originHex({
+      kind: "mod",
+      path: m.path,
+      color: m.color,
+      wrapIndex: i,
+    }),
+    thumbnail: ws.thumbUrls[m.id],
+  })),
 ]);
 const origins = ref<string[]>([]);
-watch(
-  liveMods,
-  (mods) => {
-    const ids = [...mods.map((m) => m.id), vanilla.value];
-    const keep = origins.value.filter((id) => ids.includes(id));
-    origins.value = keep.length ? keep : ids;
-  },
-  { immediate: true },
-);
 const originsNarrowed = computed(
   () =>
     origins.value.length > 0 &&
@@ -185,11 +194,7 @@ watch(workspaceId, () => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <WorkspaceToolBar
-      :workspace-id="workspaceId"
-      title="Event Graph"
-      active="event-graph"
-    >
+    <WorkspaceToolBar :workspace-id="workspaceId">
       <template #trailing>
         <USelect
           :model-value="layout"
@@ -243,28 +248,7 @@ watch(workspaceId, () => {
               :style="{ backgroundColor: itemOriginHex(item.origin) }" />
           </template>
         </USelectMenu>
-        <USelectMenu
-          v-model="origins" :items="originItems" value-key="id" multiple
-          placeholder="Origins" size="md" class="w-72" :ui="MENU_UI"
-        >
-          <template #item-leading="{ item }">
-            <img
-              v-if="item.id !== vanilla && ws.thumbUrls[item.id]"
-              :src="ws.thumbUrls[item.id]"
-              alt=""
-              class="size-4 rounded-sm object-cover"
-            />
-            <GameIcon
-              v-else-if="item.id === vanilla"
-              :game-id="ws.activeWorkspace?.gameId ?? ws.currentGameId"
-            />
-            <span
-              v-else
-              class="size-2 shrink-0 rounded-full"
-              :style="{ backgroundColor: itemOriginHex(item.id) }"
-            />
-          </template>
-        </USelectMenu>
+        <OriginSelectMenu v-model="origins" :items="originItems" />
         <UButton
           label="Clear"
           icon="i-lucide-x"
@@ -302,7 +286,8 @@ watch(workspaceId, () => {
           v-if="graph?.truncated"
           color="warning"
           variant="subtle"
-          size="md"
+          size="xs"
+          :ui="PILL_UI"
         >
           truncated
         </UBadge>

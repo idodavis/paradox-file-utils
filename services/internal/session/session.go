@@ -3,6 +3,7 @@
 package session
 
 import (
+	"context"
 	"maps"
 	"os"
 	"path/filepath"
@@ -83,7 +84,10 @@ func NewWithLoc(
 		edgesByTo:   map[string][]catalog.Edge{},
 		edgesByFile: map[string][]catalog.Edge{},
 	}
-	idx := catalog.BuildIndex(gameID, mods, cache)
+	idx, err := catalog.BuildIndex(context.Background(), gameID, mods, cache)
+	if err != nil {
+		idx = catalog.Harvest{}
+	}
 	if cache != nil {
 		catalog.PrepareCache(cache)
 	}
@@ -266,7 +270,7 @@ func (s *Session) dropPathLocked(path string) {
 		if len(s.defsByKey[d.Key]) == 0 {
 			delete(s.defsByKey, d.Key)
 		}
-		if game.CanonicalKind(d.Type) == "scripted_effect" {
+		if game.CanonicalKind(d.Kind) == "scripted_effect" {
 			delete(s.effectSet, d.Key)
 		}
 	}
@@ -293,7 +297,7 @@ func (s *Session) dropPathLocked(path string) {
 	if s.locByLang != nil {
 		for lang, m := range s.locByLang {
 			for k, v := range m {
-				if SamePath(v.File, path) {
+				if SamePath(v.Path, path) {
 					delete(m, k)
 				}
 			}
@@ -348,7 +352,7 @@ func (s *Session) LocSite(key string) (file string, line int, origin string, ok 
 	defer s.mu.RUnlock()
 	var locDefs []catalog.Def
 	for _, d := range s.defsByKey[key] {
-		if d.Type == "loc_key" {
+		if d.Kind == "loc_key" {
 			locDefs = append(locDefs, d)
 		}
 	}
@@ -357,7 +361,7 @@ func (s *Session) LocSite(key string) (file string, line int, origin string, ok 
 	}
 	if s.vanillaLoc != nil {
 		if site, hit := s.vanillaLoc.Sites[key]; hit {
-			return site.File, site.Line, game.OriginVanilla, true
+			return site.Path, site.Line, game.OriginVanilla, true
 		}
 	}
 	return "", 0, "", false
@@ -370,7 +374,8 @@ func (s *Session) Mods() []catalog.ModInput {
 	return s.mods
 }
 
-// Locate finds the mod origin and root-relative path for an absolute file path.
+// Locate finds the origin and root-relative path for an absolute file path.
+// Mods win; vanilla is the install script root (InstallPath + ScriptRoot).
 func (s *Session) Locate(path string) (origin, rel string, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -445,7 +450,24 @@ func (s *Session) locate(path string) (origin, rel string, ok bool) {
 			return m.Origin, r, true
 		}
 	}
+	for _, root := range s.vanillaRoots() {
+		if r, inside := RelPath(root, path); inside {
+			return game.OriginVanilla, r, true
+		}
+	}
 	return "", "", false
+}
+
+func (s *Session) vanillaRoots() []string {
+	if s.cache == nil || s.cache.InstallPath == "" {
+		return nil
+	}
+	inst := CanonPath(s.cache.InstallPath)
+	info := game.Get(s.GameID)
+	if info != nil && info.ScriptRoot != "" {
+		return []string{filepath.Join(inst, info.ScriptRoot), inst}
+	}
+	return []string{inst}
 }
 
 func removeByPath[T any](in []T, drop string, pathOf func(T) string) []T {
@@ -534,7 +556,7 @@ func (s *Session) addEdgesLocked(edges []catalog.Edge) {
 
 func (s *Session) addEffectsLocked(defs []catalog.Def) {
 	for _, d := range defs {
-		if game.CanonicalKind(d.Type) == "scripted_effect" {
+		if game.CanonicalKind(d.Kind) == "scripted_effect" {
 			s.effectSet[d.Key] = true
 		}
 	}
@@ -609,7 +631,7 @@ func (s *Session) FindDefs(query string, limit int, byPrefix, includeVanilla boo
 	q := strings.ToLower(query)
 	var out []catalog.Def
 	s.eachDef(includeVanilla, func(d catalog.Def) bool {
-		if d.Type == "saved_scope" {
+		if d.Kind == "saved_scope" {
 			return true
 		}
 		if q != "" {
@@ -640,7 +662,7 @@ func (s *Session) GraphCatalog(origins []string) (
 		effects[k] = v
 	}
 	s.eachDef(true, func(d catalog.Def) bool {
-		ck := game.CanonicalKind(d.Type)
+		ck := game.CanonicalKind(d.Kind)
 		if ck != "event" && ck != "on_action" && ck != "decision" {
 			return true
 		}
@@ -651,7 +673,7 @@ func (s *Session) GraphCatalog(origins []string) (
 		}
 		if len(origins) == 0 || slices.Contains(origins, want) {
 			if prev, ok := picker[d.Key]; !ok || prev == "" || d.Origin != "" {
-				picker[d.Key] = d.Origin
+				picker[d.Key] = want
 			}
 		}
 		return true
@@ -682,7 +704,7 @@ func (s *Session) LocFile(origin, lang string) (string, bool) {
 	defer s.mu.RUnlock()
 	var found string
 	s.eachDef(false, func(d catalog.Def) bool {
-		if d.Type == "loc_key" && d.Origin == origin &&
+		if d.Kind == "loc_key" && d.Origin == origin &&
 			strings.Contains(strings.ToLower(d.Path), marker) {
 			found = d.Path
 			return false
@@ -799,7 +821,7 @@ func (s *Session) DefsInFile(path string) []catalog.Def {
 	return cloneIf(s.defsByFile[CanonPath(path)])
 }
 
-// FieldDoc returns kind-scoped field prose, then the global FieldDocs fallback.
+// FieldDoc returns kind-scoped field-info, then global field-info, then TokenDoc.
 func (s *Session) FieldDoc(key, kind string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -818,11 +840,14 @@ func (s *Session) FieldDoc(key, kind string) string {
 func (s *Session) fieldDocLocked(key, kind string) string {
 	lk := strings.ToLower(key)
 	if kind != "" {
-		if m := s.cache.FieldDocsByKind[kind]; m != nil && m[lk] != "" {
+		if m := s.cache.FieldInfoByKind[kind]; m != nil && m[lk] != "" {
 			return m[lk]
 		}
 	}
-	return s.cache.FieldDocs[lk]
+	if v := s.cache.FieldInfo[lk]; v != "" {
+		return v
+	}
+	return s.cache.TokenDoc[lk]
 }
 
 // portraitSibling maps left_foo ↔ right_foo for script_docs pair fallback.
@@ -943,17 +968,6 @@ func (s *Session) LocRefs() []catalog.Ref {
 	return cloneIf(s.locRefs)
 }
 
-// AllLocRefs is workspace loc refs plus vanilla cache LocRefs.
-func (s *Session) AllLocRefs() []catalog.Ref {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := cloneIf(s.locRefs)
-	if s.cache != nil {
-		out = append(out, s.cache.LocRefs...)
-	}
-	return out
-}
-
 func addLocKeys(seen map[string]bool, out *[]string, k string) {
 	if k == "" || seen[k] {
 		return
@@ -962,18 +976,15 @@ func addLocKeys(seen map[string]bool, out *[]string, k string) {
 	*out = append(*out, k)
 }
 
-// LocKeys returns loc keys for completions. inherited limits the set to vanilla
-// sites plus vanilla loc_key defs.
-func (s *Session) LocKeys(inherited bool) []string {
+// LocKeys returns workspace plus vanilla loc keys for completions.
+func (s *Session) LocKeys() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	seen := map[string]bool{}
 	var out []string
-	if !inherited {
-		for _, m := range s.locByLang {
-			for k := range m {
-				addLocKeys(seen, &out, k)
-			}
+	for _, m := range s.locByLang {
+		for k := range m {
+			addLocKeys(seen, &out, k)
 		}
 	}
 	if s.vanillaLoc != nil {
@@ -981,13 +992,75 @@ func (s *Session) LocKeys(inherited bool) []string {
 			addLocKeys(seen, &out, k)
 		}
 	}
-	s.eachDef(inherited, func(d catalog.Def) bool {
-		if d.Type != "loc_key" || (inherited && d.Origin != "") {
+	s.eachDef(false, func(d catalog.Def) bool {
+		if d.Kind != "loc_key" {
 			return true
 		}
 		addLocKeys(seen, &out, d.Key)
 		return true
 	})
+	return out
+}
+
+// InheritedLocKeys returns vanilla loc keys for lang (sidecar + vanilla loc_key defs).
+func (s *Session) InheritedLocKeys(lang string) []string {
+	s.mu.RLock()
+	defLang := s.defaultLang
+	var sites map[string]catalog.LocEntry
+	if s.vanillaLoc != nil && (lang == "" || lang == defLang) {
+		sites = s.vanillaLoc.Sites
+	}
+	installID, version := "", ""
+	if s.cache != nil {
+		installID, version = s.cache.InstallID, s.cache.GameVersion
+	}
+	s.mu.RUnlock()
+
+	seen := map[string]bool{}
+	var out []string
+	if sites != nil {
+		for k := range sites {
+			addLocKeys(seen, &out, k)
+		}
+	} else if lang != "" && lang != defLang && installID != "" {
+		if version == "" {
+			version = "latest"
+		}
+		if vl, err := catalog.LoadVanillaLoc(installID, version, lang); err == nil && vl != nil {
+			for k := range vl.Sites {
+				addLocKeys(seen, &out, k)
+			}
+		}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	s.eachDef(true, func(d catalog.Def) bool {
+		if d.Kind != "loc_key" || d.Origin != "" {
+			return true
+		}
+		addLocKeys(seen, &out, d.Key)
+		return true
+	})
+	return out
+}
+
+// UsedLocKeys is loc / loc-broad / loc-convention keys from workspace and vanilla.
+func (s *Session) UsedLocKeys() map[string]bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]bool{}
+	add := func(refs []catalog.Ref) {
+		for _, r := range refs {
+			switch r.Kind {
+			case "loc", "loc-broad", "loc-convention":
+				out[r.Key] = true
+			}
+		}
+	}
+	add(s.locRefs)
+	if s.cache != nil {
+		add(s.cache.LocRefs)
+	}
 	return out
 }
 
@@ -1038,7 +1111,7 @@ func (s *Session) EdgesTo(id string) []catalog.Edge {
 func (s *Session) rebuildEffectSetLocked() {
 	s.effectSet = map[string]bool{}
 	s.eachDef(true, func(d catalog.Def) bool {
-		if game.CanonicalKind(d.Type) == "scripted_effect" {
+		if game.CanonicalKind(d.Kind) == "scripted_effect" {
 			s.effectSet[d.Key] = true
 		}
 		return true

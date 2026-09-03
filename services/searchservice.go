@@ -1,8 +1,9 @@
-// rgsearch.go runs the embedded ripgrep binary for IDE Find in Files.
+// searchservice.go runs the embedded ripgrep binary for IDE Find in Files.
 package services
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,6 +16,9 @@ import (
 
 	"paradox-modding-tools/services/internal/rgbin"
 )
+
+// SearchService is the Wails RPC shell for Find in Files. FileService stays FS CRUD.
+type SearchService struct{}
 
 const (
 	rgMaxResults   = 10000
@@ -217,7 +221,7 @@ func rgBaseArgs(noIgnore bool) []string {
 }
 
 // TextSearch runs ripgrep --json, one process per folder.
-func (f *FileService) TextSearch(q TextSearchQuery) (TextSearchResult, error) {
+func (s *SearchService) TextSearch(ctx context.Context, q TextSearchQuery) (TextSearchResult, error) {
 	if strings.TrimSpace(q.Pattern) == "" {
 		return TextSearchResult{}, nil
 	}
@@ -251,7 +255,7 @@ func (f *FileService) TextSearch(q TextSearchQuery) (TextSearchResult, error) {
 		}
 		args = appendGlobFlags(args, folderGlobs(folder))
 		args = append(args, "--", q.Pattern, p)
-		hits, limit, err := collectTextHits(exe, args, remain)
+		hits, limit, err := collectTextHits(ctx, exe, args, remain)
 		if err != nil {
 			return TextSearchResult{}, err
 		}
@@ -264,8 +268,8 @@ func (f *FileService) TextSearch(q TextSearchQuery) (TextSearchResult, error) {
 	return out, nil
 }
 
-func collectTextHits(exe string, args []string, max int) ([]TextSearchHit, bool, error) {
-	cmd := exec.Command(exe, args...)
+func collectTextHits(ctx context.Context, exe string, args []string, max int) ([]TextSearchHit, bool, error) {
+	cmd := exec.CommandContext(ctx, exe, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, false, fmt.Errorf("rg pipe: %w", err)
@@ -311,7 +315,7 @@ func collectTextHits(exe string, args []string, max int) ([]TextSearchHit, bool,
 }
 
 // FileSearch lists files whose path contains FilePattern (ripgrep --files).
-func (f *FileService) FileSearch(q FileSearchQuery) (FileSearchResult, error) {
+func (s *SearchService) FileSearch(ctx context.Context, q FileSearchQuery) (FileSearchResult, error) {
 	max := capResults(q.MaxResults)
 	needle := strings.ToLower(strings.TrimSpace(q.FilePattern))
 	out := FileSearchResult{Hits: []FileSearchHit{}}
@@ -332,7 +336,7 @@ func (f *FileService) FileSearch(q FileSearchQuery) (FileSearchResult, error) {
 		args := append(rgBaseArgs(folder.DisregardIgnoreFiles), "--files")
 		args = appendGlobFlags(args, folderGlobs(folder))
 		args = append(args, p)
-		cmd := exec.Command(exe, args...)
+		cmd := exec.CommandContext(ctx, exe, args...)
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			return FileSearchResult{}, fmt.Errorf("rg pipe: %w", err)

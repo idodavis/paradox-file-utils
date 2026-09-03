@@ -29,13 +29,14 @@ type GameInfo struct {
 	DocsFolderName string `json:"docsFolderName,omitempty"`
 	// ScriptDocsSubdir is where in-game console dumps land ("logs" or "docs").
 	ScriptDocsSubdir string `json:"scriptDocsSubdir,omitempty"`
-	// ScriptDocsFormat is "classic" (CK3 `_*.info`) or "markdown" (Vic3/EU5 `*.md`).
-	ScriptDocsFormat string `json:"scriptDocsFormat,omitempty"`
 
 	// EntryModes are EU5 database entry-mode prefixes (INJECT:, REPLACE:, ...).
 	EntryModes []string `json:"entryModes,omitempty"`
 
 	SteamAppID int `json:"steamAppId,omitempty"`
+
+	// FirstWins is the FIOS sentence for Conflicts / Settings load-order copy.
+	FirstWins string `json:"firstWins,omitempty"`
 }
 
 // GameList is the Wails payload for ListGames (consts are not exported).
@@ -55,8 +56,8 @@ var registry = map[string]*GameInfo{
 		Descriptor:       "mod",
 		DocsFolderName:   "Crusader Kings III",
 		ScriptDocsSubdir: "logs",
-		ScriptDocsFormat: "classic",
 		SteamAppID:       1158310,
+		FirstWins:        "GUI types and templates are first-wins.",
 	},
 	"vic3": {
 		ID:               "vic3",
@@ -67,8 +68,8 @@ var registry = map[string]*GameInfo{
 		Descriptor:       "metadata",
 		DocsFolderName:   "Victoria 3",
 		ScriptDocsSubdir: "docs",
-		ScriptDocsFormat: "markdown",
 		SteamAppID:       529340,
+		FirstWins:        "GUI types, templates, and events are first-wins.",
 	},
 	"eu5": {
 		ID:               "eu5",
@@ -80,9 +81,9 @@ var registry = map[string]*GameInfo{
 		Descriptor:       "metadata",
 		DocsFolderName:   "Europa Universalis V",
 		ScriptDocsSubdir: "docs",
-		ScriptDocsFormat: "markdown",
 		EntryModes:       []string{"INJECT", "REPLACE", "TRY_INJECT", "TRY_REPLACE", "INJECT_OR_CREATE", "REPLACE_OR_CREATE"},
 		SteamAppID:       3450310,
+		FirstWins:        "Events are first-wins; GUI types last-wins.",
 	},
 }
 

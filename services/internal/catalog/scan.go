@@ -1,5 +1,5 @@
 // scan.go harvests a game install into VanillaCache: script defs, structure keys,
-// vocabulary, loc, shipped-doc prose, GUI types/props, metadata, optional script_docs.
+// vocabulary, loc, shipped game-info prose, GUI types/props, metadata, script_docs.
 
 package catalog
 
@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
 	"paradox-modding-tools/services/internal/game"
@@ -32,40 +31,45 @@ var (
 	tokenRe      = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)`)
 )
 
-// Scan harvests installPath into a VanillaCache. Empty docsPath skips script_docs.
-func Scan(
-	ctx context.Context,
-	installID, gameID, installPath, version, docsPath, locLang string,
-	onProgress func(pct int, msg string),
-) (*VanillaCache, *VanillaLoc, error) {
-	info := game.Get(gameID)
+// ScanRequest is the install harvest input. script_docs come from UserDataDir.
+type ScanRequest struct {
+	InstallID, GameID, InstallPath, Version, LocLang string
+	OnProgress                                       func(pct int, msg string)
+}
+
+// Scan harvests installPath into a VanillaCache.
+func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, error) {
+	info := game.Get(req.GameID)
 	if info == nil {
 		return nil, nil, os.ErrInvalid
 	}
+	locLang := req.LocLang
 	if locLang == "" {
 		locLang = "english"
 	}
+	version := req.Version
 	if version == "" {
 		version = "latest"
 	}
+	onProgress := req.OnProgress
 	progress(onProgress, 5, "listing files")
-	inv := gather(scriptRoots(info, installPath))
+	inv := gather(scriptRoots(info, req.InstallPath))
 
 	progress(onProgress, 15, "parsing script")
 	files := append(append([]fileRef{}, inv.script...), inv.gui...)
-	acc, err := collectExtracts(ctx, gameID, files, true, nil)
+	acc, err := collectExtracts(ctx, req.GameID, files, true, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	progress(onProgress, 70, "reading localization")
-	vloc, locFileRefs, err := harvestLoc(ctx, inv.loc, locLang, installID, version)
+	vloc, locFileRefs, err := harvestLoc(ctx, inv.loc, locLang, req.InstallID, version)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	progress(onProgress, 80, "reading docs")
-	fieldDocs, fieldByKind, docStructs := harvestDocs(gameID, inv.docs)
+	progress(onProgress, 80, "reading game info")
+	fieldInfo, fieldByKind, docStructs := harvestGameInfo(req.GameID, inv.info)
 	for kind, keys := range docStructs {
 		set := acc.structures[kind]
 		if set == nil {
@@ -82,9 +86,9 @@ func Scan(
 	kinds := VoteFieldValueKinds(acc.fieldRHS, acc.defs)
 	c := &VanillaCache{
 		FormatVersion:    CacheFormatVersion,
-		InstallID:        installID,
-		GameID:           gameID,
-		InstallPath:      installPath,
+		InstallID:        req.InstallID,
+		GameID:           req.GameID,
+		InstallPath:      req.InstallPath,
 		GameVersion:      version,
 		ScannedAt:        time.Now().UTC().Format(time.RFC3339),
 		Defs:             acc.defs,
@@ -92,23 +96,36 @@ func Scan(
 		LocRefs:          append(locKindRefs(acc.refs), locKindRefs(locFileRefs)...),
 		FieldValueKinds:  kinds,
 		FieldEnumsByKind: VoteFieldEnums(acc.fieldRHSByKind, kinds),
-		FieldDocs:        fieldDocs,
-		FieldDocsByKind:  fieldByKind,
+		FieldInfo:        fieldInfo,
+		FieldInfoByKind:  fieldByKind,
 		Structures:       keysByCount(acc.structures),
 		StructureBlocks:  blockKeys(acc.structures, acc.structBlocks),
 		Vocabulary:       sortedKeys(acc.vocab),
 		GUITypes:         sortedKeys(acc.guiTypes),
 		GUIProps:         sortedKeys(acc.guiProps),
-		MetaKeys:         readMetaKeys(installPath, inv.meta),
+		MetaKeys:         readMetaKeys(req.InstallPath, inv.meta),
 	}
 
 	progress(onProgress, 90, "reading script_docs")
-	enrichScriptDocs(docsPath, info.ScriptDocsFormat, c)
-	enrichDataTypes(docsPath, c)
+	docsDir := scriptDocsDir(req.GameID, req.InstallPath)
+	enrichScriptDocs(docsDir, c)
+	enrichDataTypes(docsDir, c)
 	PrepareCache(c)
 
 	progress(onProgress, 100, "done")
 	return c, vloc, nil
+}
+
+func scriptDocsDir(gameID, installPath string) string {
+	info := game.Get(gameID)
+	if info == nil {
+		return ""
+	}
+	ud := game.UserDataDir(gameID, installPath)
+	if ud == "" {
+		return ""
+	}
+	return filepath.Join(ud, info.ScriptDocsSubdir)
 }
 
 func scriptRoots(info *game.GameInfo, installPath string) []string {
@@ -127,7 +144,7 @@ type fileRef struct{ abs, rel, origin string }
 
 // inventory buckets the walked files by role.
 type inventory struct {
-	script, gui, docs []fileRef
+	script, gui, info []fileRef
 	loc, meta         []string
 }
 
@@ -136,8 +153,8 @@ func ClassifyRel(rel, name string) string {
 	lower := strings.ToLower(name)
 	slash := strings.ReplaceAll(rel, "\\", "/")
 	switch {
-	case isShippedDocName(name):
-		return "docs"
+	case isGameInfoName(name):
+		return "info"
 	case strings.HasSuffix(lower, ".gui"):
 		return "gui"
 	case strings.HasSuffix(lower, ".mod"):
@@ -154,9 +171,9 @@ func ClassifyRel(rel, name string) string {
 	return ""
 }
 
-// isShippedDocName reports CK3 `_*.info` / `*.md` and EU5 readme/info text files.
+// isGameInfoName reports CK3 `_*.info` / `*.md` and EU5 readme/info text files.
 // Underscored data (`_default.txt`, `_hardcoded.txt`) stays unclassified.
-func isShippedDocName(name string) bool {
+func isGameInfoName(name string) bool {
 	lower := strings.ToLower(name)
 	if strings.HasSuffix(lower, ".md") {
 		return true
@@ -187,8 +204,8 @@ func gather(roots []string) inventory {
 	for _, root := range roots {
 		walkClassified(root, func(kind string, f fileRef) {
 			switch kind {
-			case "docs":
-				inv.docs = append(inv.docs, f)
+			case "info":
+				inv.info = append(inv.info, f)
 			case "gui":
 				inv.gui = append(inv.gui, f)
 			case "loc":
@@ -333,7 +350,7 @@ func harvestLoc(
 			byLang[lang] = out
 		}
 		for k, v := range locd.Vals {
-			out.Sites[k] = LocEntry{File: v.File, Line: v.Line, Value: v.Value}
+			out.Sites[k] = LocEntry{Path: v.Path, Line: v.Line, Value: v.Value}
 		}
 		if lang == locLang {
 			locRefs = append(locRefs, fileRefs...)
@@ -377,8 +394,8 @@ func HarvestLoc(ctx context.Context, gameID, installPath, locLang string) (*Vani
 	return v, err
 }
 
-// harvestDocs reads shipped `_*.info` / `*.md` / readme docs into field prose.
-func harvestDocs(gameID string, docs []fileRef) (
+// harvestGameInfo reads shipped `_*.info` / `*.md` / readme files into field prose.
+func harvestGameInfo(gameID string, docs []fileRef) (
 	fieldDocs map[string]string,
 	byKind map[string]map[string]string,
 	structs map[string]map[string]bool,
@@ -577,7 +594,7 @@ func enrichDataTypes(dir string, c *VanillaCache) {
 }
 
 func sortedKeys(set map[string]bool) []string {
-	out := lo.Keys(set)
+	out := slices.Collect(maps.Keys(set))
 	slices.Sort(out)
 	return out
 }
@@ -599,7 +616,7 @@ func addCounts(dst *map[string]map[string]int, kind string, src map[string]int) 
 func keysByCount(m map[string]map[string]int) map[string][]string {
 	out := make(map[string][]string, len(m))
 	for kind, counts := range m {
-		keys := lo.Keys(counts)
+		keys := slices.Collect(maps.Keys(counts))
 		slices.SortFunc(keys, func(a, b string) int {
 			if c := counts[b] - counts[a]; c != 0 {
 				return c
@@ -634,4 +651,210 @@ func progress(fn func(pct int, msg string), pct int, msg string) {
 	if fn != nil {
 		fn(pct, msg)
 	}
+}
+
+func enrichScriptDocs(dir string, c *VanillaCache) {
+	if dir == "" {
+		return
+	}
+	entries := parseScriptDocs(dir)
+	if len(entries) == 0 {
+		return
+	}
+	effects, triggers, vocab := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, v := range c.Vocabulary {
+		vocab[v] = true
+	}
+	if c.TokenDoc == nil {
+		c.TokenDoc = map[string]string{}
+	}
+	if c.TokenUsage == nil {
+		c.TokenUsage = map[string]string{}
+	}
+	if c.TokenScopes == nil {
+		c.TokenScopes = map[string]string{}
+	}
+	for _, e := range entries {
+		vocab[e.name] = true
+		lk := strings.ToLower(e.name)
+		if e.doc != "" && c.TokenDoc[lk] == "" {
+			c.TokenDoc[lk] = e.doc
+		}
+		if e.usage != "" {
+			c.TokenUsage[lk] = e.usage
+		}
+		if e.scopes != "" {
+			c.TokenScopes[lk] = e.scopes
+		}
+		switch e.kind {
+		case "effect":
+			effects[e.name] = true
+		case "trigger":
+			triggers[e.name] = true
+		}
+	}
+	c.Vocabulary, c.Effects, c.Triggers = sortedKeys(vocab), sortedKeys(effects), sortedKeys(triggers)
+}
+
+type docToken struct{ name, kind, doc, usage, scopes string }
+
+func parseScriptDocs(dir string) []docToken {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []docToken
+	for _, de := range entries {
+		if de.IsDir() {
+			continue
+		}
+		name := strings.ToLower(de.Name())
+		if !strings.HasSuffix(name, ".log") && !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, de.Name()))
+		if err != nil {
+			continue
+		}
+		text := string(raw)
+		kind := kindFromDocFilename(name)
+		if looksMarkdownDocs(text) {
+			out = append(out, parseMarkdownDocs(text, kind)...)
+		} else {
+			out = append(out, parseClassicDocs(text, kind)...)
+		}
+	}
+	return out
+}
+
+func looksMarkdownDocs(text string) bool {
+	for _, line := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "## ") {
+			return true
+		}
+		if strings.HasPrefix(t, "----") {
+			return false
+		}
+	}
+	return false
+}
+
+func kindFromDocFilename(name string) string {
+	switch {
+	case strings.Contains(name, "event_target"):
+		return "event_target"
+	case strings.Contains(name, "event_scope"):
+		return "scope_type"
+	case strings.Contains(name, "effect"):
+		return "effect"
+	case strings.Contains(name, "trigger"):
+		return "trigger"
+	case strings.Contains(name, "modif"):
+		return "modifier"
+	default:
+		return ""
+	}
+}
+
+func prose(parts []string) string {
+	return strings.TrimSpace(strings.Join(strings.Fields(strings.Join(parts, " ")), " "))
+}
+
+func stripDocMarkup(s string) string {
+	s = strings.ReplaceAll(s, "**", "")
+	s = strings.ReplaceAll(s, "*", "")
+	return strings.TrimSpace(s)
+}
+
+func splitDocMeta(parts []string) (doc, usage, scopes string) {
+	var body []string
+	var targets string
+	for _, p := range parts {
+		t := stripDocMarkup(strings.TrimSpace(p))
+		low := strings.ToLower(t)
+		switch {
+		case strings.HasPrefix(low, "usage:"):
+			usage = strings.TrimSpace(t[len("usage:"):])
+		case strings.HasPrefix(low, "supported scopes:"):
+			scopes = strings.TrimSpace(t[len("supported scopes:"):])
+		case strings.HasPrefix(low, "supported targets:"):
+			targets = strings.TrimSpace(t[len("supported targets:"):])
+		default:
+			body = append(body, p)
+		}
+	}
+	if targets != "" {
+		if scopes != "" {
+			scopes = scopes + "; targets: " + targets
+		} else {
+			scopes = targets
+		}
+	}
+	return prose(body), usage, scopes
+}
+
+func parseMarkdownDocs(text, kind string) []docToken {
+	var out []docToken
+	var cur *docToken
+	var body []string
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		cur.doc, cur.usage, cur.scopes = splitDocMeta(body)
+		out = append(out, *cur)
+		cur, body = nil, body[:0]
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if h := strings.TrimSpace(line); strings.HasPrefix(h, "## ") {
+			flush()
+			if m := tokenRe.FindString(strings.TrimSpace(strings.TrimLeft(h, "# "))); m != "" {
+				cur = &docToken{name: m, kind: kind}
+			}
+			continue
+		}
+		if cur != nil {
+			body = append(body, line)
+		}
+	}
+	flush()
+	return out
+}
+
+func parseClassicDocs(text, kind string) []docToken {
+	var out []docToken
+	var cur *docToken
+	var parts []string
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		cur.doc, cur.usage, cur.scopes = splitDocMeta(parts)
+		out = append(out, *cur)
+		cur, parts = nil, nil
+	}
+	for _, raw := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		trimmed := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(trimmed, "----"):
+			flush()
+		case trimmed == "":
+		case strings.Contains(strings.ToLower(trimmed), "documentation"):
+			continue
+		case cur == nil:
+			name := tokenRe.FindString(trimmed)
+			if name == "" {
+				continue
+			}
+			cur = &docToken{name: name, kind: kind}
+			if i := strings.Index(trimmed, " - "); i >= 0 {
+				parts = append(parts, trimmed[i+3:])
+			}
+		default:
+			parts = append(parts, trimmed)
+		}
+	}
+	flush()
+	return out
 }
