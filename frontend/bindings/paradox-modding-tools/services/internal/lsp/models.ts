@@ -48,11 +48,17 @@ export interface FoldingRange {
 }
 
 /**
- * HoverResult is hover card markdown. Origin/rel/path/line describe the
- * winning def site. Vanilla* is the install site this winner overlays.
+ * HoverResult is a structured hover card. The frontend templates Kind/Key/Hint/Docs.
+ * Origin/rel/path/line describe the winning def site. Vanilla* is the install
+ * site this winner overlays. Body is loc text or a harvested RHS. Usage is TokenUsage.
  */
 export interface HoverResult {
-    "contents": string;
+    "kind"?: string;
+    "key"?: string;
+    "hint"?: string;
+    "docs"?: string;
+    "body"?: string;
+    "usage"?: string;
     "origin"?: string;
     "originName"?: string;
     "rel"?: string;
@@ -68,10 +74,12 @@ export interface HoverResult {
 
 /**
  * Location points at a definition or reference.
+ * Range is the key (F12 landing). TargetRange is the assignment block for Peek.
  */
 export interface Location {
     "uri": string;
     "range": Range;
+    "targetRange"?: Range | null;
 }
 
 /**

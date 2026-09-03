@@ -75,6 +75,9 @@ func ExtractLoc(absPath, content, origin string) (defs []Def, locd LocDelta, ref
 		}
 		vals[e.Key] = LocEntry{Value: v, Path: absPath, Line: e.Line}
 		for _, ip := range loc.Interps(e.Value, e.ValueRange.Start) {
+			if game.IsLocEngineValue(ip.Key, ip.Filter) {
+				continue
+			}
 			refs = append(refs, Ref{
 				Key: ip.Key, Kind: "loc", Path: absPath,
 				Line: e.Line, Start: ip.KeyRange.Start, End: ip.KeyRange.End,
@@ -113,73 +116,22 @@ func ExtractParsed(
 	default:
 		return ex
 	}
-	ex.Refs, ex.Edges, ex.Cands = extractRefsAndEdges(res.Root, res.Lines(), absPath, ex.Defs)
+	ex.Refs, ex.Edges, ex.Cands = extractRefsAndEdges(gameID, res.Root, res.Lines(), absPath, ex.Defs)
+	nameDefs, nameRefs := extractScriptNames(gameID, res.Root, res.Lines(), absPath, origin)
+	ex.Defs = append(ex.Defs, nameDefs...)
+	ex.Refs = append(ex.Refs, nameRefs...)
+	paramDefs, paramRefs := extractScriptParams(gameID, res.Root, res.Lines(), absPath, origin, ex.Defs)
+	ex.Defs = append(ex.Defs, paramDefs...)
+	ex.Refs = append(ex.Refs, paramRefs...)
+	if ck := game.CanonicalKind(rule.Kind); ck == "game_rule" {
+		ex.Defs = append(ex.Defs, extractGameRuleSettings(res.Root, res.Lines(), absPath, origin)...)
+	}
 	if conventionLocKind(rule.Kind) {
 		ex.Refs = append(ex.Refs, conventionLocRefs(
 			res.Root, res.Lines(), absPath, ex.Defs, rule.Kind)...)
 	}
 	ex.FieldRHS = extractFieldRHS(res.Root)
 	return ex
-}
-
-func conventionLocKind(kind string) bool {
-	switch game.CanonicalKind(kind) {
-	case "game_rules", "game_rule", "game_rule_category",
-		"messages", "message_filter_types", "message_group_types", "message":
-		return true
-	default:
-		return false
-	}
-}
-
-func conventionLocRefs(
-	root *jomini.Root, li *jomini.LineIndex, path string, defs []Def, kind string,
-) []Ref {
-	var out []Ref
-	add := func(key string, start, end int) {
-		if key == "" {
-			return
-		}
-		out = append(out, Ref{
-			Key: key, Kind: "loc-convention", Path: path,
-			Line: li.PositionAt(start).Line, Start: start, End: end,
-		})
-	}
-	ck := game.CanonicalKind(kind)
-	for _, d := range defs {
-		switch ck {
-		case "game_rules", "game_rule":
-			add("rule_"+d.Key, d.Start, d.End)
-		case "game_rule_category":
-			add("game_rule_category_"+d.Key, d.Start, d.End)
-		case "message_filter_types":
-			add("message_filter_"+d.Key, d.Start, d.End)
-			add("message_filter_"+d.Key+"_desc", d.Start, d.End)
-		}
-	}
-	if (ck != "game_rules" && ck != "game_rule") || root == nil {
-		return out
-	}
-	for _, st := range root.Statements {
-		a, ok := st.(*jomini.Assignment)
-		if !ok {
-			continue
-		}
-		b := jomini.BlockOf(a.Value)
-		if b == nil {
-			continue
-		}
-		for _, inner := range b.Statements {
-			ia, ok := inner.(*jomini.Assignment)
-			if !ok || ia.Key.Quoted || jomini.BlockOf(ia.Value) == nil {
-				continue
-			}
-			key := ia.Key.Text
-			add("setting_"+key, ia.Key.Range.Start, ia.Key.Range.End)
-			add("setting_"+key+"_desc", ia.Key.Range.Start, ia.Key.Range.End)
-		}
-	}
-	return out
 }
 
 // ExtractFile extracts one decoded (CR-free) file, choosing the loc or script
@@ -388,7 +340,7 @@ func containerAt(containers []defAtLine, line int) string {
 }
 
 func extractRefsAndEdges(
-	root *jomini.Root, li *jomini.LineIndex, path string, defs []Def,
+	gameID string, root *jomini.Root, li *jomini.LineIndex, path string, defs []Def,
 ) ([]Ref, []Edge, []CallCandidate) {
 	var refs []Ref
 	var edges []Edge
@@ -419,6 +371,32 @@ func extractRefsAndEdges(
 								Line:  li.PositionAt(sc.Range.Start).Line,
 								Start: sc.Range.Start, End: sc.Range.End,
 							})
+						}
+					}
+					if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted && sc.Text != "" {
+						if prop == loc.PropNone {
+							if rk := game.RefFieldKind(gameID, key); rk != "" {
+								refs = append(refs, Ref{
+									Key: sc.Text, Kind: rk, Path: path,
+									Line:  li.PositionAt(sc.Range.Start).Line,
+									Start: sc.Range.Start, End: sc.Range.End,
+								})
+							} else if game.IsScriptValueField(key) &&
+								game.IsScriptValueRHS(sc.Text) &&
+								!scriptNameValueSlot(gameID, stack, key) {
+								refs = append(refs, Ref{
+									Key: sc.Text, Kind: "script_value", Path: path,
+									Line:  li.PositionAt(sc.Range.Start).Line,
+									Start: sc.Range.Start, End: sc.Range.End,
+								})
+							} else if key == "type" && len(stack) > 0 &&
+								game.MessageTypeParent(stack[len(stack)-1].key) {
+								refs = append(refs, Ref{
+									Key: sc.Text, Kind: "message", Path: path,
+									Line:  li.PositionAt(sc.Range.Start).Line,
+									Start: sc.Range.Start, End: sc.Range.End,
+								})
+							}
 						}
 					}
 					if fk := game.FireKind(key); fk != "" {
@@ -508,7 +486,7 @@ func VoteFieldValueKinds(rhs map[string]map[string]bool, defs []Def) map[string]
 	kindsByKey := map[string][]string{}
 	for _, d := range defs {
 		k := game.CanonicalKind(d.Kind)
-		if k == "" || d.Key == "" {
+		if k == "" || d.Key == "" || game.IsEphemeral(k) {
 			continue
 		}
 		seen := false
@@ -660,6 +638,7 @@ func cloneFieldEnums(
 	return out
 }
 
+// dropEphemeralDefs keeps persist/scan defs free of flags, variables, scopes, and $NAME$.
 func locKindRefs(refs []Ref) []Ref {
 	var out []Ref
 	for _, r := range refs {

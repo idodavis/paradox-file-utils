@@ -336,6 +336,7 @@ function constructOptions(): IWorkbenchConstructionOptions {
         strings: "on",
       },
       ...EDITOR_BRACKET_DEFAULTS,
+      "explorer.autoReveal": true,
       "files.exclude": SEARCH_EXCLUDES,
       "search.exclude": SEARCH_EXCLUDES,
     },
@@ -663,6 +664,9 @@ function syncEditorReadOnly(ed: monaco.editor.ICodeEditor): void {
 function syncActiveFile(): void {
   const ed = vscode.window.activeTextEditor;
   setIdeActiveFile(ed?.document.uri.fsPath ?? "");
+  if (ed) {
+    void vscode.commands.executeCommand("revealInExplorer", ed.document.uri);
+  }
 }
 
 function hookEditorReadOnly(): void {
@@ -769,6 +773,7 @@ async function runInitialize(theme: string): Promise<void> {
             "workbench.activity.showAccounts": false,
             "window.menuBarVisibility": "hidden",
             "window.title": "PMT${separator}${activeEditorShort}",
+            "explorer.autoReveal": true,
             "files.autoSave": "off",
             "editor.acceptSuggestionOnCommitCharacter": false,
             "editor.quickSuggestions": {

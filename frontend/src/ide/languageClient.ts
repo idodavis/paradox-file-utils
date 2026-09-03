@@ -97,6 +97,16 @@ function withDoc(text: string): vscode.MarkdownString {
   return md;
 }
 
+/** Kind (muted) and key (bold) on one line, then hint and docs. */
+function hoverCardMarkdown(h: HoverResult): string {
+  const kind = h.kind ? `<span class="pmt-hover-kind">${escHtml(h.kind)}</span>` : "";
+  const key = h.key ? ` **\`${escHtml(h.key)}\`**` : "";
+  const parts = [`${kind}${key}`.trim()];
+  if (h.hint) parts.push(escHtml(h.hint));
+  if (h.docs) parts.push(escHtml(h.docs));
+  return parts.join("\n\n");
+}
+
 /** Location line from Go origin + rel (1-based line). */
 function hoverSiteMarkdown(h: HoverResult): string {
   const primary = hoverSiteLine(
@@ -117,8 +127,16 @@ function hoverSiteMarkdown(h: HoverResult): string {
         h.vanillaCol,
       )
     : "";
-  if (primary && vanilla) return `${primary}\n\n${vanilla}`;
-  return primary || vanilla;
+  const tag = h.vanillaPath ? hoverOverrideTag() : "";
+  const parts = [primary, vanilla, tag].filter(Boolean);
+  return parts.join("<br>");
+}
+
+/** Footer chip when a mod def overlays vanilla. */
+function hoverOverrideTag(): string {
+  const raw = originHexByOriginId("vanilla");
+  const hex = /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : "#5B9A8B";
+  return `<span style="color:${hex};">game override</span>`;
 }
 
 /** Colored origin + open-file link for one hover site. */
@@ -170,6 +188,20 @@ function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** Loc/body as a quote; usage as a codeblock. Styles live in explorerLayout.css
+ *  — monaco hover sanitizes inline style, so <pre style=…> never wraps. */
+function appendHoverQuote(md: vscode.MarkdownString, text: string) {
+  const t = text.replace(/^\n+/, "").replace(/\n+$/, "");
+  if (!t) return;
+  md.appendMarkdown(`<blockquote>${escHtml(t)}</blockquote>\n`);
+}
+
+function appendHoverCode(md: vscode.MarkdownString, text: string) {
+  const t = text.replace(/^\n+/, "").replace(/\n+$/, "");
+  if (!t) return;
+  md.appendMarkdown(`<pre>${escHtml(t)}</pre>\n`);
+}
+
 function applyWorkspaceEdit(
   doc: vscode.TextDocument | undefined,
   edit: LspWorkspaceEdit,
@@ -196,7 +228,22 @@ function applyWorkspaceEdit(
   return we;
 }
 
-/** Map Go locations onto VS Code URIs without opening every target file. */
+/** Map a Go UTF-8 range onto a VS Code range (same-file converts columns). */
+function goRangeToVsCode(
+  r: { start: { line: number; character: number }; end: { line: number; character: number } },
+  fallback?: vscode.TextDocument,
+  same?: boolean,
+): vscode.Range {
+  if (same && fallback) return rangeToVsCode(fallback, r);
+  return new vscode.Range(
+    r.start.line,
+    r.start.character,
+    r.end.line,
+    r.end.character,
+  );
+}
+
+/** Map Go locations onto VS Code Locations (references / symbols). */
 function locationsFromGo(
   locs: LspLocation[],
   fallback?: vscode.TextDocument,
@@ -208,19 +255,31 @@ function locationsFromGo(
       fallback &&
       uri.fsPath.replace(/\\/g, "/").toLowerCase() ===
         fallback.uri.fsPath.replace(/\\/g, "/").toLowerCase();
-    out.push(
-      new vscode.Location(
-        uri,
-        same && fallback
-          ? rangeToVsCode(fallback, l.range)
-          : new vscode.Range(
-              l.range.start.line,
-              l.range.start.character,
-              l.range.end.line,
-              l.range.end.character,
-            ),
-      ),
-    );
+    out.push(new vscode.Location(uri, goRangeToVsCode(l.range, fallback, same)));
+  }
+  return out;
+}
+
+/** Map Go locations onto LocationLinks so Peek can show the assignment block. */
+function locationLinksFromGo(
+  locs: LspLocation[],
+  fallback?: vscode.TextDocument,
+): vscode.LocationLink[] {
+  const out: vscode.LocationLink[] = [];
+  for (const l of locs) {
+    const uri = uriToVsCode(l.uri);
+    const same =
+      fallback &&
+      uri.fsPath.replace(/\\/g, "/").toLowerCase() ===
+        fallback.uri.fsPath.replace(/\\/g, "/").toLowerCase();
+    const sel = goRangeToVsCode(l.range, fallback, same);
+    out.push({
+      targetUri: uri,
+      targetRange: l.targetRange
+        ? goRangeToVsCode(l.targetRange, fallback, same)
+        : sel,
+      targetSelectionRange: sel,
+    });
   }
   return out;
 }
@@ -291,14 +350,16 @@ export function registerLanguageClient(
         if (!id) return null;
         const p = positionUtf8(doc, pos);
         const h = await Hover(id, pathOf(doc), p.line, p.character);
-        if (!h?.contents) return null;
+        if (!h?.kind && !h?.key) return null;
         const md = new vscode.MarkdownString("", true);
         md.supportHtml = true;
         md.supportThemeIcons = true;
         md.isTrusted = { enabledCommands: ["vscode.open"] };
-        md.appendMarkdown(h.contents);
+        md.appendMarkdown(hoverCardMarkdown(h));
+        if (h.body) appendHoverQuote(md, h.body);
+        if (h.usage) appendHoverCode(md, h.usage);
         const site = hoverSiteMarkdown(h);
-        if (site) md.appendMarkdown(`\n\n<br>\n\n---\n\n${site}`);
+        if (site) md.appendMarkdown(`\n\n---\n\n${site}`);
         return new vscode.Hover(md);
       },
     }),
@@ -380,7 +441,7 @@ export function registerLanguageClient(
         const p = positionUtf8(doc, pos);
         const locs =
           (await Definition(id, pathOf(doc), p.line, p.character)) ?? [];
-        return locationsFromGo(locs, doc);
+        return locationLinksFromGo(locs, doc);
       },
     }),
   );

@@ -24,6 +24,20 @@ func extractCK3(rel, content, origin string) FileExtract {
 	return ExtractFile("ck3", filepath.FromSlash(rel), rel, origin, content, false)
 }
 
+func TestEventTitleSingleLocRef(t *testing.T) {
+	body := "namespace = test\n\ntest.1 = {\n\ttitle = k.t\n}\n"
+	ex := extractCK3("events/x.txt", body, "mod")
+	var kt []Ref
+	for _, r := range ex.Refs {
+		if r.Key == "k.t" {
+			kt = append(kt, r)
+		}
+	}
+	if len(kt) != 1 {
+		t.Fatalf("k.t refs=%v", kt)
+	}
+}
+
 func hasRef(refs []Ref, kind, key string) bool {
 	for _, r := range refs {
 		if r.Kind == kind && r.Key == key {
@@ -88,20 +102,79 @@ test.1 = {
 			t.Fatalf("missing loc ref: %v", refs)
 		}
 	})
-	t.Run("saved scope not indexed", func(t *testing.T) {
+	t.Run("saved scope indexed", func(t *testing.T) {
 		ex := extractCK3("events/x.txt", saved, "modA")
-		for _, d := range ex.Defs {
-			if d.Kind == "saved_scope" {
-				t.Fatalf("saved_scope def: %+v", d)
-			}
+		if !findDef(ex.Defs, "saved_scope", "duel_target") {
+			t.Fatalf("missing save_scope_as def: %v", ex.Defs)
 		}
-		for _, r := range ex.Refs {
-			if r.Kind == "saved_scope" {
-				t.Fatalf("saved_scope ref: %+v", r)
-			}
+		if !findDef(ex.Defs, "saved_scope", "gold_amt") {
+			t.Fatalf("missing save_scope_value_as def: %v", ex.Defs)
+		}
+		if !hasRef(ex.Refs, "saved_scope", "duel_target") {
+			t.Fatalf("missing scope: ref: %v", ex.Refs)
 		}
 		if !hasRef(ex.Refs, "loc", "test.1.t") {
 			t.Fatalf("missing loc ref: %v", ex.Refs)
+		}
+	})
+	t.Run("character flag and variable", func(t *testing.T) {
+		src := `test.1 = {
+	immediate = {
+		add_character_flag = used_life
+		has_character_flag = used_life
+		set_variable = { name = foo value = 3 }
+		has_variable = foo
+		exists = var:foo
+	}
+}
+`
+		ex := extractCK3("events/x.txt", src, "modA")
+		if !findDef(ex.Defs, "character_flag", "used_life") {
+			t.Fatalf("missing character_flag def: %v", ex.Defs)
+		}
+		if !hasRef(ex.Refs, "character_flag", "used_life") {
+			t.Fatalf("missing character_flag ref: %v", ex.Refs)
+		}
+		if !findDef(ex.Defs, "variable", "foo") {
+			t.Fatalf("missing variable def: %v", ex.Defs)
+		}
+		for _, d := range ex.Defs {
+			if d.Kind == "variable" && d.Key == "foo" && d.Value != "3" {
+				t.Fatalf("variable Value=%q want 3", d.Value)
+			}
+			if d.Kind == "character_flag" && d.Key == "used_life" && d.Value != "yes" {
+				t.Fatalf("flag Value=%q want yes", d.Value)
+			}
+		}
+		if !hasRef(ex.Refs, "variable", "foo") {
+			t.Fatalf("missing variable ref: %v", ex.Refs)
+		}
+	})
+	t.Run("vic3 has no character_flag", func(t *testing.T) {
+		src := "e = { immediate = { add_character_flag = x set_variable = y } }\n"
+		ex := ExtractFile("vic3", "events/x.txt", "events/x.txt", "m", src, false)
+		for _, d := range ex.Defs {
+			if d.Kind == "character_flag" {
+				t.Fatalf("vic3 must not harvest character_flag: %+v", d)
+			}
+		}
+		if !findDef(ex.Defs, "variable", "y") {
+			t.Fatalf("vic3 must still harvest variable: %v", ex.Defs)
+		}
+	})
+	t.Run("coa and flag_definition kinds", func(t *testing.T) {
+		coa := ExtractFile("ck3", "common/coat_of_arms/coat_of_arms/x.txt",
+			"common/coat_of_arms/coat_of_arms/x.txt", "m",
+			"b_appleby = { pattern = \"pattern_solid.dds\" }\n", false)
+		if !findDef(coa.Defs, "coat_of_arms", "b_appleby") {
+			t.Fatalf("coa defs=%v", coa.Defs)
+		}
+		fd := ExtractFile("vic3", "common/flag_definitions/00.txt",
+			"common/flag_definitions/00.txt", "m",
+			"ENG = { flag_definition = { } }\n", false)
+		if !findDef(fd.Defs, "flag_definition", "ENG") &&
+			!findDef(fd.Defs, "flag_definitions", "ENG") {
+			t.Fatalf("flag_definitions defs=%v", fd.Defs)
 		}
 	})
 	t.Run("on_action container", func(t *testing.T) {
@@ -148,6 +221,22 @@ real_effect = {
 		}
 		if !hasRef(ex.Refs, "loc", "event_message_title") {
 			t.Fatalf("missing title loc: %v", ex.Refs)
+		}
+	})
+	t.Run("script_value skips prefixed RHS", func(t *testing.T) {
+		ex := extractCK3("events/x.txt",
+			"e.1 = { immediate = { set_variable = { name = x value = scope:foo } } }\n",
+			"mod")
+		if hasRef(ex.Refs, "script_value", "scope:foo") ||
+			hasRef(ex.Refs, "script_value", "x") {
+			t.Fatalf("noisy script_value refs: %v", ex.Refs)
+		}
+	})
+	t.Run("game_rule_setting defs", func(t *testing.T) {
+		ex := extractCK3("common/game_rules/x.txt",
+			"my_rule = {\n\tdefault = a\n\tsuf_quieter = { }\n}\n", "mod")
+		if !findDef(ex.Defs, "game_rule_setting", "suf_quieter") {
+			t.Fatalf("missing setting def: %v", ex.Defs)
 		}
 	})
 	t.Run("game_rules convention keys", func(t *testing.T) {

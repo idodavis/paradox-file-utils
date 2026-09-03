@@ -32,10 +32,16 @@ type Diagnostic struct {
 	Code     string `json:"code,omitempty"`
 }
 
-// HoverResult is hover card markdown. Origin/rel/path/line describe the
-// winning def site. Vanilla* is the install site this winner overlays.
+// HoverResult is a structured hover card. The frontend templates Kind/Key/Hint/Docs.
+// Origin/rel/path/line describe the winning def site. Vanilla* is the install
+// site this winner overlays. Body is loc text or a harvested RHS. Usage is TokenUsage.
 type HoverResult struct {
-	Contents          string `json:"contents"`
+	Kind              string `json:"kind,omitempty"`
+	Key               string `json:"key,omitempty"`
+	Hint              string `json:"hint,omitempty"`
+	Docs              string `json:"docs,omitempty"`
+	Body              string `json:"body,omitempty"`
+	Usage             string `json:"usage,omitempty"`
 	Origin            string `json:"origin,omitempty"`
 	OriginName        string `json:"originName,omitempty"`
 	Rel               string `json:"rel,omitempty"`
@@ -60,9 +66,11 @@ type CompletionItem struct {
 }
 
 // Location points at a definition or reference.
+// Range is the key (F12 landing). TargetRange is the assignment block for Peek.
 type Location struct {
-	URI   string `json:"uri"`
-	Range Range  `json:"range"`
+	URI         string `json:"uri"`
+	Range       Range  `json:"range"`
+	TargetRange *Range `json:"targetRange,omitempty"`
 }
 
 // TextEdit is an LSP-style replacement.
@@ -113,6 +121,8 @@ type atPos struct {
 	saveOK          bool
 	inKey           bool
 	slotKey         string
+	msgType         bool
+	paramOwner      string
 }
 
 // resolveAt parses path and returns the identifier covering (line, col).
@@ -127,6 +137,9 @@ func resolveAt(s *session.Session, path string, line, col int) (atPos, bool) {
 		return atPos{}, false
 	}
 	word, start, end := res.TokenAt(off)
+	if name, pStart, pEnd, ok := game.ScriptParamSpan(src, off); ok {
+		word, start, end = name, pStart, pEnd
+	}
 	at := atPos{src: src, off: off, res: res, word: word, start: start, end: end}
 	rel := path
 	if _, r, ok := s.Locate(path); ok {
@@ -150,9 +163,41 @@ func resolveAt(s *session.Session, path string, line, col int) (atPos, bool) {
 			at.slotKey = key
 			at.inKey = false
 		}
+		at.msgType = messageTypeSlot(chain, at.slotKey)
 		at.saveName, at.saveOK = saveScopeIn(chain, off)
+		at.paramOwner = paramOwnerIn(s, chain)
 	}
 	return at, true
+}
+
+func paramOwnerIn(s *session.Session, chain []jomini.Statement) string {
+	for i := len(chain) - 1; i >= 0; i-- {
+		a, ok := chain[i].(*jomini.Assignment)
+		if !ok || a.Key.Quoted || strings.Contains(a.Key.Text, "$") {
+			continue
+		}
+		key := a.Key.Text
+		if game.IsCallKind(game.CanonicalKind(key)) {
+			return key
+		}
+		d := s.Resolve(key)
+		if d == nil {
+			continue
+		}
+		switch game.CanonicalKind(d.Kind) {
+		case "scripted_trigger", "scripted_effect", "scripted_modifier", "script_value":
+			return key
+		}
+	}
+	return ""
+}
+
+func messageTypeSlot(chain []jomini.Statement, slotKey string) bool {
+	if slotKey != "type" || len(chain) < 2 {
+		return false
+	}
+	a, ok := chain[0].(*jomini.Assignment)
+	return ok && !a.Key.Quoted && game.MessageTypeParent(a.Key.Text)
 }
 
 // fillCompleteSlot sets inKey/slotKey for completion, and assign when the
@@ -297,7 +342,27 @@ func locDefined(s *session.Session, key string) bool {
 
 func resolveNonLoc(s *session.Session, word string) *catalog.Def {
 	return s.ResolveMatching(word, func(d catalog.Def) bool {
-		return d.Kind != "loc_key" && d.Kind != "saved_scope"
+		return d.Kind != "loc_key" && !game.IsEphemeral(d.Kind)
+	})
+}
+
+// resolveOfKind resolves word to a def of the given kind (ephemeral or not).
+func resolveOfKind(s *session.Session, word, kind string) *catalog.Def {
+	return resolveOfKindOwner(s, word, kind, "")
+}
+
+func resolveOfKindOwner(s *session.Session, word, kind, owner string) *catalog.Def {
+	if word == "" || kind == "" {
+		return nil
+	}
+	return s.ResolveMatching(word, func(d catalog.Def) bool {
+		if game.CanonicalKind(d.Kind) != game.CanonicalKind(kind) {
+			return false
+		}
+		if owner != "" && d.OwnerKey != "" && d.OwnerKey != owner {
+			return false
+		}
+		return true
 	})
 }
 

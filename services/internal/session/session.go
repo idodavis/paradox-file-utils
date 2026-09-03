@@ -246,6 +246,11 @@ func (s *Session) reindexLocked(path, rel, text string, parsed jomini.Result) {
 		rel = locatedRel
 	}
 	s.dropPathLocked(path)
+	// Install files stay buffered for IDE, but never merge into workspace harvest.
+	if origin == game.OriginVanilla {
+		s.lastIndexed[path] = text
+		return
+	}
 	var ex catalog.FileExtract
 	if parsed.Root != nil {
 		ex = catalog.ExtractParsed(s.GameID, path, rel, origin, parsed, false)
@@ -379,7 +384,7 @@ func (s *Session) VanillaDefs(key string) []catalog.Def {
 	var out []catalog.Def
 	seen := map[string]bool{}
 	add := func(d catalog.Def) {
-		if d.Key != key || d.Kind == "saved_scope" {
+		if d.Key != key || game.IsEphemeral(d.Kind) {
 			return
 		}
 		id := d.Kind + "\x00" + CanonPath(d.Path) + "\x00" + strconv.Itoa(d.Line)
@@ -406,21 +411,23 @@ func (s *Session) VanillaDefs(key string) []catalog.Def {
 	return out
 }
 
-// ResolveMatching is Resolve after keep filters defsOf(key). keep nil keeps all.
+// ResolveMatching is Resolve after keep filters defsOf(key). keep nil keeps
+// non-ephemeral defs only (character flags / variables / scopes need a kind filter).
 func (s *Session) ResolveMatching(key string, keep func(catalog.Def) bool) *catalog.Def {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	defs := s.defsOf(key)
-	if keep != nil {
-		n := 0
-		for _, d := range defs {
-			if keep(d) {
-				defs[n] = d
-				n++
-			}
-		}
-		defs = defs[:n]
+	if keep == nil {
+		keep = func(d catalog.Def) bool { return !game.IsEphemeral(d.Kind) }
 	}
+	n := 0
+	for _, d := range defs {
+		if keep(d) {
+			defs[n] = d
+			n++
+		}
+	}
+	defs = defs[:n]
 	return catalog.Winner(s.GameID, defs, s.order)
 }
 
@@ -580,6 +587,9 @@ func (s *Session) rebuildCacheIndexLocked() {
 		return
 	}
 	for _, d := range s.cache.Defs {
+		if game.IsEphemeral(d.Kind) {
+			continue
+		}
 		s.cacheByKey[d.Key] = append(s.cacheByKey[d.Key], d)
 	}
 	for _, r := range s.cache.LocRefs {
@@ -700,16 +710,38 @@ func (s *Session) eachDef(includeVanilla bool, fn func(catalog.Def) bool) {
 }
 
 // FindDefs returns defs whose keys contain query (or, if byPrefix, start with it).
+// Ephemeral kinds are omitted (outline / Ctrl+T); use FindDefsOf for those.
 func (s *Session) FindDefs(query string, limit int, byPrefix, includeVanilla bool) []catalog.Def {
+	return s.findDefs(query, "", limit, byPrefix, includeVanilla, false)
+}
+
+// FindDefsOf is FindDefs restricted to CanonicalKind(kind), including ephemeral.
+func (s *Session) FindDefsOf(
+	query, kind string, limit int, byPrefix, includeVanilla bool,
+) []catalog.Def {
+	return s.findDefs(query, kind, limit, byPrefix, includeVanilla, true)
+}
+
+func (s *Session) findDefs(
+	query, kind string, limit int, byPrefix, includeVanilla, allowEphemeral bool,
+) []catalog.Def {
 	if byPrefix && limit <= 0 {
 		return nil
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	q := strings.ToLower(query)
+	want := ""
+	if kind != "" {
+		want = game.CanonicalKind(kind)
+	}
 	var out []catalog.Def
 	s.eachDef(includeVanilla, func(d catalog.Def) bool {
-		if d.Kind == "saved_scope" {
+		if want != "" {
+			if game.CanonicalKind(d.Kind) != want {
+				return true
+			}
+		} else if !allowEphemeral && game.IsEphemeral(d.Kind) {
 			return true
 		}
 		if q != "" {

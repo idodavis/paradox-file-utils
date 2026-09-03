@@ -91,7 +91,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		InstallPath:      req.InstallPath,
 		GameVersion:      version,
 		ScannedAt:        time.Now().UTC().Format(time.RFC3339),
-		Defs:             acc.defs,
+		Defs:             dropEphemeralDefs(acc.defs),
 		Edges:            acc.edges,
 		LocRefs:          append(locKindRefs(acc.refs), locKindRefs(locFileRefs)...),
 		FieldValueKinds:  kinds,

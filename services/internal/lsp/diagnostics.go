@@ -18,7 +18,11 @@ func diag(rg Range, sev int, msg, code string) Diagnostic {
 }
 
 // Diagnose returns diagnostics for path. Suppressions (# pmt:ignore) are honored.
+// Install (vanilla) files are silent — harvest stays in the scan cache, not IDE lint.
 func Diagnose(s *session.Session, path string) []Diagnostic {
+	if origin, _, ok := s.Locate(path); ok && origin == game.OriginVanilla {
+		return nil
+	}
 	src := s.FileText(path)
 	sup := scanSuppressions(src)
 	var out []Diagnostic

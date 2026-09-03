@@ -63,6 +63,14 @@ func CanonicalKind(kind string) string {
 		return "on_action"
 	case "decisions":
 		return "decision"
+	case "flag_definitions":
+		return "flag_definition"
+	case "script_values":
+		return "script_value"
+	case "game_rules":
+		return "game_rule"
+	case "messages":
+		return "message"
 	default:
 		return kind
 	}
@@ -110,23 +118,6 @@ func IsFIOS(gameID, kind string) bool {
 
 // ScopePrefix is the saved-scope qualifier (`scope:target`).
 const ScopePrefix = "scope"
-
-var saveScopeKeys = map[string]bool{
-	"save_scope_as":           true,
-	"save_temporary_scope_as": true,
-	"save_temporary_value_as": true,
-}
-
-var saveScopeValueKeys = map[string]bool{
-	"save_scope_value_as":           true,
-	"save_temporary_scope_value_as": true,
-}
-
-// IsSaveScopeKey reports a scalar `save_*_scope_as = name` (or value_as) site.
-func IsSaveScopeKey(key string) bool { return saveScopeKeys[key] }
-
-// IsSaveScopeValueKey reports a block `save_*_scope_value_as = { name = X }`.
-func IsSaveScopeValueKey(key string) bool { return saveScopeValueKeys[key] }
 
 // eventGateKeys are event-body blocks that gate whether the event runs.
 var eventGateKeys = map[string]bool{
@@ -177,9 +168,14 @@ func ScriptSlot(key string) string {
 	return ""
 }
 
-// RefFieldKind is a thin field→def-kind map used when FieldValueKind is empty.
-func RefFieldKind(field string) string {
-	switch strings.ToLower(field) {
+// RefFieldKind maps an assignment field to a def kind for completion and
+// kind-filtered Resolve. gameID selects per-title fields (COA, character flags).
+func RefFieldKind(gameID, field string) string {
+	f := strings.ToLower(field)
+	if r, ok := ScriptName(gameID, f); ok {
+		return r.Kind
+	}
+	switch f {
 	case "culture":
 		return "culture"
 	case "faith":
@@ -188,9 +184,26 @@ func RefFieldKind(field string) string {
 		return "title"
 	case "define":
 		return "define"
-	default:
-		return ""
+	case "coat_of_arms":
+		return "coat_of_arms"
+	case "has_game_rule":
+		return "game_rule_setting"
+	case "message_filter_type":
+		return "message_filter_types"
+	case "set_coa":
+		if gameID == "ck3" || gameID == "" {
+			return "coat_of_arms"
+		}
+	case "coa", "subject_canton", "coa_with_overlord_canton", "revolutionary_canton":
+		if gameID == "vic3" || gameID == "eu5" || gameID == "" {
+			return "coat_of_arms"
+		}
+	case "change_country_flag":
+		if gameID == "eu5" || gameID == "" {
+			return "coat_of_arms"
+		}
 	}
+	return ""
 }
 
 // RequiredLocKeys are convention loc keys for a def kind+id (empty if none).
@@ -203,6 +216,12 @@ func RequiredLocKeys(kind, id string) []string {
 		return []string{"trait_" + id}
 	case "game_rules", "game_rule":
 		return []string{"rule_" + id}
+	case "game_rule_setting":
+		return []string{"setting_" + id, "setting_" + id + "_desc"}
+	case "game_rule_category":
+		return []string{"game_rule_category_" + id}
+	case "message_filter_types":
+		return []string{"message_filter_" + id, "message_filter_" + id + "_desc"}
 	default:
 		return nil
 	}

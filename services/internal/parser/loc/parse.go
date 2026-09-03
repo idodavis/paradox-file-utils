@@ -30,6 +30,7 @@ type Entry struct {
 // Interp is a `$key$` (optional `|filter`) reuse inside a loc value.
 type Interp struct {
 	Key       string
+	Filter    string // text after | when present
 	KeyRange  Range // inner key, not `$` or `|filter`
 	WrapRange Range // opening `$` through closing `$` (exclusive end)
 }
@@ -141,10 +142,15 @@ func Interps(value string, valueStart int) []Interp {
 			continue
 		}
 		closeAt := j
+		filter := ""
 		if closeAt < len(value) && value[closeAt] == '|' {
+			filterStart := closeAt + 1
 			closeAt++
 			for closeAt < len(value) && value[closeAt] != '$' {
 				closeAt++
+			}
+			if closeAt < len(value) {
+				filter = value[filterStart:closeAt]
 			}
 		}
 		if closeAt >= len(value) || value[closeAt] != '$' {
@@ -152,9 +158,10 @@ func Interps(value string, valueStart int) []Interp {
 			continue
 		}
 		key := value[i+1 : j]
-		if LooksLikeKey(key) {
+		if LooksLikeKey(key) || (strings.EqualFold(key, "VALUE") && filter != "") {
 			out = append(out, Interp{
 				Key:       key,
+				Filter:    filter,
 				KeyRange:  Range{Start: valueStart + i + 1, End: valueStart + j},
 				WrapRange: Range{Start: valueStart + i, End: valueStart + closeAt + 1},
 			})

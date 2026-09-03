@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/parser/loc"
 	"paradox-modding-tools/services/internal/session"
@@ -12,93 +13,49 @@ import (
 
 // Definition returns go-to-definition locations for the word at pos.
 func Definition(s *session.Session, path string, line, col int) []Location {
-	if s.KindFor(path) == "loc" {
-		src := s.FileText(path)
-		if src == "" {
-			return nil
-		}
-		off := jomini.NewLineIndex(src).OffsetAt(line, col)
-		key, start, end := locKeySpan(src, off)
-		if key == "" {
-			return nil
-		}
-		if file, ln, origin, ok := s.LocSite(key); ok {
-			return definitionSites(s, key, &catalog.Def{
-				Kind: "loc_key", Key: key, Path: file, Line: ln, Origin: origin,
-			})
-		}
-		if end > start {
+	sub, ok := subjectAt(s, path, line, col)
+	if !ok || sub.kind == "loc_value" || sub.fieldKey {
+		return nil
+	}
+	if sub.kind == "loc_key" && sub.def == nil {
+		if sub.spanEnd > sub.spanStart {
 			return []Location{{
 				URI:   path,
-				Range: byteRange(jomini.NewLineIndex(src), start, end),
+				Range: byteRange(jomini.NewLineIndex(s.FileText(path)), sub.spanStart, sub.spanEnd),
 			}}
 		}
 		return nil
 	}
-	at, ok := resolveAt(s, path, line, col)
-	if !ok {
-		return nil
-	}
-	if _, ok := scopeRefAt(at.src, at.off); ok {
-		return nil
-	}
-	if a := at.assign; a != nil {
-		if isLocalDefFile(s, path, at.kind) {
-			line := at.res.Lines().PositionAt(a.Key.Range.Start).Line
-			return []Location{defLocation(s, catalog.Def{
-				Kind: at.kind, Key: a.Key.Text, Path: path, Line: line,
-				Start: a.Key.Range.Start, End: a.Key.Range.End,
-			})}
-		}
-		if d := resolveNonLoc(s, a.Key.Text); d != nil {
-			return definitionSites(s, a.Key.Text, d)
-		}
-		return nil
-	}
-	if at.word == "" {
-		return nil
-	}
-	if d := s.Resolve(at.word); d != nil {
-		if d.Kind == "saved_scope" {
+	if sub.local {
+		a := sub.at.assign
+		if a == nil {
 			return nil
 		}
-		return definitionSites(s, at.word, d)
+		ln := sub.at.res.Lines().PositionAt(a.Key.Range.Start).Line
+		return []Location{defLocation(s, catalog.Def{
+			Kind: sub.kind, Key: a.Key.Text, Path: path, Line: ln,
+			Start: a.Key.Range.Start, End: a.Key.Range.End,
+		})}
 	}
-	if locDefined(s, at.word) {
-		if file, line, origin, ok := s.LocSite(at.word); ok {
-			return definitionSites(s, at.word, &catalog.Def{
-				Kind: "loc_key", Key: at.word, Path: file, Line: line, Origin: origin,
-			})
-		}
+	if sub.def != nil {
+		return definitionSites(s, sub.name, sub.def)
 	}
 	return nil
 }
 
 // References returns every workspace site of the identifier at pos.
 func References(s *session.Session, path string, line, col int) []Location {
-	if s.KindFor(path) == "loc" {
-		src := s.FileText(path)
-		if src == "" {
-			return nil
-		}
-		off := jomini.NewLineIndex(src).OffsetAt(line, col)
-		key := locKeyAt(src, off)
-		if key == "" {
-			return nil
-		}
-		return identReferences(s, key)
-	}
-	at, ok := resolveAt(s, path, line, col)
-	if !ok {
+	sub, ok := subjectAt(s, path, line, col)
+	if !ok || sub.kind == "loc_value" || sub.name == "" {
 		return nil
 	}
-	if _, ok := scopeRefAt(at.src, at.off); ok {
-		return nil
+	if sub.kind == "script_param" {
+		return identReferencesOwned(s, sub.name, "script_param", sub.owner)
 	}
-	if at.word == "" {
-		return nil
+	if game.IsEphemeral(sub.kind) {
+		return identReferences(s, sub.name, sub.kind)
 	}
-	return identReferences(s, at.word)
+	return identReferences(s, sub.name, "")
 }
 
 // locKeyAt returns the loc key covering off (entry key or `$key$` in a value).
@@ -118,6 +75,9 @@ func locKeySpan(src string, off int) (key string, start, end int) {
 		}
 		for _, ip := range loc.Interps(e.Value, e.ValueRange.Start) {
 			if off >= ip.WrapRange.Start && off < ip.WrapRange.End {
+				if game.IsLocEngineValue(ip.Key, ip.Filter) {
+					return "", 0, 0
+				}
 				return ip.Key, ip.KeyRange.Start, ip.KeyRange.End
 			}
 		}
@@ -129,12 +89,82 @@ func locKeySpan(src string, off int) (key string, start, end int) {
 	return word, wStart, wEnd
 }
 
+type locInterp struct {
+	Key, Filter string
+}
+
+func locInterpAt(src string, off int) (locInterp, bool) {
+	res := loc.Parse(src)
+	for _, e := range res.Entries {
+		for _, ip := range loc.Interps(e.Value, e.ValueRange.Start) {
+			if off >= ip.WrapRange.Start && off < ip.WrapRange.End {
+				return locInterp{Key: ip.Key, Filter: ip.Filter}, true
+			}
+		}
+	}
+	return locInterp{}, false
+}
+
+// callKindDefAt reports scripted_trigger NAME = (and effect/modifier) at off.
+func callKindDefAt(res jomini.Result, off int) (kind, name string, ok bool) {
+	if res.Root == nil {
+		return "", "", false
+	}
+	var walk func([]jomini.Statement) bool
+	walk = func(stmts []jomini.Statement) bool {
+		var marker string
+		var markStart, markEnd int
+		for _, st := range stmts {
+			if vs, ok := st.(*jomini.ValueStmt); ok {
+				if sc, ok := vs.Value.(*jomini.Scalar); ok && !sc.Quoted &&
+					game.IsCallKind(sc.Text) {
+					marker, markStart, markEnd = sc.Text, sc.Range.Start, sc.Range.End
+				} else {
+					marker = ""
+				}
+				if b := jomini.BlockOf(vs.Value); b != nil && walk(b.Statements) {
+					return true
+				}
+				continue
+			}
+			a, isA := st.(*jomini.Assignment)
+			if !isA {
+				marker = ""
+				continue
+			}
+			if marker != "" && !a.Key.Quoted {
+				onMark := off >= markStart && off < markEnd
+				onName := off >= a.Key.Range.Start && off < a.Key.Range.End
+				if onMark || onName {
+					kind, name, ok = marker, a.Key.Text, true
+					return true
+				}
+			}
+			marker = ""
+			if b := jomini.BlockOf(a.Value); b != nil && walk(b.Statements) {
+				return true
+			}
+		}
+		return false
+	}
+	ok = walk(res.Root.Statements)
+	return kind, name, ok
+}
+
 // definitionSites lists every def of key, FIOS/Resolve winner first.
 func definitionSites(s *session.Session, key string, winner *catalog.Def) []Location {
 	seen := map[string]bool{}
 	var out []Location
 	add := func(d catalog.Def) {
-		if d.Key != key || d.Kind == "saved_scope" {
+		if d.Key != key {
+			return
+		}
+		if winner != nil && game.IsEphemeral(winner.Kind) &&
+			game.CanonicalKind(d.Kind) != game.CanonicalKind(winner.Kind) {
+			return
+		}
+		if winner != nil && winner.OwnerKey != "" && d.OwnerKey != "" &&
+			d.OwnerKey != winner.OwnerKey {
 			return
 		}
 		loc := defLocation(s, d)
@@ -167,21 +197,52 @@ func definitionSites(s *session.Session, key string, winner *catalog.Def) []Loca
 }
 
 func defLocation(s *session.Session, d catalog.Def) Location {
+	loc := Location{URI: d.Path}
 	if d.End > d.Start {
 		if src := s.FileText(d.Path); src != "" {
-			return Location{URI: d.Path, Range: byteRange(jomini.NewLineIndex(src), d.Start, d.End)}
+			li := jomini.NewLineIndex(src)
+			loc.Range = byteRange(li, d.Start, d.End)
+			if b := assignmentBlock(s, d); b != nil {
+				tr := byteRange(li, d.Start, b.Range.End)
+				loc.TargetRange = &tr
+			}
+			return loc
 		}
 	}
-	return Location{
-		URI: d.Path,
-		Range: Range{
-			Start: Position{Line: d.Line, Character: 0},
-			End:   Position{Line: d.Line, Character: len(d.Key)},
-		},
+	loc.Range = Range{
+		Start: Position{Line: d.Line, Character: 0},
+		End:   Position{Line: d.Line, Character: len(d.Key)},
 	}
+	return loc
 }
 
-func identReferences(s *session.Session, word string) []Location {
+func assignmentBlock(s *session.Session, d catalog.Def) *jomini.Block {
+	res := s.Parsed(d.Path)
+	if res.Root == nil {
+		return nil
+	}
+	if d.Start > 0 {
+		chain := jomini.NodeAtOffset(res.Root, d.Start)
+		for i := len(chain) - 1; i >= 0; i-- {
+			a, ok := chain[i].(*jomini.Assignment)
+			if !ok || a.Key.Quoted || a.Key.Text != d.Key {
+				continue
+			}
+			if b := jomini.BlockOf(a.Value); b != nil {
+				return b
+			}
+		}
+	}
+	return jomini.BlockForKey(res.Root, d.Key)
+}
+
+// identReferences lists defs and refs of word. kind "" keeps all kinds;
+// a non-empty kind filters to CanonicalKind(kind) (ephemeral F12/rename).
+func identReferences(s *session.Session, word, kind string) []Location {
+	return identReferencesOwned(s, word, kind, "")
+}
+
+func identReferencesOwned(s *session.Session, word, kind, owner string) []Location {
 	seen := map[string]bool{}
 	var out []Location
 	add := func(loc Location) {
@@ -195,6 +256,12 @@ func identReferences(s *session.Session, word string) []Location {
 		}
 		seen[k] = true
 		out = append(out, loc)
+	}
+	kindOK := func(k string) bool {
+		return kind == "" || game.CanonicalKind(k) == game.CanonicalKind(kind)
+	}
+	ownerOK := func(okey string) bool {
+		return owner == "" || okey == "" || okey == owner
 	}
 	lis := map[string]*jomini.LineIndex{}
 	lineIndex := func(p string) *jomini.LineIndex {
@@ -211,18 +278,24 @@ func identReferences(s *session.Session, word string) []Location {
 	}
 	hasLocDef := false
 	for _, d := range s.ModDefsOf(word) {
+		if !kindOK(d.Kind) || !ownerOK(d.OwnerKey) {
+			continue
+		}
 		add(defLocation(s, d))
 		if d.Kind == "loc_key" {
 			hasLocDef = true
 		}
 	}
 	for _, d := range s.VanillaDefs(word) {
+		if !kindOK(d.Kind) || !ownerOK(d.OwnerKey) {
+			continue
+		}
 		add(defLocation(s, d))
 		if d.Kind == "loc_key" {
 			hasLocDef = true
 		}
 	}
-	if !hasLocDef {
+	if kind == "" && !hasLocDef {
 		if file, ln, _, ok := s.LocSite(word); ok {
 			add(defLocation(s, catalog.Def{
 				Kind: "loc_key", Key: word, Path: file, Line: ln,
@@ -230,7 +303,7 @@ func identReferences(s *session.Session, word string) []Location {
 		}
 	}
 	for _, r := range s.RefsTo(word) {
-		if r.Key != word || r.Kind == "saved_scope" {
+		if r.Key != word || !kindOK(r.Kind) || !ownerOK(r.OwnerKey) {
 			continue
 		}
 		add(Location{URI: r.Path, Range: byteRange(lineIndex(r.Path), r.Start, r.End)})
@@ -266,7 +339,7 @@ const maxWorkspaceSymbols = 200
 func DocumentSymbols(s *session.Session, path string) []SymbolInformation {
 	var out []SymbolInformation
 	for _, d := range s.DefsInFile(path) {
-		if d.Kind == "saved_scope" {
+		if game.IsEphemeral(d.Kind) {
 			continue
 		}
 		out = append(out, SymbolInformation{Name: d.Key, Location: defLocation(s, d)})

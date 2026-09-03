@@ -101,6 +101,21 @@ func (t TaggedBlock) NodeRange() Range { return t.Range }
 func (a Assignment) NodeRange() Range  { return a.Range }
 func (v ValueStmt) NodeRange() Range   { return v.Range }
 
+// BlockForKey returns the body of the first top-level assignment named key.
+func BlockForKey(root *Root, key string) *Block {
+	if root == nil || key == "" {
+		return nil
+	}
+	for _, st := range root.Statements {
+		a, ok := st.(*Assignment)
+		if !ok || a.Key.Quoted || a.Key.Text != key {
+			continue
+		}
+		return BlockOf(a.Value)
+	}
+	return nil
+}
+
 // BlockOf returns the Block a value owns (plain or tagged), or nil.
 func BlockOf(v Value) *Block {
 	switch b := v.(type) {
@@ -113,9 +128,9 @@ func BlockOf(v Value) *Block {
 	}
 }
 
-func (Scalar) isValue()      {}
-func (Block) isValue()       {}
-func (TaggedBlock) isValue() {}
+func (Scalar) isValue()         {}
+func (Block) isValue()          {}
+func (TaggedBlock) isValue()    {}
 func (Assignment) isStatement() {}
 func (ValueStmt) isStatement()  {}
 

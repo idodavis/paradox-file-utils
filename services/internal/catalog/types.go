@@ -6,31 +6,37 @@ package catalog
 import "strings"
 
 // CacheFormatVersion is the on-disk schema of VanillaCache.
-const CacheFormatVersion = 13
+const CacheFormatVersion = 14
 
 // LocFormatVersion is the on-disk schema of a vanilla loc sidecar.
 const LocFormatVersion = 3
 
 // Def is one named object: Kind/Key, absolute Path, 0-based Line, Origin ("" = vanilla).
+// OwnerKey is the enclosing scripted macro for script_param defs.
+// Value is the harvested RHS literal at a ScriptName def site (hover body).
 type Def struct {
-	Kind   string `json:"kind"`
-	Key    string `json:"key"`
-	Path   string `json:"path"`
-	Line   int    `json:"line"`
-	Start  int    `json:"start,omitempty"`
-	End    int    `json:"end,omitempty"`
-	Origin string `json:"origin,omitempty"`
+	Kind     string `json:"kind"`
+	Key      string `json:"key"`
+	Path     string `json:"path"`
+	Line     int    `json:"line"`
+	Start    int    `json:"start,omitempty"`
+	End      int    `json:"end,omitempty"`
+	Origin   string `json:"origin,omitempty"`
+	OwnerKey string `json:"ownerKey,omitempty"`
+	Value    string `json:"value,omitempty"`
 }
 
 // Ref is a use-site. Kind is "loc", "loc-broad", "loc-convention",
-// "event", or "on_action".
+// "event", "on_action", or an ephemeral/script kind. OwnerKey scopes
+// script_param refs to the enclosing scripted_* call.
 type Ref struct {
-	Key   string `json:"key"`
-	Kind  string `json:"kind"`
-	Path  string `json:"path"`
-	Line  int    `json:"line"`
-	Start int    `json:"start"`
-	End   int    `json:"end"`
+	Key      string `json:"key"`
+	Kind     string `json:"kind"`
+	Path     string `json:"path"`
+	Line     int    `json:"line"`
+	Start    int    `json:"start"`
+	End      int    `json:"end"`
+	OwnerKey string `json:"ownerKey,omitempty"`
 }
 
 // Edge is a directed event-graph link. Kind "call" is a scripted-effect invocation.

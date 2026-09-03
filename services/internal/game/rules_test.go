@@ -104,3 +104,62 @@ func TestScriptSlot(t *testing.T) {
 		}
 	}
 }
+
+func TestScriptNameAndRefFieldKind(t *testing.T) {
+	t.Run("ck3 character flag", func(t *testing.T) {
+		r, ok := ScriptName("ck3", "add_character_flag")
+		if !ok || r.Kind != "character_flag" || !r.IsDef || r.InnerKey != "flag" {
+			t.Fatalf("add_character_flag: %+v ok=%v", r, ok)
+		}
+		if RefFieldKind("ck3", "has_character_flag") != "character_flag" {
+			t.Fatal("RefFieldKind has_character_flag")
+		}
+		if _, ok := ScriptName("vic3", "add_character_flag"); ok {
+			t.Fatal("vic3 must not have character flags")
+		}
+	})
+	t.Run("variables shared", func(t *testing.T) {
+		for _, g := range []string{"ck3", "vic3", "eu5"} {
+			if RefFieldKind(g, "has_variable") != "variable" {
+				t.Fatalf("%s has_variable", g)
+			}
+			if PrefixKind("var") != "variable" || PrefixKind("global_var") != "global_variable" {
+				t.Fatal("PrefixKind")
+			}
+		}
+	})
+	t.Run("coa fields", func(t *testing.T) {
+		if RefFieldKind("ck3", "coat_of_arms") != "coat_of_arms" {
+			t.Fatal("ck3 coat_of_arms")
+		}
+		if RefFieldKind("ck3", "set_coa") != "coat_of_arms" {
+			t.Fatal("ck3 set_coa")
+		}
+		if RefFieldKind("vic3", "coa") != "coat_of_arms" {
+			t.Fatal("vic3 coa")
+		}
+		if RefFieldKind("eu5", "change_country_flag") != "coat_of_arms" {
+			t.Fatal("eu5 change_country_flag")
+		}
+		if RefFieldKind("ck3", "coa") != "" {
+			t.Fatal("ck3 must not map coa")
+		}
+	})
+	t.Run("vic3 entry modes", func(t *testing.T) {
+		g := Get("vic3")
+		if g == nil || len(g.EntryModes) < 2 {
+			t.Fatalf("vic3 EntryModes=%v", g)
+		}
+		if KeyIdentity("vic3", "INJECT:ALD") != "ALD" {
+			t.Fatal("vic3 INJECT strip")
+		}
+	})
+	t.Run("ephemeral", func(t *testing.T) {
+		if !IsEphemeral("saved_scope") || !IsEphemeral("character_flag") {
+			t.Fatal("IsEphemeral")
+		}
+		if IsEphemeral("traits") {
+			t.Fatal("traits not ephemeral")
+		}
+	})
+}

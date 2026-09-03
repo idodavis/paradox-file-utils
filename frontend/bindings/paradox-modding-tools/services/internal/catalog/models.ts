@@ -3,6 +3,8 @@
 
 /**
  * Def is one named object: Kind/Key, absolute Path, 0-based Line, Origin ("" = vanilla).
+ * OwnerKey is the enclosing scripted macro for script_param defs.
+ * Value is the harvested RHS literal at a ScriptName def site (hover body).
  */
 export interface Def {
     "kind": string;
@@ -12,6 +14,8 @@ export interface Def {
     "start"?: number;
     "end"?: number;
     "origin"?: string;
+    "ownerKey"?: string;
+    "value"?: string;
 }
 
 /**
@@ -29,7 +33,8 @@ export interface Edge {
 
 /**
  * Ref is a use-site. Kind is "loc", "loc-broad", "loc-convention",
- * "event", or "on_action".
+ * "event", "on_action", or an ephemeral/script kind. OwnerKey scopes
+ * script_param refs to the enclosing scripted_* call.
  */
 export interface Ref {
     "key": string;
@@ -38,6 +43,7 @@ export interface Ref {
     "line": number;
     "start": number;
     "end": number;
+    "ownerKey"?: string;
 }
 
 /**

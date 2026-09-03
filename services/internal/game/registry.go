@@ -68,6 +68,7 @@ var registry = map[string]*GameInfo{
 		Descriptor:       "metadata",
 		DocsFolderName:   "Victoria 3",
 		ScriptDocsSubdir: "docs",
+		EntryModes:       []string{"INJECT", "REPLACE"},
 		SteamAppID:       529340,
 		FirstWins:        "GUI types, templates, and events are first-wins.",
 	},

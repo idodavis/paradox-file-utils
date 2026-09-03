@@ -1,8 +1,7 @@
-// hover.go resolves hover cards from defs, loc, scopes, and field docs.
+// hover.go builds structured hover cards from the cursor subject.
 package lsp
 
 import (
-	"html"
 	"strings"
 
 	"paradox-modding-tools/services/internal/catalog"
@@ -11,111 +10,207 @@ import (
 	"paradox-modding-tools/services/internal/session"
 )
 
-// Hover returns hover text at (line, UTF-8 column), or nil when there is none.
+// Hover returns the card at (line, UTF-8 column), or nil when there is none.
 func Hover(s *session.Session, path string, line, col int) *HoverResult {
-	at, ok := resolveAt(s, path, line, col)
+	sub, ok := subjectAt(s, path, line, col)
 	if !ok {
 		return nil
 	}
-	if name, ok := scopeRefAt(at.src, at.off); ok {
-		return savedScopeHover(name)
-	}
-	if at.saveOK {
-		return savedScopeHover(at.saveName)
-	}
-	if a := at.assign; a != nil {
-		if p, ok := game.ParsePrefixed(a.Key.Text); ok && game.IsSavedScopePrefix(p) {
-			return savedScopeHover(p.Name)
-		}
-		if isLocalDefFile(s, path, at.kind) {
-			return localAssignKeyHover(s, path, at, a)
-		}
-		if h := namedHoverAllow(s, a.Key.Text, false); h != nil {
-			return h
-		}
-		if ck := game.CanonicalKind(a.Key.Text); game.IsCallKind(ck) {
-			return vanillaSite(s, &HoverResult{
-				Contents: hoverCard(kindLabel(ck), a.Key.Text, "", hoverExtra(s, a.Key.Text, ck)),
-			})
-		}
-		docs := s.FieldDoc(a.Key.Text, at.kind)
-		m := memberSetsFor(s, at.kind)
-		if docs == "" && !m.structKeys[a.Key.Text] && !m.structKeys[strings.ToLower(a.Key.Text)] {
-			return nil
-		}
-		head := kindLabel(at.kind) + " key"
-		return vanillaSite(s, &HoverResult{Contents: hoverCard(head, a.Key.Text, "", docs)})
-	}
-	if at.word == "" {
+	return hoverFrom(s, sub)
+}
+
+func hoverFrom(s *session.Session, sub subject) *HoverResult {
+	switch {
+	case sub.kind == "loc_value":
+		h := card("loc value", "$"+sub.name+"$", "", "")
+		h.Body = "format " + sub.locFilter
+		return h
+	case sub.kind == "script_param":
+		return scriptParamHover(s, sub.name, sub.def)
+	case game.IsEphemeral(sub.kind):
+		return ephemeralHover(s, sub.name, sub.kind, sub.def)
+	case sub.local:
+		return localAssignKeyHover(s, sub.path, sub.at)
+	case sub.fieldKey:
+		docs := s.FieldDoc(sub.name, sub.at.kind)
+		return vanillaSite(s, card(kindLabel(sub.at.kind)+" key", sub.name, docs, ""))
+	case sub.def != nil && sub.def.Kind == "loc_key":
+		return locHover(s, sub.name)
+	case sub.def != nil:
+		return defCard(s, sub.name, sub.def)
+	case sub.kind != "":
+		h := card(kindLabel(sub.kind), sub.name, docsOnly(s, sub.name, sub.kind), "")
+		h.Usage = s.TokenUsage(sub.name)
+		return vanillaSite(s, h)
+	default:
 		return nil
 	}
-	if h := namedHoverAllow(s, at.word, true); h != nil {
-		return h
-	}
-	if extra := s.FieldDoc(at.word, ""); extra != "" {
-		return vanillaSite(s, &HoverResult{Contents: hoverCard("field", at.word, "", extra)})
-	}
-	return nil
 }
 
-// namedHoverAllow is a loc/def/effect/trigger card for a token, or nil.
-func namedHoverAllow(s *session.Session, word string, allowLoc bool) *HoverResult {
-	var d *catalog.Def
-	if allowLoc {
-		d = s.Resolve(word)
-	} else {
-		d = resolveNonLoc(s, word)
+func card(kind, key, docs, hint string) *HoverResult {
+	if hint == "" {
+		hint = kindHint(kind)
 	}
+	return &HoverResult{Kind: kind, Key: key, Hint: hint, Docs: docs}
+}
+
+func defCard(s *session.Session, word string, d *catalog.Def) *HoverResult {
+	h := card(kindLabel(d.Kind), d.Key, docsOnly(s, word, d.Kind), "")
+	h.Usage = s.TokenUsage(word)
+	h.Body = conventionLocBody(s, d)
+	attachSite(h, s, d.Path, d.Line, d.Origin, d.Start)
+	attachOverlay(h, s, d)
+	return h
+}
+
+// scriptParamHover is the card for a $NAME$ macro parameter.
+func scriptParamHover(s *session.Session, name string, d *catalog.Def) *HoverResult {
+	hint := kindHint("script_param")
+	if d != nil && d.OwnerKey != "" {
+		hint += " of " + d.OwnerKey
+	}
+	h := card("script parameter", "$"+name+"$", "", hint)
+	h.Body = scriptParamBody(s, name, d)
 	if d != nil {
-		if d.Kind == "loc_key" {
-			return locHover(s, word)
-		}
-		if d.Kind == "saved_scope" {
-			return savedScopeHover(word)
-		}
-		h := &HoverResult{
-			Contents: hoverCard(kindLabel(d.Kind), d.Key, "", hoverExtra(s, word, d.Kind)),
-		}
 		attachSite(h, s, d.Path, d.Line, d.Origin, d.Start)
-		attachOverlay(h, s, d)
-		return h
 	}
-	if allowLoc && locDefined(s, word) {
-		return locHover(s, word)
-	}
-	if ck := memberSetsFor(s, "").catalogKind(word); ck != "" {
-		return vanillaSite(s, &HoverResult{
-			Contents: hoverCard(ck, word, "", hoverExtra(s, word, "")),
-		})
-	}
-	for _, k := range s.Vocab("datafunction") {
-		if k == word {
-			return vanillaSite(s, &HoverResult{
-				Contents: hoverCard("data function", word, "", hoverExtra(s, word, "")),
-			})
-		}
-	}
-	if ck := game.CanonicalKind(word); game.IsCallKind(ck) {
-		return vanillaSite(s, &HoverResult{
-			Contents: hoverCard(kindLabel(ck), word, "", hoverExtra(s, word, ck)),
-		})
-	}
-	return nil
+	return h
 }
 
-func hoverExtra(s *session.Session, word, kind string) string {
+func scriptParamBody(s *session.Session, name string, d *catalog.Def) string {
+	owner := ""
+	if d != nil {
+		owner = d.OwnerKey
+	}
+	for _, r := range s.RefsTo(name) {
+		if r.Kind != "script_param" || r.Path == "" {
+			continue
+		}
+		if owner != "" && r.OwnerKey != "" && r.OwnerKey != owner {
+			continue
+		}
+		res := s.Parsed(r.Path)
+		if res.Root == nil {
+			continue
+		}
+		chain := jomini.NodeAtOffset(res.Root, r.Start)
+		for i := len(chain) - 1; i >= 0; i-- {
+			a, ok := chain[i].(*jomini.Assignment)
+			if !ok || a.Key.Quoted || a.Key.Text != name {
+				continue
+			}
+			if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted {
+				return sc.Text
+			}
+		}
+	}
+	return ""
+}
+
+func conventionLocBody(s *session.Session, d *catalog.Def) string {
+	if d == nil {
+		return ""
+	}
+	for _, key := range game.RequiredLocKeys(d.Kind, d.Key) {
+		if text, ok := s.DefaultLoc(key); ok && text != "" {
+			return unescapeLocDisplay(text)
+		}
+	}
+	if game.CanonicalKind(d.Kind) == "message" {
+		return messageTitleLoc(s, d)
+	}
+	return ""
+}
+
+func messageTitleLoc(s *session.Session, d *catalog.Def) string {
+	res := s.Parsed(d.Path)
+	if res.Root == nil {
+		return ""
+	}
+	body := jomini.BlockForKey(res.Root, d.Key)
+	if body == nil {
+		return ""
+	}
+	for _, st := range body.Statements {
+		a, ok := st.(*jomini.Assignment)
+		if !ok || a.Key.Quoted || a.Key.Text != "title" {
+			continue
+		}
+		if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted {
+			if text, ok := s.DefaultLoc(sc.Text); ok {
+				return unescapeLocDisplay(text)
+			}
+		}
+	}
+	return ""
+}
+
+func ephemeralHover(s *session.Session, name, kind string, d *catalog.Def) *HoverResult {
+	if name == "" || kind == "" {
+		return nil
+	}
+	key := name
+	if kind == "saved_scope" {
+		key = "scope:" + name
+	}
+	h := card(kindLabel(kind), key, "", "")
+	if d != nil {
+		h.Body = ephemeralBody(s, d)
+		attachSite(h, s, d.Path, d.Line, d.Origin, d.Start)
+	}
+	return h
+}
+
+func ephemeralBody(s *session.Session, d *catalog.Def) string {
+	if d.Value != "" {
+		return d.Value
+	}
+	if game.CanonicalKind(d.Kind) == "saved_scope" {
+		return scopeTargetExpr(s, d)
+	}
+	return ""
+}
+
+// scopeTargetExpr is the current-scope expression at the save site (else "root").
+func scopeTargetExpr(s *session.Session, d *catalog.Def) string {
+	res := s.Parsed(d.Path)
+	if res.Root == nil || d.Start <= 0 {
+		return "root"
+	}
+	chain := jomini.NodeAtOffset(res.Root, d.Start)
+	for i := len(chain) - 1; i >= 0; i-- {
+		a, ok := chain[i].(*jomini.Assignment)
+		if !ok || a.Key.Quoted {
+			continue
+		}
+		k := a.Key.Text
+		if game.IsSaveScopeKey(k) || game.IsSaveScopeValueKey(k) {
+			continue
+		}
+		low := strings.ToLower(k)
+		switch low {
+		case "immediate", "option", "after", "effect", "limit", "if",
+			"else", "else_if", "trigger", "potential", "and", "or", "not",
+			"nor", "nand", "root":
+			if low == "root" {
+				return "root"
+			}
+			continue
+		}
+		if strings.Contains(k, ":") || game.ScriptSlot(k) != "" {
+			return k
+		}
+	}
+	return "root"
+}
+
+func docsOnly(s *session.Session, word, kind string) string {
 	doc := s.FieldDoc(word, kind)
 	if sc := s.TokenScopes(word); sc != "" {
 		if doc != "" {
 			doc += "\n\n"
 		}
 		doc += "Scope here: " + sc
-	}
-	if u := s.TokenUsage(word); u != "" {
-		if doc != "" {
-			doc += "\n\n"
-		}
-		doc += "```\n" + u + "\n```"
 	}
 	return doc
 }
@@ -126,7 +221,8 @@ func locHover(s *session.Session, key string) *HoverResult {
 	if text == "" && !ok {
 		return nil
 	}
-	h := &HoverResult{Contents: hoverCard("localization", key, text, "")}
+	h := card("localization", key, "", "")
+	h.Body = unescapeLocDisplay(text)
 	if ok {
 		attachSite(h, s, file, line, origin, 0)
 		attachOverlay(h, s, &catalog.Def{
@@ -136,56 +232,42 @@ func locHover(s *session.Session, key string) *HoverResult {
 	return h
 }
 
-func hoverCard(kind, key, locVal, docs string) string {
+func unescapeLocDisplay(s string) string {
 	var b strings.Builder
-	b.WriteString("**")
-	b.WriteString(mdEscape(kind))
-	b.WriteString("** `")
-	b.WriteString(mdEscape(key))
-	b.WriteString("`")
-	if locVal != "" {
-		b.WriteString("\n\n")
-		b.WriteString(quoteBlock(locVal))
-	}
-	if docs != "" {
-		b.WriteString("\n\n")
-		b.WriteString(mdEscape(docs))
-	}
-	return b.String()
-}
-
-func quoteBlock(s string) string {
-	body := strings.ReplaceAll(html.EscapeString(s), "\n", "<br>")
-	return `<blockquote style="border-left:3px solid #6b7280;` +
-		`background-color:rgba(127,127,127,0.16);` +
-		`padding:6px 10px;margin:8px 0;">` + body + `</blockquote>`
-}
-
-func mdEscape(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, "`", "\\`")
-	if !strings.Contains(s, "\n") {
-		return s
-	}
-	lines := strings.Split(s, "\n")
-	for i, ln := range lines {
-		if strings.HasPrefix(ln, ">") {
-			lines[i] = `\` + ln
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+1 >= len(s) {
+			b.WriteByte(s[i])
+			continue
 		}
+		switch s[i+1] {
+		case 'n':
+			b.WriteByte('\n')
+		case 't':
+			b.WriteByte('\t')
+		case '\\':
+			b.WriteByte('\\')
+		case '"':
+			b.WriteByte('"')
+		default:
+			b.WriteByte(s[i])
+			continue
+		}
+		i++
 	}
-	return strings.Join(lines, "\n")
+	return strings.TrimSpace(b.String())
 }
 
-func localAssignKeyHover(
-	s *session.Session, path string, at atPos, a *jomini.Assignment,
-) *HoverResult {
+func localAssignKeyHover(s *session.Session, path string, at atPos) *HoverResult {
+	a := at.assign
+	if a == nil {
+		return nil
+	}
 	docs := s.FieldDoc(a.Key.Text, at.kind)
 	m := memberSetsFor(s, at.kind)
 	if docs == "" && !m.structKeys[a.Key.Text] && !m.structKeys[strings.ToLower(a.Key.Text)] {
 		return nil
 	}
-	head := kindLabel(at.kind) + " key"
-	h := &HoverResult{Contents: hoverCard(head, a.Key.Text, "", docs)}
+	h := card(kindLabel(at.kind)+" key", a.Key.Text, docs, "")
 	origin, _, _ := s.Locate(path)
 	line := at.res.Lines().PositionAt(a.Key.Range.Start).Line
 	attachSite(h, s, path, line, origin, a.Key.Range.Start)
@@ -207,13 +289,10 @@ func attachOverlay(h *HoverResult, s *session.Session, d *catalog.Def) {
 	if v == nil || v.Path == "" || session.SamePath(v.Path, d.Path) {
 		return
 	}
-	gameName := s.OriginName(game.OriginVanilla)
-	h.Contents += "\n\nThis " + kindLabel(d.Kind) + " is overriding " +
-		mdEscape(gameName) + "'s version of `" + mdEscape(d.Key) + "`."
 	h.VanillaPath = v.Path
 	h.VanillaRel = s.DisplayRel(v.Path)
 	h.VanillaLine = v.Line
-	h.VanillaOriginName = gameName
+	h.VanillaOriginName = s.OriginName(game.OriginVanilla)
 	if v.Start > 0 {
 		h.VanillaCol = s.Parsed(v.Path).Lines().PositionAt(v.Start).Character
 	}
@@ -247,54 +326,4 @@ func attachSite(h *HoverResult, s *session.Session, path string, line int, origi
 	if start > 0 {
 		h.Col = s.Parsed(path).Lines().PositionAt(start).Character
 	}
-}
-
-func kindLabel(t string) string {
-	switch t {
-	case "loc_key":
-		return "localization"
-	case "scripted_triggers", "scripted_trigger":
-		return "scripted trigger"
-	case "scripted_effects", "scripted_effect":
-		return "scripted effect"
-	case "scripted_modifiers", "scripted_modifier":
-		return "scripted modifier"
-	case "gui_type":
-		return "gui type"
-	case "saved_scope":
-		return "saved scope"
-	default:
-		return strings.ReplaceAll(t, "_", " ")
-	}
-}
-
-func savedScopeHover(name string) *HoverResult {
-	return &HoverResult{
-		Contents: hoverCard(kindLabel("saved_scope"), "scope:"+name, "", ""),
-	}
-}
-
-func scopeRefAt(src string, off int) (name string, ok bool) {
-	word, wStart, wEnd := jomini.Result{Src: src}.TokenAt(off)
-	if word == "" {
-		return "", false
-	}
-	if wEnd < len(src) && src[wEnd] == ':' && word == game.ScopePrefix {
-		n, _, _ := jomini.Result{Src: src}.TokenAt(wEnd + 1)
-		if n == "" {
-			return "", false
-		}
-		return n, true
-	}
-	if wStart > 0 && src[wStart-1] == ':' {
-		pre, _, _ := jomini.Result{Src: src}.TokenAt(wStart - 2)
-		if pre == game.ScopePrefix {
-			return word, true
-		}
-	}
-	p, pok := game.ParsePrefixed(word)
-	if pok && game.IsSavedScopePrefix(p) {
-		return p.Name, true
-	}
-	return "", false
 }

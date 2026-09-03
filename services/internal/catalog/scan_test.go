@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"paradox-modding-tools/services/internal/game"
 )
 
 // ck3Install writes the shared corpus fixture and returns install + isolated user data.
@@ -39,12 +41,18 @@ title = loc_key
 	writeMod(t, base, "game/events/test_events.txt", `namespace = test
 test.1 = {
 	type = character_event
-	immediate = { add_gold = 10 trigger_event = test.2 }
+	immediate = {
+		add_gold = 10
+		trigger_event = test.2
+		save_scope_as = duel_target
+	}
 	option = { name = test.1.a }
 }
 test.2 = { type = character_event }
 scripted_effect my_inline = { add_prestige = 5 }
 `)
+	writeMod(t, base, "game/common/scripted_triggers/t.txt",
+		"my_trig = { exists = $TARGET$ }\n")
 	writeMod(t, base, "game/localization/english/test_l_english.yml", `l_english:
  test.1.t:0 "Test Event"
 `)
@@ -184,6 +192,11 @@ func TestScanCorpusFixture(t *testing.T) {
 	}
 	if c.FormatVersion != CacheFormatVersion {
 		t.Errorf("formatVersion = %d, want %d", c.FormatVersion, CacheFormatVersion)
+	}
+	for _, d := range c.Defs {
+		if game.IsEphemeral(d.Kind) {
+			t.Errorf("scan persisted ephemeral %s %s", d.Kind, d.Key)
+		}
 	}
 
 	for _, tt := range []struct {

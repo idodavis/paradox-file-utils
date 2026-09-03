@@ -246,13 +246,46 @@ func valueItems(s *session.Session, kind, parentKey, prefix string) []Completion
 	if k := s.FieldValueKind(parentKey); k != "" {
 		return defsOfType(s, prefix, k)
 	}
-	if k := game.RefFieldKind(parentKey); k != "" {
+	if k := game.RefFieldKind(s.GameID, parentKey); k != "" {
 		return defsOfType(s, prefix, k)
+	}
+	if game.IsCallKind(game.CanonicalKind(parentKey)) {
+		return scriptParamItems(s, parentKey, prefix)
+	}
+	if macroCallParent(s, parentKey) {
+		return scriptParamItems(s, parentKey, prefix)
 	}
 	if enums := s.FieldEnums(kind, parentKey); len(enums) > 0 {
 		return enumItems(enums, prefix)
 	}
 	return valueFallback(prefix)
+}
+
+func scriptParamItems(s *session.Session, macroKey, prefix string) []CompletionItem {
+	var out []CompletionItem
+	for _, d := range s.FindDefsOf(prefix, "script_param", maxComplete, true, true) {
+		if d.OwnerKey != macroKey {
+			continue
+		}
+		out = append(out, valItem(d.Key, "script parameter"))
+		if len(out) >= maxComplete {
+			break
+		}
+	}
+	return out
+}
+
+func macroCallParent(s *session.Session, key string) bool {
+	d := s.Resolve(key)
+	if d == nil {
+		return false
+	}
+	switch game.CanonicalKind(d.Kind) {
+	case "scripted_trigger", "scripted_effect", "scripted_modifier":
+		return true
+	default:
+		return false
+	}
 }
 
 func enumItems(vals []string, prefix string) []CompletionItem {
@@ -344,15 +377,27 @@ func vocabAndDefs(s *session.Session, prefix, vocabKind, defType string) []Compl
 func defsOfType(s *session.Session, prefix, defType string) []CompletionItem {
 	seen := map[string]bool{}
 	var out []CompletionItem
+	add := func(key, kind string) {
+		if key == "" || seen[key] || !lowerPrefix(key, prefix) {
+			return
+		}
+		seen[key] = true
+		out = append(out, documentedVal(s, key, kind, kind))
+	}
+	if game.IsEphemeral(defType) {
+		for _, d := range s.FindDefsOf(prefix, defType, maxComplete, true, true) {
+			add(d.Key, d.Kind)
+			if len(out) >= maxComplete {
+				break
+			}
+		}
+		return out
+	}
 	for _, d := range s.FindDefs(prefix, maxComplete, true, true) {
-		if game.CanonicalKind(d.Kind) != defType || d.Key == "" || seen[d.Key] {
+		if game.CanonicalKind(d.Kind) != defType {
 			continue
 		}
-		if !lowerPrefix(d.Key, prefix) {
-			continue
-		}
-		seen[d.Key] = true
-		out = append(out, documentedVal(s, d.Key, d.Kind, d.Kind))
+		add(d.Key, d.Kind)
 		if len(out) >= maxComplete {
 			break
 		}

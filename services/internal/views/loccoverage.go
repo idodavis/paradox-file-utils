@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -132,6 +133,9 @@ func inheritKeys(s *session.Session, lang string) map[string]bool {
 }
 
 func skipLocIssueFile(s *session.Session, path string) bool {
+	if origin, _, ok := s.Locate(path); ok && origin == game.OriginVanilla {
+		return true
+	}
 	switch s.KindFor(path) {
 	case "mod", "meta":
 		return true

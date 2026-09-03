@@ -1,6 +1,7 @@
 /**
  * IDE chrome: explorer row metrics, origin dots, rounded pane/search,
- * selected-row accent hairline, activity wells. Theme hex lives in SEEDS.
+ * selected-row accent hairline, activity wells, hover quote/code wrap.
+ * Theme hex lives in SEEDS.
  */
 
 /* ExplorerDelegate.ITEM_HEIGHT is 22. Taller CSS rows overlap the next slot. */
@@ -132,4 +133,66 @@
 .monaco-workbench .part.activitybar .context-view,
 .monaco-workbench .part.activitybar .monaco-menu-container {
   display: none !important;
+}
+
+/* Hover markdown strips inline style. Hover widgets sit on the overlay,
+ * not always under .monaco-workbench — keep these selectors unscoped. */
+.monaco-hover {
+  max-width: min(48rem, 92vw) !important;
+}
+
+.monaco-hover .monaco-hover-content,
+.monaco-hover .hover-contents,
+.monaco-hover .rendered-markdown {
+  max-width: none;
+}
+
+.monaco-hover hr ~ p,
+.monaco-hover hr ~ div {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.monaco-hover p {
+  line-height: 1.25;
+}
+
+.monaco-hover .pmt-hover-kind {
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  opacity: 0.72;
+  font-size: 0.85em;
+}
+
+.monaco-hover blockquote {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  line-height: 1.35;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: min(30rem, 76vw) !important;
+  border-left: 3px solid
+    var(--vscode-textBlockQuote-border, var(--vscode-focusBorder));
+  background: var(
+    --vscode-textBlockQuote-background,
+    var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15))
+  );
+}
+
+.monaco-hover pre {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  line-height: 1.25;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: min(30rem, 76vw) !important;
+  border-radius: 4px;
+  font-family: var(--monaco-monospace-font, monospace);
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
+}
+
+.monaco-hover pre code {
+  white-space: inherit !important;
 }

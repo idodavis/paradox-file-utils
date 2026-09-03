@@ -80,9 +80,11 @@ func wantHover(t *testing.T, s *session.Session, f string, line, col int, subs .
 	if h == nil {
 		t.Fatalf("hover nil at %d:%d want %v", line, col, subs)
 	}
+	blob := h.Kind + "\n" + h.Key + "\n" + h.Hint + "\n" + h.Docs + "\n" + h.Body + "\n" + h.Usage
 	for _, sub := range subs {
-		if !strings.Contains(h.Contents, sub) {
-			t.Fatalf("hover %#v missing %q", h.Contents, sub)
+		if !strings.Contains(blob, sub) {
+			t.Fatalf("hover kind=%#v key=%#v hint=%#v docs=%#v body=%#v usage=%#v missing %q",
+				h.Kind, h.Key, h.Hint, h.Docs, h.Body, h.Usage, sub)
 		}
 	}
 }
@@ -126,6 +128,38 @@ func TestDiagnose(t *testing.T) {
 				t.Fatalf("unexpected %s: %v", tt.drop, diags)
 			}
 		})
+	}
+}
+
+func TestDiagnoseVanillaSilent(t *testing.T) {
+	install := t.TempDir()
+	vEvent := write(t, install, "game/events/v.txt",
+		"test.1 = {\n\ttitle = missing_key\n")
+	vLoc := write(t, install, "game/localization/english/v_l_english.yml",
+		"l_english:\n k:0 \"v\"\n")
+	modRoot := t.TempDir()
+	write(t, modRoot, "descriptor.mod", "name = \"t\"\n")
+	modEvent := write(t, modRoot, "events/m.txt",
+		"mod.1 = {\n\ttitle = missing_key\n}\n")
+
+	s := session.NewWithLoc("ws", "ck3", "english", &catalog.VanillaCache{
+		InstallPath: install,
+	}, nil, []catalog.ModInput{{Origin: "mod", Root: modRoot, Order: 0}})
+	s.DidOpen(vEvent, "test.1 = {\n\ttitle = missing_key\n")
+	s.DidOpen(vLoc, "l_english:\n k:0 \"v\"\n")
+	s.DidOpen(modEvent, "mod.1 = {\n\ttitle = missing_key\n}\n")
+
+	if diags := Diagnose(s, vEvent); len(diags) != 0 {
+		t.Fatalf("vanilla event diags=%v", diags)
+	}
+	if diags := Diagnose(s, vLoc); len(diags) != 0 {
+		t.Fatalf("vanilla loc diags=%v", diags)
+	}
+	if !hasDiag(Diagnose(s, modEvent), "missing-required-loc") {
+		t.Fatal("mod file must still get missing-required-loc")
+	}
+	if s.Resolve("test.1") != nil {
+		t.Fatal("vanilla DidOpen must not harvest defs into workspace")
 	}
 }
 
@@ -193,7 +227,7 @@ t.2 = { title = k.t }
 	line, col = lineCol(body, "title = test.1.t")
 	wantHover(t, s, f, line, col, "Dynamic")
 	line, col = lineCol(body, "test.1.t")
-	wantHover(t, s, f, line, col, "localization", "Hello", "<blockquote", "**")
+	wantHover(t, s, f, line, col, "localization", "Hello")
 	line, col = lineCol(body, "title = type")
 	valCol := col + len("title = ")
 	wantHover(t, s, f, line, valCol, "localization")
@@ -201,22 +235,28 @@ t.2 = { title = k.t }
 		t.Fatalf("F12=%v want %s", locs, vfile)
 	}
 	line, col = lineCol(body, "immediate")
-	wantHover(t, s, f, line, col, "event key", "`immediate`")
+	wantHover(t, s, f, line, col, "event key", "immediate")
 	if h := Hover(s, f, line, col); h == nil || h.OriginName != "Crusader Kings III" {
 		t.Fatalf("immediate originName=%#v", h)
 	}
 	line, col = lineCol(body, "add_gold")
-	wantHover(t, s, f, line, col, "**effect**", "`add_gold`", "Gives gold")
+	wantHover(t, s, f, line, col, "effect", "add_gold", "Gives gold")
 	line, col = lineCol(body, "my_trig")
-	wantHover(t, s, f, line, col, "scripted trigger", "`my_trig`")
+	wantHover(t, s, f, line, col, "scripted trigger", "my_trig")
 	line, col = lineCol(body, "scope:duel_target")
 	wantHover(t, s, f, line, col+len("scope:"), "saved scope")
 	line, col = lineCol(body, "save_scope_as = duel_target")
 	wantHover(t, s, f, line, col+len("save_scope_as = "), "saved scope")
 	line, col = lineCol(body, "scope:duel_target")
-	if len(Definition(s, f, line, col+len("scope:"))) != 0 ||
-		len(References(s, f, line, col+len("scope:"))) != 0 {
-		t.Fatal("saved scope must not navigate")
+	if locs := Definition(s, f, line, col+len("scope:")); len(locs) != 1 {
+		t.Fatalf("saved scope F12=%v", locs)
+	}
+	if refs := References(s, f, line, col+len("scope:")); len(refs) < 2 {
+		t.Fatalf("saved scope refs=%v want def+use", refs)
+	}
+	line, col = lineCol(body, "test.1.t")
+	if h := Hover(s, f, line, col); h == nil || h.Body != "Hello" {
+		t.Fatalf("loc Body=%#v", h)
 	}
 	line, col = lineCol(body, "k.t")
 	if locs := References(s, f, line, col); len(locs) != 2 {
@@ -267,7 +307,7 @@ func TestHoverDescriptorOrigin(t *testing.T) {
 	if w := s.Resolve("picture"); w == nil || w.Origin != "beta" {
 		t.Fatalf("workspace winner=%v want beta", w)
 	}
-	if h.VanillaPath != "" || strings.Contains(h.Contents, "overriding") {
+	if h.VanillaPath != "" {
 		t.Fatalf("descriptor must not report a vanilla overlay: %#v", h)
 	}
 }
@@ -292,10 +332,8 @@ func TestHoverVanillaOverlay(t *testing.T) {
 	if h.Origin != "mod" {
 		t.Fatalf("origin=%q", h.Origin)
 	}
-	if !strings.Contains(h.Contents, "overriding") ||
-		!strings.Contains(h.Contents, "Crusader Kings III") ||
-		!strings.Contains(h.Contents, "overlay.1") {
-		t.Fatalf("contents=%q", h.Contents)
+	if h.VanillaPath == "" {
+		t.Fatalf("want vanilla overlay path, got %#v", h)
 	}
 	if !session.SamePath(h.VanillaPath, vpath) {
 		t.Fatalf("vanillaPath=%q want %s", h.VanillaPath, vpath)
@@ -322,6 +360,62 @@ func hasLocURI(locs []Location, path string) bool {
 	return false
 }
 
+func TestDefinitionCallKindName(t *testing.T) {
+	trig := "scripted_trigger my_name = { always = yes }\n"
+	call := "ns.1 = {\n\tmy_name = yes\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_triggers/x.txt": trig,
+		"events/e.txt":                   call,
+	}, nil, nil)
+	tf := filepath.Join(root, "common", "scripted_triggers", "x.txt")
+	ef := filepath.Join(root, "events", "e.txt")
+	for _, needle := range []string{"scripted_trigger", "my_name"} {
+		line, col := lineCol(trig, needle)
+		locs := Definition(s, tf, line, col)
+		if len(locs) == 0 {
+			t.Fatalf("F12 on %s: empty", needle)
+		}
+		if locs[0].TargetRange == nil ||
+			locs[0].TargetRange.End.Line < locs[0].Range.Start.Line {
+			t.Fatalf("F12 on %s: want block targetRange, got %#v", needle, locs[0])
+		}
+	}
+	line, col := lineCol(call, "my_name")
+	locs := Definition(s, ef, line, col)
+	if len(locs) == 0 {
+		t.Fatalf("F12 from call: empty")
+	}
+	if !session.SamePath(locs[0].URI, tf) {
+		t.Fatalf("F12 from call=%v want %s", locs, tf)
+	}
+
+	inline := "scripted_trigger inline_trig = { always = yes }\nns.1 = { inline_trig = yes }\n"
+	s2, root2 := buildSession(t, "ck3", map[string]string{
+		"events/birth.txt": inline,
+	}, nil, nil)
+	bf := filepath.Join(root2, "events", "birth.txt")
+	for _, needle := range []string{"scripted_trigger", "inline_trig"} {
+		line, col := lineCol(inline, needle)
+		if locs := Definition(s2, bf, line, col); len(locs) == 0 {
+			t.Fatalf("events-file F12 on %s: empty", needle)
+		}
+	}
+
+	plain := "my_trig = { always = yes }\n"
+	s3, root3 := buildSession(t, "ck3", map[string]string{
+		"common/scripted_triggers/t.txt": plain,
+	}, nil, nil)
+	pf := filepath.Join(root3, "common", "scripted_triggers", "t.txt")
+	line, col = lineCol(plain, "my_trig")
+	locs = Definition(s3, pf, line, col)
+	if len(locs) == 0 {
+		t.Fatalf("folder-form F12 on my_trig: empty")
+	}
+	if locs[0].TargetRange == nil {
+		t.Fatalf("folder-form F12: want targetRange, got %#v", locs[0])
+	}
+}
+
 func TestHoverCallKindAndPortrait(t *testing.T) {
 	trig := "scripted_trigger my_name = { always = yes }\n"
 	s, root := buildSession(t, "ck3", map[string]string{
@@ -332,7 +426,7 @@ func TestHoverCallKindAndPortrait(t *testing.T) {
 	}, nil)
 	tf := filepath.Join(root, "common", "scripted_triggers", "x.txt")
 	line, col := lineCol(trig, "scripted_trigger")
-	wantHover(t, s, tf, line, col, "scripted trigger")
+	wantHover(t, s, tf, line, col, "scripted trigger", "my_name")
 	ev := filepath.Join(root, "events", "p.txt")
 	src := "ns.1 = {\n\tright_portrait = none\n}\n"
 	line, col = lineCol(src, "right_portrait")
@@ -830,5 +924,206 @@ func TestCompleteRootAndEnums(t *testing.T) {
 		if it.Label != "yes" && it.Label != "no" {
 			t.Fatalf("unknown_field dumped %q: %v", it.Label, labels(items))
 		}
+	}
+}
+
+func TestScriptNamesNavigate(t *testing.T) {
+	a := `test.1 = {
+	immediate = {
+		add_character_flag = used_life
+		set_variable = { name = foo value = 3 }
+		save_scope_as = duel_target
+	}
+}
+`
+	b := `test.2 = {
+	immediate = {
+		has_character_flag = used_life
+		has_variable = foo
+		exists = scope:duel_target
+		exists = var:foo
+	}
+}
+`
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/a.txt":                           a,
+		"events/b.txt":                           b,
+		"common/coat_of_arms/coat_of_arms/x.txt": "b_appleby = { pattern = \"p.dds\" }\n",
+		"common/landed_titles/t.txt":             "k_x = { coat_of_arms = b_appleby }\n",
+	}, nil, nil)
+	fa := filepath.Join(root, "events", "a.txt")
+	fb := filepath.Join(root, "events", "b.txt")
+
+	t.Run("character flag", func(t *testing.T) {
+		line, col := lineCol(b, "has_character_flag = used_life")
+		valCol := col + len("has_character_flag = ")
+		wantHover(t, s, fb, line, valCol, "character flag", "used_life")
+		if locs := Definition(s, fb, line, valCol); len(locs) != 1 ||
+			!session.SamePath(locs[0].URI, fa) {
+			t.Fatalf("F12=%v want %s", locs, fa)
+		}
+		if refs := References(s, fb, line, valCol); len(refs) < 2 {
+			t.Fatalf("refs=%v", refs)
+		}
+		if syms := DocumentSymbols(s, fa); len(syms) != 1 || syms[0].Name != "test.1" {
+			t.Fatalf("outline must skip ephemeral: %v", syms)
+		}
+	})
+	t.Run("variable", func(t *testing.T) {
+		line, col := lineCol(b, "has_variable = foo")
+		valCol := col + len("has_variable = ")
+		wantHover(t, s, fb, line, valCol, "variable", "3")
+		if h := Hover(s, fb, line, valCol); h == nil || h.Body != "3" {
+			t.Fatalf("variable Body=%#v", h)
+		}
+		line, col = lineCol(b, "var:foo")
+		wantHover(t, s, fb, line, col+len("var:"), "variable")
+		if locs := Definition(s, fb, line, col+len("var:")); len(locs) != 1 {
+			t.Fatalf("var: F12=%v", locs)
+		}
+		line, col = lineCol(b, "has_variable = ")
+		items := Complete(s, fb, line, col+len("has_variable = "))
+		if !hasComplete(items, "foo") {
+			t.Fatalf("complete has_variable: %v", labels(items))
+		}
+	})
+	t.Run("saved scope cross-file", func(t *testing.T) {
+		line, col := lineCol(b, "scope:duel_target")
+		wantHover(t, s, fb, line, col+len("scope:"), "saved scope", "root")
+		if locs := Definition(s, fb, line, col+len("scope:")); len(locs) != 1 ||
+			!session.SamePath(locs[0].URI, fa) {
+			t.Fatalf("scope F12=%v", locs)
+		}
+	})
+	t.Run("coa ref", func(t *testing.T) {
+		titles := filepath.Join(root, "common", "landed_titles", "t.txt")
+		body := "k_x = { coat_of_arms = b_appleby }\n"
+		line, col := lineCol(body, "coat_of_arms = b_appleby")
+		valCol := col + len("coat_of_arms = ")
+		wantHover(t, s, titles, line, valCol, "coat of arms", "b_appleby")
+		if locs := Definition(s, titles, line, valCol); len(locs) != 1 {
+			t.Fatalf("coa F12=%v", locs)
+		}
+		items := Complete(s, titles, line, col+len("coat_of_arms = "))
+		if !hasComplete(items, "b_appleby") {
+			t.Fatalf("complete coa: %v", labels(items))
+		}
+	})
+}
+
+func TestLocHoverUnescape(t *testing.T) {
+	locFile := "l_english:\n k.t:0 \"\\n\\nHello\"\n"
+	body := "test.1 = { title = k.t }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"localization/english/a_l_english.yml": locFile,
+		"events/x.txt":                         body,
+	}, nil, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(body, "k.t")
+	h := Hover(s, f, line, col)
+	if h == nil || h.Body != "Hello" {
+		t.Fatalf("Body=%#v", h)
+	}
+	if h.Hint != "English text for this key" {
+		t.Fatalf("hint=%q", h.Hint)
+	}
+}
+
+func TestLocEngineValueHover(t *testing.T) {
+	body := "l_english:\n r:0 \"Cost: $VALUE|=+0$\"\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"localization/english/a_l_english.yml": body,
+	}, nil, nil)
+	f := filepath.Join(root, "localization", "english", "a_l_english.yml")
+	line, col := lineCol(body, "VALUE")
+	h := Hover(s, f, line, col)
+	if h == nil || h.Kind != "loc value" ||
+		!strings.Contains(h.Hint, "Engine-supplied number") {
+		t.Fatalf("hover=%#v", h)
+	}
+	if locs := Definition(s, f, line, col); len(locs) != 0 {
+		t.Fatalf("engine VALUE F12=%v", locs)
+	}
+}
+
+func TestScriptParamF12(t *testing.T) {
+	trig := "my_trig = { exists = $TARGET$ }\n"
+	call := "ev.1 = { my_trig = { TARGET = title:k_france.holder } }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_triggers/t.txt": trig,
+		"events/e.txt":                   call,
+	}, nil, nil)
+	tf := filepath.Join(root, "common", "scripted_triggers", "t.txt")
+	line, col := lineCol(trig, "$TARGET$")
+	if locs := Definition(s, tf, line, col+1); len(locs) != 1 {
+		t.Fatalf("def F12=%v", locs)
+	}
+	h := Hover(s, tf, line, col+1)
+	if h == nil || !strings.Contains(h.Hint, "Substituted at the call site of my_trig") {
+		t.Fatalf("param hover=%#v", h)
+	}
+	ef := filepath.Join(root, "events", "e.txt")
+	line, col = lineCol(call, "TARGET =")
+	if locs := Definition(s, ef, line, col); len(locs) < 1 {
+		t.Fatalf("call F12=%v", locs)
+	}
+}
+
+func TestScriptParamOwnerScoped(t *testing.T) {
+	a := "trig_a = { exists = $TARGET$ }\n"
+	b := "trig_b = { exists = $TARGET$ }\n"
+	call := "ev.1 = { trig_a = { TARGET = title:k_france.holder } }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_triggers/a.txt": a,
+		"common/scripted_triggers/b.txt": b,
+		"events/e.txt":                   call,
+	}, nil, nil)
+	af := filepath.Join(root, "common", "scripted_triggers", "a.txt")
+	bf := filepath.Join(root, "common", "scripted_triggers", "b.txt")
+	ef := filepath.Join(root, "events", "e.txt")
+	line, col := lineCol(call, "TARGET =")
+	locs := Definition(s, ef, line, col)
+	if len(locs) != 1 || !session.SamePath(locs[0].URI, af) {
+		t.Fatalf("owner F12=%v want %s not %s", locs, af, bf)
+	}
+}
+
+func TestGameRuleSettingHover(t *testing.T) {
+	rules := "secret_unbeliever_found_rule = {\n\tdefault = a\n\tsuf_quieter = { }\n}\n"
+	loc := "l_english:\n setting_suf_quieter:0 \"Quieter\"\n"
+	use := "ev.1 = { limit = { has_game_rule = suf_quieter } }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/game_rules/x.txt":              rules,
+		"localization/english/a_l_english.yml": loc,
+		"events/e.txt":                         use,
+	}, nil, &catalog.VanillaLoc{
+		Sites: map[string]catalog.LocEntry{
+			"setting_suf_quieter": {Path: "loc", Line: 1, Value: "Quieter"},
+		},
+	})
+	ef := filepath.Join(root, "events", "e.txt")
+	line, col := lineCol(use, "suf_quieter")
+	h := Hover(s, ef, line, col)
+	if h == nil || h.Body != "Quieter" {
+		t.Fatalf("hover body=%#v", h)
+	}
+	if locs := Definition(s, ef, line, col); len(locs) != 1 {
+		t.Fatalf("F12=%v", locs)
+	}
+}
+
+func TestScriptValueRef(t *testing.T) {
+	vals := "hre_conquest_ai_score_value = 100\n"
+	use := "cb = { value = hre_conquest_ai_score_value }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/script_values/v.txt":      vals,
+		"common/casus_belli_types/cb.txt": use,
+	}, nil, nil)
+	vf := filepath.Join(root, "common", "script_values", "v.txt")
+	uf := filepath.Join(root, "common", "casus_belli_types", "cb.txt")
+	line, col := lineCol(use, "hre_conquest_ai_score_value")
+	if locs := Definition(s, uf, line, col); len(locs) != 1 ||
+		!session.SamePath(locs[0].URI, vf) {
+		t.Fatalf("F12=%v want %s", locs, vf)
 	}
 }
