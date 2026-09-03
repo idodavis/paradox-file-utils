@@ -105,14 +105,17 @@ watch(path, async (p) => {
           />
         </div>
       </div>
-      <FileSelector
-        v-model="path"
-        mode="folder"
+      <UFormField
         label="Install path"
         description="Top-level game folder. Needed to scan vanilla and power most features."
-        dialog-title="Select game install folder"
-        placeholder="C:\Program Files (x86)\Steam\steamapps\common\GAME_NAME"
-      />
+      >
+        <FileSelector
+          v-model="path"
+          mode="folder"
+          dialog-title="Select game install folder"
+          placeholder="C:\Program Files (x86)\Steam\steamapps\common\GAME_NAME"
+        />
+      </UFormField>
       <UFormField label="Install name">
         <UInput v-model="name" placeholder="e.g. Steam 1.14.0" />
       </UFormField>

@@ -193,7 +193,7 @@ t.2 = { title = k.t }
 	line, col = lineCol(body, "title = test.1.t")
 	wantHover(t, s, f, line, col, "Dynamic")
 	line, col = lineCol(body, "test.1.t")
-	wantHover(t, s, f, line, col, "localization", `"Hello"`, "**", ">")
+	wantHover(t, s, f, line, col, "localization", "Hello", "<blockquote", "**")
 	line, col = lineCol(body, "title = type")
 	valCol := col + len("title = ")
 	wantHover(t, s, f, line, valCol, "localization")
@@ -227,9 +227,99 @@ t.2 = { title = k.t }
 		t.Fatal("rename nil")
 	}
 	tf := filepath.Join(root, "common", "traits", "00.txt")
-	if locs := Definition(s, tf, 0, 1); len(locs) != 1 || locs[0].URI != tf {
-		t.Fatalf("mod F12=%v", locs)
+	if locs := Definition(s, tf, 0, 1); len(locs) != 1 || !session.SamePath(locs[0].URI, tf) {
+		t.Fatalf("mod F12=%v want %s", locs, tf)
 	}
+}
+
+func TestHoverDescriptorOrigin(t *testing.T) {
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	descA := "name = \"Alpha\"\npicture = \"thumb.png\"\n"
+	descB := "name = \"Beta\"\npicture = \"other.png\"\n"
+	fA := write(t, rootA, "descriptor.mod", descA)
+	fB := write(t, rootB, "descriptor.mod", descB)
+	s := session.NewWithLoc("ws", "ck3", "english", &catalog.VanillaCache{
+		FieldInfoByKind: map[string]map[string]string{
+			"mod_descriptor": {"picture": "A picture for the mod."},
+		},
+	}, nil, []catalog.ModInput{
+		{Origin: "alpha", Root: rootA, Order: 0, Name: "Alpha Mod"},
+		{Origin: "beta", Root: rootB, Order: 1, Name: "Beta Mod"},
+	})
+	s.DidOpen(fA, descA)
+	s.DidOpen(fB, descB)
+	line, col := lineCol(descA, "picture")
+	h := Hover(s, fA, line, col)
+	if h == nil {
+		t.Fatal("hover nil")
+	}
+	if h.Origin != "alpha" || h.OriginName != "Alpha Mod" {
+		t.Fatalf("origin=%q originName=%q", h.Origin, h.OriginName)
+	}
+	if !strings.Contains(h.Rel, "descriptor.mod") {
+		t.Fatalf("rel=%q", h.Rel)
+	}
+	locs := Definition(s, fA, line, col)
+	if len(locs) != 1 || locs[0].URI != fA {
+		t.Fatalf("definition=%v want %s", locs, fA)
+	}
+	if w := s.Resolve("picture"); w == nil || w.Origin != "beta" {
+		t.Fatalf("workspace winner=%v want beta", w)
+	}
+	if h.VanillaPath != "" || strings.Contains(h.Contents, "overriding") {
+		t.Fatalf("descriptor must not report a vanilla overlay: %#v", h)
+	}
+}
+
+func TestHoverVanillaOverlay(t *testing.T) {
+	vbody := "overlay.1 = {\n\ttype = character_event\n}\n"
+	vroot := t.TempDir()
+	vpath := write(t, vroot, "events/vanilla.txt", vbody)
+	body := "overlay.1 = {\n\ttype = character_event\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body},
+		&catalog.VanillaCache{
+			Defs: []catalog.Def{{
+				Kind: "event", Key: "overlay.1", Path: vpath, Line: 0, Start: 0, End: 9,
+			}},
+		}, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(body, "overlay.1")
+	h := Hover(s, f, line, col)
+	if h == nil {
+		t.Fatal("hover nil")
+	}
+	if h.Origin != "mod" {
+		t.Fatalf("origin=%q", h.Origin)
+	}
+	if !strings.Contains(h.Contents, "overriding") ||
+		!strings.Contains(h.Contents, "Crusader Kings III") ||
+		!strings.Contains(h.Contents, "overlay.1") {
+		t.Fatalf("contents=%q", h.Contents)
+	}
+	if !session.SamePath(h.VanillaPath, vpath) {
+		t.Fatalf("vanillaPath=%q want %s", h.VanillaPath, vpath)
+	}
+	if h.VanillaOriginName != "Crusader Kings III" {
+		t.Fatalf("vanillaOriginName=%q", h.VanillaOriginName)
+	}
+	locs := Definition(s, f, line, col)
+	if !hasLocURI(locs, f) || !hasLocURI(locs, vpath) {
+		t.Fatalf("definition=%v want mod %s and vanilla %s", locs, f, vpath)
+	}
+	refs := References(s, f, line, col)
+	if !hasLocURI(refs, vpath) {
+		t.Fatalf("references=%v want vanilla %s", refs, vpath)
+	}
+}
+
+func hasLocURI(locs []Location, path string) bool {
+	for _, l := range locs {
+		if session.SamePath(l.URI, path) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestHoverCallKindAndPortrait(t *testing.T) {

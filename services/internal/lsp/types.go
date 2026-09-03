@@ -32,15 +32,21 @@ type Diagnostic struct {
 	Code     string `json:"code,omitempty"`
 }
 
-// HoverResult is hover card markdown. Origin/rel/path/line describe the def site.
+// HoverResult is hover card markdown. Origin/rel/path/line describe the
+// winning def site. Vanilla* is the install site this winner overlays.
 type HoverResult struct {
-	Contents   string `json:"contents"`
-	Origin     string `json:"origin,omitempty"`
-	OriginName string `json:"originName,omitempty"`
-	Rel        string `json:"rel,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Line       int    `json:"line,omitempty"`
-	Col        int    `json:"col,omitempty"`
+	Contents          string `json:"contents"`
+	Origin            string `json:"origin,omitempty"`
+	OriginName        string `json:"originName,omitempty"`
+	Rel               string `json:"rel,omitempty"`
+	Path              string `json:"path,omitempty"`
+	Line              int    `json:"line,omitempty"`
+	Col               int    `json:"col,omitempty"`
+	VanillaOriginName string `json:"vanillaOriginName,omitempty"`
+	VanillaRel        string `json:"vanillaRel,omitempty"`
+	VanillaPath       string `json:"vanillaPath,omitempty"`
+	VanillaLine       int    `json:"vanillaLine,omitempty"`
+	VanillaCol        int    `json:"vanillaCol,omitempty"`
 }
 
 // CompletionItem is one completion suggestion.
@@ -133,8 +139,10 @@ func resolveAt(s *session.Session, path string, line, col int) (atPos, bool) {
 	chain := jomini.NodeAtOffset(res.Root, off)
 	if len(chain) > 0 {
 		if a, ok := chain[0].(*jomini.Assignment); ok && !a.Key.Quoted {
-			if d := s.Resolve(a.Key.Text); d != nil && d.Kind != "" && d.Kind != "loc_key" {
-				at.kind = d.Kind
+			if !isLocalDefFile(s, path, at.kind) {
+				if d := s.Resolve(a.Key.Text); d != nil && d.Kind != "" && d.Kind != "loc_key" {
+					at.kind = d.Kind
+				}
 			}
 		}
 		fillCompleteSlot(&at, chain, off)
@@ -268,6 +276,15 @@ func isMetaFile(s *session.Session, path string) bool {
 	}
 	l := strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
 	return strings.Contains(l, "/.metadata/") && strings.HasSuffix(l, "/metadata.json")
+}
+
+// isLocalDefFile reports mod descriptor / metadata files whose keys are
+// defined locally in each mod, not resolved across the workspace.
+func isLocalDefFile(s *session.Session, path string, extractKind string) bool {
+	if extractKind == "mod_descriptor" {
+		return true
+	}
+	return isMetaFile(s, path)
 }
 
 func locDefined(s *session.Session, key string) bool {

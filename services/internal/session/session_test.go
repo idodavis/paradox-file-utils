@@ -157,6 +157,27 @@ func TestQueries(t *testing.T) {
 	must(t, inst == "/y", "ReplaceCache")
 }
 
+func TestVanillaDefs(t *testing.T) {
+	vroot := writeFiles(t, map[string]string{"events/v.txt": "v.1 = {}\n"})
+	vf := filepath.Join(vroot, "events", "v.txt")
+	root := writeFiles(t, map[string]string{"events/x.txt": "v.1 = {}\n"})
+	s := NewWithLoc("ws", "ck3", "english", &catalog.VanillaCache{
+		Defs: []catalog.Def{{Kind: "event", Key: "v.1", Path: vf, Line: 0}},
+	}, &catalog.VanillaLoc{
+		Sites: map[string]catalog.LocEntry{
+			"v.1.t": {Path: "loc.yml", Line: 2, Value: "Hi"},
+		},
+	}, []catalog.ModInput{{Origin: "mod", Root: root, Order: 0}})
+	defs := s.VanillaDefs("v.1")
+	if len(defs) != 1 || defs[0].Kind != "event" || defs[0].Origin != "vanilla" {
+		t.Fatalf("script=%v", defs)
+	}
+	locs := s.VanillaDefs("v.1.t")
+	if len(locs) != 1 || locs[0].Kind != "loc_key" || locs[0].Path != "loc.yml" {
+		t.Fatalf("loc=%v", locs)
+	}
+}
+
 func TestLocateVanilla(t *testing.T) {
 	install := writeFiles(t, map[string]string{
 		"game/events/x.txt":                     "x.1 = {}\n",

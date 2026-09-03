@@ -50,14 +50,7 @@ function parseTab(raw: unknown): CenterTab {
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
     <WorkspaceToolBar :workspace-id="workspaceId" />
-    <UTabs
-      v-model="tab"
-      :items="items"
-      :content="false"
-      variant="link"
-      size="sm"
-      class="shrink-0 px-2"
-    />
+    <UTabs v-model="tab" :items="items" :content="false" variant="link" size="sm" class="shrink-0 px-2" />
     <PatchNotesPane v-show="tab === 'notes'" class="min-h-0 flex-1" />
     <ImpactCheckPane v-show="tab === 'impact'" class="min-h-0 flex-1" />
     <PatcherRetarget v-show="tab === 'patcher'" class="min-h-0 flex-1" />

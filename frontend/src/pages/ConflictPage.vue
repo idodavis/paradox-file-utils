@@ -6,11 +6,7 @@
 import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useQuery } from "@pinia/colada";
-import {
-  getFacetedUniqueValues,
-  type ColumnFiltersState,
-  type RowSelectionState,
-} from "@tanstack/table-core";
+import { getFacetedUniqueValues, type ColumnFiltersState, type RowSelectionState } from "@tanstack/table-core";
 import type { TableColumn } from "@nuxt/ui";
 import { GetOverrides } from "@services/viewsservice";
 import type { OverrideRow, OverrideSite } from "@services/internal/views/models";
@@ -31,9 +27,7 @@ const { openInIde } = useOpenInIde();
 const ws = useWorkspaceStore();
 const workspaceId = computed(() => String(route.params.id ?? ""));
 const live = useLiveEnabled(workspaceId);
-const originFallback = computed(() =>
-  ws.gameName(ws.activeWorkspace?.gameId ?? ws.currentGameId),
-);
+const originFallback = computed(() => ws.gameName(ws.activeWorkspace?.gameId ?? ws.currentGameId));
 const vanilla = computed(() => ws.originVanilla);
 /** Load-order rail: sortOrder, then name — not config insertion order. */
 const orderedMods = computed(() => {
@@ -46,9 +40,7 @@ const orderedMods = computed(() => {
   });
   return mods;
 });
-const liveMods = computed(() =>
-  orderedMods.value.filter((m) => !m.isBroken && m.path),
-);
+const liveMods = computed(() => orderedMods.value.filter((m) => !m.isBroken && m.path));
 const originItems = computed(() =>
   liveMods.value.map((m, i) => ({
     id: m.id,
@@ -69,9 +61,7 @@ const loadOrderCopy = computed(() => {
 /** Toggle a mod origin in the same set OriginSelectMenu uses. */
 function toggleOrigin(id: string): void {
   const cur = originIds.value;
-  originIds.value = cur.includes(id)
-    ? cur.filter((x) => x !== id)
-    : [...cur, id];
+  originIds.value = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
 }
 const scopeItems = [
   { label: "Conflicts", value: "conflicts" },
@@ -84,10 +74,7 @@ const scope = computed({
   },
   set: (v: string | number) => {
     const overlay = v === "overrides";
-    columnFilters.value = [
-      ...columnFilters.value.filter((f) => f.id !== "overlay"),
-      { id: "overlay", value: overlay },
-    ];
+    columnFilters.value = [...columnFilters.value.filter((f) => f.id !== "overlay"), { id: "overlay", value: overlay }];
   },
 });
 
@@ -105,16 +92,20 @@ function modOriginIds(row: OverrideRow): string[] {
   return out;
 }
 const globalFilter = shallowRef("");
-const columnFilters = shallowRef<ColumnFiltersState>([
-  { id: "overlay", value: false },
-]);
+const columnFilters = shallowRef<ColumnFiltersState>([{ id: "overlay", value: false }]);
 const selected = shallowRef<OverrideRow | null>(null);
 const rowSelection = shallowRef<RowSelectionState>({});
-const table = useTemplateRef<{ tableApi?: { getColumn: (id: string) => {
-  getFilterValue: () => unknown
-  setFilterValue: (v: unknown) => void
-  getFacetedUniqueValues: () => Map<unknown, number>
-} | undefined } }>("table");
+const table = useTemplateRef<{
+  tableApi?: {
+    getColumn: (id: string) =>
+      | {
+          getFilterValue: () => unknown;
+          setFilterValue: (v: unknown) => void;
+          getFacetedUniqueValues: () => Map<unknown, number>;
+        }
+      | undefined;
+  };
+}>("table");
 
 const {
   data: rowsData,
@@ -156,9 +147,7 @@ function facetItems(id: string): { label: string; value: string }[] {
 }
 function setCol(id: string, value: unknown): void {
   const rest = columnFilters.value.filter((f) => f.id !== id);
-  columnFilters.value = value == null || value === ""
-    ? rest
-    : [...rest, { id, value }];
+  columnFilters.value = value == null || value === "" ? rest : [...rest, { id, value }];
 }
 function colString(id: string): string | undefined {
   const hit = columnFilters.value.find((f) => f.id === id);
@@ -178,15 +167,11 @@ function open(file: string, line: number): void {
 const winnerSite = computed((): OverrideSite | undefined => {
   const row = selected.value;
   if (!row) return undefined;
-  return (row.sites ?? []).find((s) => s.origin === row.winner)
-    ?? row.sites?.[0];
+  return (row.sites ?? []).find((s) => s.origin === row.winner) ?? row.sites?.[0];
 });
 
 /** Select one override for the detail pane. */
-function onRowSelect(
-  _e: Event,
-  row: { original: OverrideRow; id: string },
-): void {
+function onRowSelect(_e: Event, row: { original: OverrideRow; id: string }): void {
   selected.value = row.original;
   rowSelection.value = { [row.id]: true };
 }
@@ -203,13 +188,7 @@ function onRowSelect(
 
     <UDashboardToolbar class="px-2 sm:px-2">
       <template #left>
-        <UTabs
-          v-model="scope"
-          :items="scopeItems"
-          :content="false"
-          variant="pill"
-          size="sm"
-        />
+        <UTabs v-model="scope" :items="scopeItems" :content="false" variant="pill" size="sm" />
         <USelect
           :model-value="colString('kind')"
           :items="facetItems('kind')"
@@ -227,8 +206,7 @@ function onRowSelect(
           @update:model-value="setCol('rule', $event)"
         />
         <OriginSelectMenu v-model="originIds" :items="originItems" />
-        <UInput v-model="globalFilter" icon="i-lucide-search" placeholder="Filter"
-          size="md" class="w-48" />
+        <UInput v-model="globalFilter" icon="i-lucide-search" placeholder="Filter" size="md" class="w-48" />
       </template>
     </UDashboardToolbar>
 
@@ -237,14 +215,7 @@ function onRowSelect(
       storage-key="pmt-conflicts"
       class="relative! inset-auto! min-h-0 min-w-0 flex-1 overflow-hidden"
     >
-      <UDashboardPanel
-        id="conflicts-order"
-        resizable
-        :default-size="16"
-        :min-size="12"
-        :max-size="24"
-        class="min-h-0!"
-      >
+      <UDashboardPanel id="conflicts-order" resizable :default-size="16" :min-size="12" :max-size="24" class="min-h-0!">
         <div class="flex h-full min-h-0 flex-col overflow-hidden p-2">
           <p class="text-xs font-semibold">Load order</p>
           <p class="mt-1 text-[11px] leading-snug text-muted">{{ loadOrderCopy }}</p>
@@ -265,25 +236,14 @@ function onRowSelect(
                   :src="ws.thumbUrls[mod.id]"
                   alt=""
                   class="size-4 shrink-0 rounded-sm object-cover"
-                >
-                <OriginBadge
-                  :label="mod.name"
-                  :hex="originHexByOriginId(mod.id)"
-                  class="min-w-0"
                 />
+                <OriginBadge :label="mod.name" :hex="originHexByOriginId(mod.id)" class="min-w-0" />
               </button>
             </li>
           </ul>
         </div>
       </UDashboardPanel>
-      <UDashboardPanel
-        id="conflicts-main"
-        resizable
-        :default-size="60"
-        :min-size="40"
-        :max-size="80"
-        class="min-h-0!"
-      >
+      <UDashboardPanel id="conflicts-main" resizable :default-size="60" :min-size="40" :max-size="80" class="min-h-0!">
         <UTable
           ref="table"
           class="h-full"
@@ -298,14 +258,22 @@ function onRowSelect(
           sticky="header"
           empty="No overlapping definitions across workspace mods."
           :get-row-id="(row: OverrideRow) => `${row.kind}:${row.name}`"
-          @update:column-filters="(v?: ColumnFiltersState) => { if (v) columnFilters = v }"
-          @update:global-filter="(v?: string) => { globalFilter = v ?? '' }"
+          @update:column-filters="
+            (v?: ColumnFiltersState) => {
+              if (v) columnFilters = v;
+            }
+          "
+          @update:global-filter="
+            (v?: string) => {
+              globalFilter = v ?? '';
+            }
+          "
           @select="onRowSelect"
         >
           <template #origin-cell="{ row }">
             <div class="flex flex-wrap gap-1">
               <OriginBadge
-                v-for="oid in (row.getValue('origin') as string[])"
+                v-for="oid in row.getValue('origin') as string[]"
                 :key="oid"
                 :label="row.original.sites?.find((s) => s.origin === oid)?.originName || oid"
                 :hex="originHexByOriginId(oid)"

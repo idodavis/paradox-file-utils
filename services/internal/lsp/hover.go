@@ -2,6 +2,7 @@
 package lsp
 
 import (
+	"html"
 	"strings"
 
 	"paradox-modding-tools/services/internal/catalog"
@@ -25,6 +26,9 @@ func Hover(s *session.Session, path string, line, col int) *HoverResult {
 	if a := at.assign; a != nil {
 		if p, ok := game.ParsePrefixed(a.Key.Text); ok && game.IsSavedScopePrefix(p) {
 			return savedScopeHover(p.Name)
+		}
+		if isLocalDefFile(s, path, at.kind) {
+			return localAssignKeyHover(s, path, at, a)
 		}
 		if h := namedHoverAllow(s, a.Key.Text, false); h != nil {
 			return h
@@ -73,6 +77,7 @@ func namedHoverAllow(s *session.Session, word string, allowLoc bool) *HoverResul
 			Contents: hoverCard(kindLabel(d.Kind), d.Key, "", hoverExtra(s, word, d.Kind)),
 		}
 		attachSite(h, s, d.Path, d.Line, d.Origin, d.Start)
+		attachOverlay(h, s, d)
 		return h
 	}
 	if allowLoc && locDefined(s, word) {
@@ -124,6 +129,9 @@ func locHover(s *session.Session, key string) *HoverResult {
 	h := &HoverResult{Contents: hoverCard("localization", key, text, "")}
 	if ok {
 		attachSite(h, s, file, line, origin, 0)
+		attachOverlay(h, s, &catalog.Def{
+			Kind: "loc_key", Key: key, Path: file, Line: line, Origin: origin,
+		})
 	}
 	return h
 }
@@ -136,15 +144,21 @@ func hoverCard(kind, key, locVal, docs string) string {
 	b.WriteString(mdEscape(key))
 	b.WriteString("`")
 	if locVal != "" {
-		b.WriteString("\n\n> \"")
-		b.WriteString(mdEscape(locVal))
-		b.WriteString("\"")
+		b.WriteString("\n\n")
+		b.WriteString(quoteBlock(locVal))
 	}
 	if docs != "" {
 		b.WriteString("\n\n")
 		b.WriteString(mdEscape(docs))
 	}
 	return b.String()
+}
+
+func quoteBlock(s string) string {
+	body := strings.ReplaceAll(html.EscapeString(s), "\n", "<br>")
+	return `<blockquote style="border-left:3px solid #6b7280;` +
+		`background-color:rgba(127,127,127,0.16);` +
+		`padding:6px 10px;margin:8px 0;">` + body + `</blockquote>`
 }
 
 func mdEscape(s string) string {
@@ -160,6 +174,53 @@ func mdEscape(s string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func localAssignKeyHover(
+	s *session.Session, path string, at atPos, a *jomini.Assignment,
+) *HoverResult {
+	docs := s.FieldDoc(a.Key.Text, at.kind)
+	m := memberSetsFor(s, at.kind)
+	if docs == "" && !m.structKeys[a.Key.Text] && !m.structKeys[strings.ToLower(a.Key.Text)] {
+		return nil
+	}
+	head := kindLabel(at.kind) + " key"
+	h := &HoverResult{Contents: hoverCard(head, a.Key.Text, "", docs)}
+	origin, _, _ := s.Locate(path)
+	line := at.res.Lines().PositionAt(a.Key.Range.Start).Line
+	attachSite(h, s, path, line, origin, a.Key.Range.Start)
+	return h
+}
+
+func attachOverlay(h *HoverResult, s *session.Session, d *catalog.Def) {
+	if h == nil || d == nil || isVanillaOrigin(d.Origin) || d.Kind == "mod_descriptor" {
+		return
+	}
+	var v *catalog.Def
+	for _, cand := range s.VanillaDefs(d.Key) {
+		if cand.Kind == d.Kind {
+			c := cand
+			v = &c
+			break
+		}
+	}
+	if v == nil || v.Path == "" || session.SamePath(v.Path, d.Path) {
+		return
+	}
+	gameName := s.OriginName(game.OriginVanilla)
+	h.Contents += "\n\nThis " + kindLabel(d.Kind) + " is overriding " +
+		mdEscape(gameName) + "'s version of `" + mdEscape(d.Key) + "`."
+	h.VanillaPath = v.Path
+	h.VanillaRel = s.DisplayRel(v.Path)
+	h.VanillaLine = v.Line
+	h.VanillaOriginName = gameName
+	if v.Start > 0 {
+		h.VanillaCol = s.Parsed(v.Path).Lines().PositionAt(v.Start).Character
+	}
+}
+
+func isVanillaOrigin(origin string) bool {
+	return origin == "" || origin == game.OriginVanilla
 }
 
 func vanillaSite(s *session.Session, h *HoverResult) *HoverResult {

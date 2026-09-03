@@ -22,10 +22,10 @@ func Definition(s *session.Session, path string, line, col int) []Location {
 		if key == "" {
 			return nil
 		}
-		if file, ln, _, ok := s.LocSite(key); ok {
-			return []Location{defLocation(s, catalog.Def{
-				Kind: "loc_key", Key: key, Path: file, Line: ln,
-			})}
+		if file, ln, origin, ok := s.LocSite(key); ok {
+			return definitionSites(s, key, &catalog.Def{
+				Kind: "loc_key", Key: key, Path: file, Line: ln, Origin: origin,
+			})
 		}
 		if end > start {
 			return []Location{{
@@ -43,8 +43,15 @@ func Definition(s *session.Session, path string, line, col int) []Location {
 		return nil
 	}
 	if a := at.assign; a != nil {
+		if isLocalDefFile(s, path, at.kind) {
+			line := at.res.Lines().PositionAt(a.Key.Range.Start).Line
+			return []Location{defLocation(s, catalog.Def{
+				Kind: at.kind, Key: a.Key.Text, Path: path, Line: line,
+				Start: a.Key.Range.Start, End: a.Key.Range.End,
+			})}
+		}
 		if d := resolveNonLoc(s, a.Key.Text); d != nil {
-			return []Location{defLocation(s, *d)}
+			return definitionSites(s, a.Key.Text, d)
 		}
 		return nil
 	}
@@ -58,10 +65,10 @@ func Definition(s *session.Session, path string, line, col int) []Location {
 		return definitionSites(s, at.word, d)
 	}
 	if locDefined(s, at.word) {
-		if file, line, _, ok := s.LocSite(at.word); ok {
-			return []Location{defLocation(s, catalog.Def{
-				Kind: "loc_key", Key: at.word, Path: file, Line: line,
-			})}
+		if file, line, origin, ok := s.LocSite(at.word); ok {
+			return definitionSites(s, at.word, &catalog.Def{
+				Kind: "loc_key", Key: at.word, Path: file, Line: line, Origin: origin,
+			})
 		}
 	}
 	return nil
@@ -145,6 +152,12 @@ func definitionSites(s *session.Session, key string, winner *catalog.Def) []Loca
 	for _, d := range s.ModDefsOf(key) {
 		add(d)
 	}
+	for _, d := range s.VanillaDefs(key) {
+		if winner != nil && d.Kind != winner.Kind {
+			continue
+		}
+		add(d)
+	}
 	for _, d := range s.FindDefs(key, 64, false, true) {
 		if d.Key == key {
 			add(d)
@@ -198,6 +211,12 @@ func identReferences(s *session.Session, word string) []Location {
 	}
 	hasLocDef := false
 	for _, d := range s.ModDefsOf(word) {
+		add(defLocation(s, d))
+		if d.Kind == "loc_key" {
+			hasLocDef = true
+		}
+	}
+	for _, d := range s.VanillaDefs(word) {
 		add(defLocation(s, d))
 		if d.Kind == "loc_key" {
 			hasLocDef = true

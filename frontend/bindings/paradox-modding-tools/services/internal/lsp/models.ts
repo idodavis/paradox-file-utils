@@ -48,7 +48,8 @@ export interface FoldingRange {
 }
 
 /**
- * HoverResult is hover card markdown. Origin/rel/path/line describe the def site.
+ * HoverResult is hover card markdown. Origin/rel/path/line describe the
+ * winning def site. Vanilla* is the install site this winner overlays.
  */
 export interface HoverResult {
     "contents": string;
@@ -58,6 +59,11 @@ export interface HoverResult {
     "path"?: string;
     "line"?: number;
     "col"?: number;
+    "vanillaOriginName"?: string;
+    "vanillaRel"?: string;
+    "vanillaPath"?: string;
+    "vanillaLine"?: number;
+    "vanillaCol"?: number;
 }
 
 /**

@@ -99,10 +99,39 @@ function withDoc(text: string): vscode.MarkdownString {
 
 /** Location line from Go origin + rel (1-based line). */
 function hoverSiteMarkdown(h: HoverResult): string {
-  const origin = h.origin || "";
-  const rel = h.rel ?? "";
-  const label = escHtml(h.originName || "");
-  if (!label && !rel) return "";
+  const primary = hoverSiteLine(
+    h.origin || "",
+    h.originName || "",
+    h.rel ?? "",
+    h.path ?? "",
+    h.line,
+    h.col,
+  );
+  const vanilla = h.vanillaPath
+    ? hoverSiteLine(
+        "vanilla",
+        h.vanillaOriginName || "",
+        h.vanillaRel ?? "",
+        h.vanillaPath,
+        h.vanillaLine,
+        h.vanillaCol,
+      )
+    : "";
+  if (primary && vanilla) return `${primary}\n\n${vanilla}`;
+  return primary || vanilla;
+}
+
+/** Colored origin + open-file link for one hover site. */
+function hoverSiteLine(
+  origin: string,
+  originName: string,
+  rel: string,
+  path: string,
+  line?: number,
+  col?: number,
+): string {
+  const label = escHtml(originName);
+  if (!label && !rel && !path) return "";
   const key = origin || "vanilla";
   const raw = originHexByOriginId(key);
   const hex = /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : "#5B9A8B";
@@ -111,21 +140,26 @@ function hoverSiteMarkdown(h: HoverResult): string {
     : "$(package)";
   const name = label || escHtml(key === "vanilla" ? "Game" : key);
   const site = `<span style="color:${hex};">${icon} ${name}</span>`;
-  const pathBit = hoverOpenLink(h, rel);
+  const pathBit = hoverOpenLink(rel, path, line, col);
   return pathBit ? `${site} · ${pathBit}` : site;
 }
 
 /** Markdown command link that opens the def file. */
-function hoverOpenLink(h: HoverResult, rel: string): string {
-  const text = escHtml(rel || h.path || "");
+function hoverOpenLink(
+  rel: string,
+  path: string,
+  line?: number,
+  col?: number,
+): string {
+  const text = escHtml(rel || path);
   if (!text) return "";
-  if (!h.path) return text;
-  const target = vscode.Uri.file(h.path).toString();
-  const args: unknown[] = h.col
+  if (!path) return text;
+  const target = vscode.Uri.file(path).toString();
+  const args: unknown[] = col
     ? [target, {
         selection: {
-          startLineNumber: (h.line ?? 0) + 1,
-          startColumn: (h.col ?? 0) + 1,
+          startLineNumber: (line ?? 0) + 1,
+          startColumn: (col ?? 0) + 1,
         },
       }]
     : [target];
@@ -264,7 +298,7 @@ export function registerLanguageClient(
         md.isTrusted = { enabledCommands: ["vscode.open"] };
         md.appendMarkdown(h.contents);
         const site = hoverSiteMarkdown(h);
-        if (site) md.appendMarkdown(`\n\n---\n\n${site}`);
+        if (site) md.appendMarkdown(`\n\n<br>\n\n---\n\n${site}`);
         return new vscode.Hover(md);
       },
     }),

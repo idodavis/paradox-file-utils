@@ -6,9 +6,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import { useLocalStorage } from "@vueuse/core";
-import {
-  GetEventDetail, GetEventGraph,
-} from "@services/viewsservice";
+import { GetEventDetail, GetEventGraph } from "@services/viewsservice";
 import type { EventGraphParams } from "@services/internal/views/models";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
@@ -30,9 +28,7 @@ const route = useRoute();
 const ws = useWorkspaceStore();
 const vanilla = computed(() => ws.originVanilla);
 
-const liveMods = computed(() =>
-  ws.workspaceMods.filter((m) => !m.isBroken && m.path),
-);
+const liveMods = computed(() => ws.workspaceMods.filter((m) => !m.isBroken && m.path));
 const originItems = computed(() => [
   {
     id: vanilla.value,
@@ -57,28 +53,28 @@ const originItems = computed(() => [
   })),
 ]);
 const origins = ref<string[]>([]);
-const originsNarrowed = computed(
-  () =>
-    origins.value.length > 0 &&
-    origins.value.length < originItems.value.length,
-);
-const originColors = computed((): Record<string, string> =>
-  Object.fromEntries([
-    [vanilla.value, originHex({
-      kind: "game",
-      path: "",
-      color: ws.activeWorkspace?.gameColor,
-    })],
-    ...liveMods.value.map((m, i) => [
-      m.id,
-      originHex({
-        kind: "mod",
-        path: m.path,
-        color: m.color,
-        wrapIndex: i,
-      }),
+const originsNarrowed = computed(() => origins.value.length > 0 && origins.value.length < originItems.value.length);
+const originColors = computed(
+  (): Record<string, string> =>
+    Object.fromEntries([
+      [
+        vanilla.value,
+        originHex({
+          kind: "game",
+          path: "",
+          color: ws.activeWorkspace?.gameColor,
+        }),
+      ],
+      ...liveMods.value.map((m, i) => [
+        m.id,
+        originHex({
+          kind: "mod",
+          path: m.path,
+          color: m.color,
+          wrapIndex: i,
+        }),
+      ]),
     ]),
-  ]),
 );
 
 /** Explorer-matching swatch for a picker or payload origin. */
@@ -158,7 +154,9 @@ function onReroot(id: string): void {
   selectedId.value = id;
 }
 
-function onRecenter(): void { void graphCanvas.value?.recenter(); }
+function onRecenter(): void {
+  void graphCanvas.value?.recenter();
+}
 function onShowMore(): void {
   const id = selectedId.value;
   if (!id || id.startsWith("more:")) return;
@@ -170,7 +168,9 @@ function setLayout(v: string): void {
 function onNamespace(v: string | null | undefined): void {
   namespace.value = v ?? undefined;
 }
-function setRoot(v: string | null | undefined): void { if (v) root.value = v; }
+function setRoot(v: string | null | undefined): void {
+  if (v) root.value = v;
+}
 function clearRoot(): void {
   root.value = undefined;
   namespace.value = undefined;
@@ -183,7 +183,9 @@ watch(namespace, (ns) => {
   }
   expand.value = [];
 });
-watch(root, () => { expand.value = []; });
+watch(root, () => {
+  expand.value = [];
+});
 watch(workspaceId, () => {
   root.value = undefined;
   namespace.value = undefined;
@@ -204,10 +206,7 @@ watch(workspaceId, () => {
           class="w-28"
           @update:model-value="setLayout"
         />
-        <LanguageHealthStrip
-          v-if="workspaceId"
-          :workspace-id="workspaceId"
-        />
+        <LanguageHealthStrip v-if="workspaceId" :workspace-id="workspaceId" />
       </template>
     </WorkspaceToolBar>
 
@@ -216,8 +215,13 @@ watch(workspaceId, () => {
         <USelectMenu
           :model-value="root"
           :items="graph?.suggestions?.ids ?? []"
-          label-key="id" value-key="id" placeholder="Root event"
-          size="md" class="min-w-64 flex-1" :ui="MENU_UI" :loading="loading"
+          label-key="id"
+          value-key="id"
+          placeholder="Root event"
+          size="md"
+          class="min-w-64 flex-1"
+          :ui="MENU_UI"
+          :loading="loading"
           :virtualize="(graph?.suggestions?.ids?.length ?? 0) > 400"
           @update:model-value="setRoot"
         >
@@ -232,20 +236,31 @@ watch(workspaceId, () => {
               v-else-if="!item.origin || item.origin === vanilla"
               :game-id="ws.activeWorkspace?.gameId ?? ws.currentGameId"
             />
-            <span v-else class="size-2 shrink-0 rounded-full"
-              :style="{ backgroundColor: itemOriginHex(item.origin) }" />
+            <span
+              v-else
+              class="size-2 shrink-0 rounded-full"
+              :style="{ backgroundColor: itemOriginHex(item.origin) }"
+            />
           </template>
         </USelectMenu>
         <USelectMenu
           :model-value="namespace"
           :items="graph?.suggestions?.namespaces ?? []"
-          label-key="id" value-key="id" placeholder="Namespace"
-          size="md" class="w-56" :ui="MENU_UI" clear
+          label-key="id"
+          value-key="id"
+          placeholder="Namespace"
+          size="md"
+          class="w-56"
+          :ui="MENU_UI"
+          clear
           @update:model-value="onNamespace"
         >
           <template #item-leading="{ item }">
-            <span v-if="item.id" class="size-2 shrink-0 rounded-full"
-              :style="{ backgroundColor: itemOriginHex(item.origin) }" />
+            <span
+              v-if="item.id"
+              class="size-2 shrink-0 rounded-full"
+              :style="{ backgroundColor: itemOriginHex(item.origin) }"
+            />
           </template>
         </USelectMenu>
         <OriginSelectMenu v-model="origins" :items="originItems" />
@@ -276,21 +291,8 @@ watch(workspaceId, () => {
           :disabled="!selectedId || selectedId.startsWith('more:') || selectedId.startsWith('more-in:')"
           @click="onShowMore"
         />
-        <span
-          v-if="root && graph"
-          class="text-xs text-muted"
-        >
-          {{ graph.nodes?.length ?? 0 }} nodes
-        </span>
-        <UBadge
-          v-if="graph?.truncated"
-          color="warning"
-          variant="subtle"
-          size="xs"
-          :ui="PILL_UI"
-        >
-          truncated
-        </UBadge>
+        <span v-if="root && graph" class="text-xs text-muted"> {{ graph.nodes?.length ?? 0 }} nodes </span>
+        <UBadge v-if="graph?.truncated" color="warning" variant="subtle" size="xs" :ui="PILL_UI"> truncated </UBadge>
         <span v-if="graph?.truncated" class="text-xs text-muted">
           Double-click a node at the edge to walk further.
         </span>
@@ -300,13 +302,7 @@ watch(workspaceId, () => {
       </template>
     </UDashboardToolbar>
 
-    <UAlert
-      v-if="error"
-      color="error"
-      variant="subtle"
-      :description="error"
-      class="m-2"
-    />
+    <UAlert v-if="error" color="error" variant="subtle" :description="error" class="m-2" />
 
     <UDashboardGroup
       storage="local"
@@ -335,11 +331,7 @@ watch(workspaceId, () => {
         />
       </UDashboardPanel>
       <UDashboardPanel id="event-graph-detail" class="min-h-0!">
-        <EventDetailPanel
-          :workspace-id="workspaceId"
-          :detail="detail ?? null"
-          @reroot="onReroot"
-        />
+        <EventDetailPanel :workspace-id="workspaceId" :detail="detail ?? null" @reroot="onReroot" />
       </UDashboardPanel>
     </UDashboardGroup>
   </div>

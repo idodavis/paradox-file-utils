@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -369,6 +370,40 @@ func cloneIf[T any](in []T) []T {
 // Resolve returns the effective definition of key (winner across mods + vanilla).
 func (s *Session) Resolve(key string) *catalog.Def {
 	return s.ResolveMatching(key, nil)
+}
+
+// VanillaDefs returns install definitions of key (script cache, then loc sidecar).
+func (s *Session) VanillaDefs(key string) []catalog.Def {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []catalog.Def
+	seen := map[string]bool{}
+	add := func(d catalog.Def) {
+		if d.Key != key || d.Kind == "saved_scope" {
+			return
+		}
+		id := d.Kind + "\x00" + CanonPath(d.Path) + "\x00" + strconv.Itoa(d.Line)
+		if seen[id] {
+			return
+		}
+		seen[id] = true
+		if d.Origin == "" {
+			d.Origin = game.OriginVanilla
+		}
+		out = append(out, d)
+	}
+	for _, d := range s.cacheByKey[key] {
+		add(d)
+	}
+	if s.vanillaLoc != nil {
+		if site, ok := s.vanillaLoc.Sites[key]; ok {
+			add(catalog.Def{
+				Kind: "loc_key", Key: key, Path: site.Path, Line: site.Line,
+				Origin: game.OriginVanilla,
+			})
+		}
+	}
+	return out
 }
 
 // ResolveMatching is Resolve after keep filters defsOf(key). keep nil keeps all.

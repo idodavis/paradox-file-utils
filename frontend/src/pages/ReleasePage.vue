@@ -29,10 +29,8 @@ import { ReadFileBase64 } from "@services/fileservice";
 import { thumbMime, useWorkspaceStore } from "../stores/workspace";
 import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import ReleaseModRail from "../components/release/ReleaseModRail.vue";
-import WorkshopMediaCard, {
-  type MediaSlide,
-} from "../components/release/WorkshopMediaCard.vue";
-import { pickFile } from "../components/FileSelector.vue";
+import WorkshopMediaCard, { type MediaSlide } from "../components/release/WorkshopMediaCard.vue";
+import { pickFile } from "../lib/nativeDialog";
 
 /** Package Editor.vue.d.ts pulls `#build/ui/editor` and types as `{}`. */
 const UEditor = RawEditor as unknown as new () => {
@@ -51,9 +49,7 @@ const ws = useWorkspaceStore();
 const toast = useToast();
 const { copy } = useClipboard();
 const workspaceId = computed(() => String(route.params.id ?? ""));
-const liveMods = computed(() =>
-  ws.workspaceMods.filter((m) => !m.isBroken && m.path),
-);
+const liveMods = computed(() => ws.workspaceMods.filter((m) => !m.isBroken && m.path));
 const selectedId = shallowRef("");
 const listing = ref<Listing | null>(null);
 const notes = ref<string[]>([]);
@@ -92,9 +88,7 @@ function parseTab(raw: unknown): ReleaseTab {
   }
 }
 
-const imgPopupPreview = computed(
-  () => imgPopupUrl.value.trim().startsWith("https://"),
-);
+const imgPopupPreview = computed(() => imgPopupUrl.value.trim().startsWith("https://"));
 
 watch(
   liveMods,
@@ -193,11 +187,7 @@ const { mutateAsync: saveMut, isLoading: saving } = useMutation({
 });
 
 const { mutateAsync: draftMut } = useMutation({
-  mutation: () => DraftChangelog(
-    workspaceId.value,
-    selectedId.value,
-    listing.value?.version ?? "",
-  ),
+  mutation: () => DraftChangelog(workspaceId.value, selectedId.value, listing.value?.version ?? ""),
   onSuccess: (text) => {
     if (listing.value) listing.value.changeNote = text;
   },
@@ -244,17 +234,10 @@ async function browseThumb(): Promise<void> {
 
 /** Native file picker → workshop/previews (not the description). */
 async function addGalleryImage(): Promise<void> {
-  const path = await pickFile(
-    "Workshop image",
-    "*.png; *.jpg; *.jpeg; *.gif; *.webp",
-  );
+  const path = await pickFile("Workshop image", "*.png; *.jpg; *.jpeg; *.gif; *.webp");
   if (!path) return;
   try {
-    const next = await AddWorkshopPreview(
-      workspaceId.value,
-      selectedId.value,
-      path,
-    );
+    const next = await AddWorkshopPreview(workspaceId.value, selectedId.value, path);
     if (next) listing.value = asListing(next);
     toast.add({
       title: "Added to Workshop media",
@@ -269,11 +252,7 @@ async function addGalleryImage(): Promise<void> {
 /** Parse a YouTube URL/id into workshop/videos.txt. */
 async function addGalleryVideo(url: string): Promise<void> {
   try {
-    const next = await AddWorkshopVideo(
-      workspaceId.value,
-      selectedId.value,
-      url,
-    );
+    const next = await AddWorkshopVideo(workspaceId.value, selectedId.value, url);
     if (next) listing.value = asListing(next);
   } catch (e) {
     toast.add({ title: errMsg(e), color: "error" });
@@ -283,9 +262,10 @@ async function addGalleryVideo(url: string): Promise<void> {
 /** Remove the active carousel extra. */
 async function removeMedia(item: MediaSlide): Promise<void> {
   try {
-    const next = item.kind === "youtube"
-      ? await RemoveWorkshopVideo(workspaceId.value, selectedId.value, item.id)
-      : await RemoveWorkshopPreview(workspaceId.value, selectedId.value, item.rel);
+    const next =
+      item.kind === "youtube"
+        ? await RemoveWorkshopVideo(workspaceId.value, selectedId.value, item.id)
+        : await RemoveWorkshopPreview(workspaceId.value, selectedId.value, item.rel);
     if (next) listing.value = asListing(next);
   } catch (e) {
     toast.add({ title: errMsg(e), color: "error" });
@@ -403,9 +383,7 @@ const ignoreSummary = computed(() => {
   return `${base} Extra patterns from Settings:\n${custom}`;
 });
 
-const error = computed(
-  () => loadError.value?.message ?? publishError.value?.message ?? "",
-);
+const error = computed(() => loadError.value?.message ?? publishError.value?.message ?? "");
 
 /** Match Go bumpAt for patch/minor button labels. */
 function bumpHint(v: string, kind: "patch" | "minor"): string {
@@ -436,14 +414,9 @@ function revokeAll(urls: Record<string, string>): void {
   for (const u of Object.values(urls)) URL.revokeObjectURL(u);
 }
 
-function previewSlide(
-  p: WorkshopPreview,
-  urls: Record<string, string>,
-): MediaSlide {
+function previewSlide(p: WorkshopPreview, urls: Record<string, string>): MediaSlide {
   const kind = p.kind === "youtube" ? "youtube" : "image";
-  const src = kind === "youtube"
-    ? `https://img.youtube.com/vi/${p.id}/mqdefault.jpg`
-    : (urls[p.abs] ?? "");
+  const src = kind === "youtube" ? `https://img.youtube.com/vi/${p.id}/mqdefault.jpg` : (urls[p.abs] ?? "");
   return { src, kind, rel: p.rel ?? "", abs: p.abs ?? "", id: p.id ?? "" };
 }
 
@@ -463,121 +436,93 @@ function errMsg(e: unknown): string {
         @select="selectedId = $event"
       />
       <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <UTabs
-          v-model="tab"
-          :items="tabItems"
-          :content="false"
-          variant="pill"
-          size="lg"
-          class="shrink-0 px-3 pt-2"
-        />
+        <UTabs v-model="tab" :items="tabItems" :content="false" variant="pill" size="lg" class="shrink-0 px-3 pt-2" />
         <div class="min-h-0 flex-1 overflow-auto p-3">
-          <UAlert
-            v-if="error"
-            color="error"
-            variant="subtle"
-            class="mb-3"
-            :description="error"
-          />
+          <UAlert v-if="error" color="error" variant="subtle" class="mb-3" :description="error" />
           <p v-if="isPending" class="text-sm text-muted">Loading listing…</p>
           <div v-else-if="listing" class="flex flex-col gap-3">
             <div v-show="tab === 'listing'" class="flex flex-col gap-3">
               <div class="grid items-stretch gap-3 lg:grid-cols-2">
-              <UCard
-                class="h-full"
-                :ui="{ root: 'flex h-full flex-col', body: 'flex-1' }"
-              >
-                <template #header>
-                  <span class="font-semibold">Listing</span>
-                </template>
-                <div class="flex flex-col gap-3">
-                  <div class="flex items-end justify-between gap-2">
-                    <UFormField label="Name" class="min-w-0 flex-1">
-                      <UInput v-model="listing.name" />
-                    </UFormField>
-                    <UButton
-                      label="Save listing"
-                      icon="i-lucide-save"
-                      size="sm"
-                      :loading="saving"
-                      @click="saveMut()"
-                    />
-                  </div>
-                  <div class="grid gap-3 sm:grid-cols-2">
-                    <UFormField
-                      label="Version"
-                      :description="`patch → ${patchNext} · minor → ${minorNext}`"
-                    >
-                      <UFieldGroup class="w-full">
-                        <UInput v-model="listing.version" class="w-full" />
-                        <UButton
-                          :label="`patch → ${patchNext}`"
-                          variant="outline"
-                          size="sm"
-                          @click="bumpMut('patch')"
-                        />
-                        <UButton
-                          :label="`minor → ${minorNext}`"
-                          variant="outline"
-                          size="sm"
-                          @click="bumpMut('minor')"
-                        />
-                      </UFieldGroup>
-                    </UFormField>
-                    <UFormField
-                      label="Supported version"
-                      description="Wildcard ok, e.g. 1.19.*"
-                    >
-                      <UInput v-model="listing.supportedVersion" />
-                    </UFormField>
-                  </div>
-                  <UFormField label="Tags">
-                    <UInputTags
-                      :model-value="listing.tags ?? []"
-                      placeholder="Add tag"
-                      @update:model-value="listing.tags = $event"
-                    />
-                  </UFormField>
-                  <UFormField
-                    label="Thumbnail"
-                    :help="listing.thumbnailRel || 'None'"
-                  >
-                    <div class="flex items-center gap-3">
-                      <img
-                        v-if="listingThumbUrl"
-                        :src="listingThumbUrl"
-                        alt=""
-                        class="size-24 shrink-0 rounded-sm object-cover"
-                      >
+                <UCard class="h-full" :ui="{ root: 'flex h-full flex-col', body: 'flex-1' }">
+                  <template #header>
+                    <span class="font-semibold">Listing</span>
+                  </template>
+                  <div class="flex flex-col gap-3">
+                    <div class="flex items-end justify-between gap-2">
+                      <UFormField label="Name" class="min-w-0 flex-1">
+                        <UInput v-model="listing.name" />
+                      </UFormField>
                       <UButton
-                        label="Choose image"
-                        icon="i-lucide-image"
-                        variant="outline"
+                        label="Save listing"
+                        icon="i-lucide-save"
                         size="sm"
-                        @click="browseThumb"
+                        :loading="saving"
+                        @click="saveMut()"
                       />
                     </div>
-                  </UFormField>
-                  <UFormField
-                    label="Description files"
-                    :description="`${listing.descMdRel} · ${listing.descBbRel}`"
-                  >
-                    <UButton
-                      label="Open in Settings"
-                      icon="i-lucide-settings"
-                      variant="outline"
-                      size="sm"
-                      :to="settingsModsTo"
-                    />
-                  </UFormField>
-                </div>
-              </UCard>
-              <WorkshopMediaCard
-                :items="mediaSlides"
-                @add-image="addGalleryImage"
-                @add-youtube="addGalleryVideo"
-                @remove="removeMedia"
-              />
+                    <div class="grid gap-3 sm:grid-cols-2">
+                      <UFormField label="Version" :description="`patch → ${patchNext} · minor → ${minorNext}`">
+                        <UFieldGroup class="w-full">
+                          <UInput v-model="listing.version" class="w-full" />
+                          <UButton
+                            :label="`patch → ${patchNext}`"
+                            variant="outline"
+                            size="sm"
+                            @click="bumpMut('patch')"
+                          />
+                          <UButton
+                            :label="`minor → ${minorNext}`"
+                            variant="outline"
+                            size="sm"
+                            @click="bumpMut('minor')"
+                          />
+                        </UFieldGroup>
+                      </UFormField>
+                      <UFormField label="Supported version" description="Wildcard ok, e.g. 1.19.*">
+                        <UInput v-model="listing.supportedVersion" />
+                      </UFormField>
+                    </div>
+                    <UFormField label="Tags">
+                      <UInputTags
+                        :model-value="listing.tags ?? []"
+                        placeholder="Add tag"
+                        @update:model-value="listing.tags = $event"
+                      />
+                    </UFormField>
+                    <UFormField label="Thumbnail" :help="listing.thumbnailRel || 'None'">
+                      <div class="flex items-center gap-3">
+                        <img
+                          v-if="listingThumbUrl"
+                          :src="listingThumbUrl"
+                          alt=""
+                          class="size-24 shrink-0 rounded-sm object-cover"
+                        />
+                        <UButton
+                          label="Choose image"
+                          icon="i-lucide-image"
+                          variant="outline"
+                          size="sm"
+                          @click="browseThumb"
+                        />
+                      </div>
+                    </UFormField>
+                    <UFormField label="Description files" :description="`${listing.descMdRel} · ${listing.descBbRel}`">
+                      <UButton
+                        label="Open in Settings"
+                        icon="i-lucide-settings"
+                        variant="outline"
+                        size="sm"
+                        :to="settingsModsTo"
+                      />
+                    </UFormField>
+                  </div>
+                </UCard>
+                <WorkshopMediaCard
+                  :items="mediaSlides"
+                  @add-image="addGalleryImage"
+                  @add-youtube="addGalleryVideo"
+                  @remove="removeMedia"
+                />
               </div>
               <UCard :ui="{ body: 'p-0 sm:p-0' }">
                 <template #header>
@@ -606,11 +551,7 @@ function errMsg(e: unknown): string {
                       base: 'px-4 py-3',
                     }"
                   >
-                    <UEditorToolbar
-                      :editor="editor"
-                      :items="descToolbar"
-                      class="border-b border-default px-2 py-1"
-                    />
+                    <UEditorToolbar :editor="editor" :items="descToolbar" class="border-b border-default px-2 py-1" />
                   </UEditor>
                 </div>
               </UCard>
@@ -644,15 +585,8 @@ function errMsg(e: unknown): string {
                     variant="subtle"
                     description="Steam client must be running as the Workshop owner. New items stay private until you set them Public on Workshop. Do not run a local copy and a Workshop subscribe of the same mod together."
                   />
-                  <UFormField
-                    label="Change note"
-                    help="Saved as changelog/<version>.bbcode and sent to Steam"
-                  >
-                    <UTextarea
-                      v-model="listing.changeNote"
-                      :rows="5"
-                      class="min-h-24 w-full font-mono text-sm"
-                    />
+                  <UFormField label="Change note" help="Saved as changelog/<version>.bbcode and sent to Steam">
+                    <UTextarea v-model="listing.changeNote" :rows="5" class="min-h-24 w-full font-mono text-sm" />
                   </UFormField>
                   <UFormField
                     label="Workshop item"
@@ -684,10 +618,7 @@ function errMsg(e: unknown): string {
                     variant="soft"
                     size="sm"
                   />
-                  <UFormField
-                    label="Upload exclusions"
-                    :description="ignoreSummary"
-                  >
+                  <UFormField label="Upload exclusions" :description="ignoreSummary">
                     <UButton
                       label="Open in Settings"
                       icon="i-lucide-settings"
@@ -723,9 +654,11 @@ function errMsg(e: unknown): string {
                     color="success"
                     variant="subtle"
                     :title="`Published ${publishResult.publishedFileId}`"
-                    :description="publishResult.needsLegalAgreement
-                      ? 'Steam needs the Workshop legal agreement accepted.'
-                      : 'Item is private on Workshop until you change visibility.'"
+                    :description="
+                      publishResult.needsLegalAgreement
+                        ? 'Steam needs the Workshop legal agreement accepted.'
+                        : 'Item is private on Workshop until you change visibility.'
+                    "
                   />
                   <UButton
                     v-if="publishResult?.legalUrl"
@@ -757,35 +690,28 @@ function errMsg(e: unknown): string {
                       @click="copyKind('md')"
                     />
                   </div>
-                  <p class="text-xs text-muted">
-                    Copy BBCode to paste into the launcher.
-                  </p>
+                  <p class="text-xs text-muted">Copy BBCode to paste into the launcher.</p>
                   <ol class="list-decimal space-y-1.5 ps-5 text-muted">
                     <li>Copy BBCode. Open Paradox Launcher yourself.</li>
                     <li v-if="isCk3">
-                      Folder not under Documents/Paradox Interactive/Crusader Kings
-                      III/mod/: CK3 needs a sibling Documents/…/mod/&lt;name&gt;.mod
-                      with path=. PMT does not write that pointer.
+                      Folder not under Documents/Paradox Interactive/Crusader Kings III/mod/: CK3 needs a sibling
+                      Documents/…/mod/&lt;name&gt;.mod with path=. PMT does not write that pointer.
                     </li>
                     <li v-else>
-                      Folder not under Documents/Paradox Interactive/&lt;Game&gt;/mod/:
-                      use Add more mods or move the folder. PMT does not write a
-                      pointer file.
+                      Folder not under Documents/Paradox Interactive/&lt;Game&gt;/mod/: use Add more mods or move the
+                      folder. PMT does not write a pointer file.
                     </li>
                     <li>Left: Mod library / installed mods. Top right: Upload Mod.</li>
                     <li>Choose this mod. Choose Paradox Mods (does not sync to Steam).</li>
                     <li>
-                      Paste BBCode. If updating, confirm the launcher fetched the
-                      live description, then replace if you want.
+                      Paste BBCode. If updating, confirm the launcher fetched the live description, then replace if you
+                      want.
                     </li>
                     <li>
-                      Drag thumbnail under the description (~900×500, png/jpg, 1MB).
-                      The on-disk Steam thumb is square and may not match this crop.
+                      Drag thumbnail under the description (~900×500, png/jpg, 1MB). The on-disk Steam thumb is square
+                      and may not match this crop.
                     </li>
-                    <li>
-                      Upload. Wait for verification; the site often strips line
-                      breaks/BBCode.
-                    </li>
+                    <li>Upload. Wait for verification; the site often strips line breaks/BBCode.</li>
                   </ol>
                 </div>
               </UCard>
@@ -809,26 +735,18 @@ function errMsg(e: unknown): string {
       <template #body>
         <form class="flex flex-col gap-3" @submit.prevent="insertImgFromPopup">
           <UFormField label="Image URL">
-            <UInput
-              v-model="imgPopupUrl"
-              placeholder="https://…"
-            />
+            <UInput v-model="imgPopupUrl" placeholder="https://…" />
           </UFormField>
           <img
             v-if="imgPopupPreview"
             :src="imgPopupUrl.trim()"
             alt=""
             class="max-h-48 w-full rounded-lg object-contain"
-          >
+          />
         </form>
       </template>
       <template #footer>
-        <UButton
-          label="Insert"
-          icon="i-lucide-image"
-          :disabled="!imgPopupPreview"
-          @click="insertImgFromPopup"
-        />
+        <UButton label="Insert" icon="i-lucide-image" :disabled="!imgPopupPreview" @click="insertImgFromPopup" />
       </template>
     </UModal>
   </div>

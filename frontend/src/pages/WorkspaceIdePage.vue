@@ -38,9 +38,7 @@ const { error, isPending } = useQuery({
     const rec = await GetIdeRoots(id);
     const roots = rec?.roots ?? [];
     if (!roots.length) {
-      throw new Error(
-        "No game, mod, or staging paths available for this workspace.",
-      );
+      throw new Error("No game, mod, or staging paths available for this workspace.");
     }
     await setWorkbenchRoots(roots, currentWorkbenchTheme(), {
       workspaceId: id,
@@ -68,10 +66,7 @@ const { error, isPending } = useQuery({
       />
       <span v-if="isPending" class="text-xs text-muted">Loading workbench…</span>
       <span v-if="error" class="text-xs text-error">{{ error.message }}</span>
-      <LanguageHealthStrip
-        v-if="workspaceId"
-        :workspace-id="workspaceId"
-      />
+      <LanguageHealthStrip v-if="workspaceId" :workspace-id="workspaceId" />
     </template>
   </WorkspaceToolBar>
 </template>

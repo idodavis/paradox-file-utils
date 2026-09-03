@@ -5,11 +5,7 @@
 import { computed, ref, shallowRef, watch, useTemplateRef } from "vue";
 import { useRoute } from "vue-router";
 import { useQuery } from "@pinia/colada";
-import {
-  getFacetedUniqueValues,
-  type ColumnFiltersState,
-  type RowSelectionState,
-} from "@tanstack/table-core";
+import { getFacetedUniqueValues, type ColumnFiltersState, type RowSelectionState } from "@tanstack/table-core";
 import type { TableColumn } from "@nuxt/ui";
 import { GetLocCoverage } from "@services/viewsservice";
 import type { LocIssueRow } from "@services/internal/views/models";
@@ -35,17 +31,19 @@ const columnFilters = shallowRef<ColumnFiltersState>([]);
 const selected = shallowRef<LocIssueRow | null>(null);
 const rowSelection = shallowRef<RowSelectionState>({});
 const originIds = ref<string[]>([]);
-const table = useTemplateRef<{ tableApi?: {
-  getColumn: (id: string) => {
-    getFilterValue: () => unknown
-    setFilterValue: (v: unknown) => void
-    getFacetedUniqueValues: () => Map<unknown, number>
-  } | undefined
-} }>("table");
+const table = useTemplateRef<{
+  tableApi?: {
+    getColumn: (id: string) =>
+      | {
+          getFilterValue: () => unknown;
+          setFilterValue: (v: unknown) => void;
+          getFacetedUniqueValues: () => Map<unknown, number>;
+        }
+      | undefined;
+  };
+}>("table");
 
-const liveMods = computed(() =>
-  ws.workspaceMods.filter((m) => !m.isBroken && m.path),
-);
+const liveMods = computed(() => ws.workspaceMods.filter((m) => !m.isBroken && m.path));
 const originItems = computed(() =>
   liveMods.value.map((m, i) => ({
     id: m.id,
@@ -83,9 +81,7 @@ const langItems = computed(() =>
   })),
 );
 
-const current = computed(
-  () => coverage.value.find((c) => c.language === lang.value) ?? null,
-);
+const current = computed(() => coverage.value.find((c) => c.language === lang.value) ?? null);
 
 const columns: TableColumn<LocIssueRow>[] = [
   { accessorKey: "kind", header: "Kind", filterFn: "equals" },
@@ -103,9 +99,7 @@ const columns: TableColumn<LocIssueRow>[] = [
 
 function setCol(id: string, value: unknown): void {
   const rest = columnFilters.value.filter((f) => f.id !== id);
-  columnFilters.value = value == null || value === ""
-    ? rest
-    : [...rest, { id, value }];
+  columnFilters.value = value == null || value === "" ? rest : [...rest, { id, value }];
 }
 function colString(id: string): string | undefined {
   const hit = columnFilters.value.find((f) => f.id === id);
@@ -182,14 +176,7 @@ function onRowSelect(_e: Event, row: { original: LocIssueRow; id: string }): voi
       storage-key="pmt-loc"
       class="relative! inset-auto! min-h-0 min-w-0 flex-1 overflow-hidden"
     >
-      <UDashboardPanel
-        id="loc-main"
-        resizable
-        :default-size="75"
-        :min-size="50"
-        :max-size="85"
-        class="min-h-0!"
-      >
+      <UDashboardPanel id="loc-main" resizable :default-size="75" :min-size="50" :max-size="85" class="min-h-0!">
         <UTable
           ref="table"
           class="h-full"
@@ -203,16 +190,15 @@ function onRowSelect(_e: Event, row: { original: LocIssueRow; id: string }): voi
           :get-row-id="locRowId"
           sticky="header"
           empty="No loc issues for this filter."
-          @update:column-filters="(v?: ColumnFiltersState) => { if (v) columnFilters = v }"
+          @update:column-filters="
+            (v?: ColumnFiltersState) => {
+              if (v) columnFilters = v;
+            }
+          "
           @select="onRowSelect"
         >
           <template #kind-cell="{ row }">
-            <UBadge
-              :color="kindColor(row.original.kind)"
-              variant="subtle"
-              size="xs"
-              :ui="PILL_UI"
-            >
+            <UBadge :color="kindColor(row.original.kind)" variant="subtle" size="xs" :ui="PILL_UI">
               {{ row.original.kind }}
             </UBadge>
           </template>
@@ -232,28 +218,18 @@ function onRowSelect(_e: Event, row: { original: LocIssueRow; id: string }): voi
           :rel="selected?.rel"
           :line="selected?.line"
         >
-          <template
-            v-if="selected && (selected.originName || selected.origin)"
-            #origin
-          >
+          <template v-if="selected && (selected.originName || selected.origin)" #origin>
             <OriginBadge
               :label="selected.originName || selected.origin || ''"
               :hex="originHexByOriginId(selected.origin ?? '')"
             />
           </template>
           <template v-if="selected" #badges>
-            <UBadge
-              :color="kindColor(selected.kind)"
-              variant="subtle"
-              size="xs"
-              :ui="PILL_UI"
-            >
+            <UBadge :color="kindColor(selected.kind)" variant="subtle" size="xs" :ui="PILL_UI">
               {{ selected.kind }}
             </UBadge>
           </template>
-          <p v-if="selected?.value" class="text-xs text-default">
-            “{{ selected.value }}”
-          </p>
+          <p v-if="selected?.value" class="text-xs text-default">“{{ selected.value }}”</p>
         </DetailPane>
       </UDashboardPanel>
     </UDashboardGroup>

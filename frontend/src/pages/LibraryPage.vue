@@ -70,11 +70,7 @@ const attachItems = computed(() =>
     value: w.id,
   })),
 );
-const attachGameId = computed(
-  () =>
-    ctx.workspaces.find((w) => w.id === attachWsId.value)?.gameId
-    ?? ctx.currentGameId,
-);
+const attachGameId = computed(() => ctx.workspaces.find((w) => w.id === attachWsId.value)?.gameId ?? ctx.currentGameId);
 
 /** Open New Mod modal when a workspace exists; otherwise start the wizard. */
 function createMod(): void {
@@ -136,18 +132,8 @@ onActivated(() => {
         <p class="text-sm text-muted">Manage your modding workspaces</p>
       </div>
       <div v-if="!showWizardPrompt && !ctx.loading" class="flex gap-2">
-        <UButton
-          label="New Mod"
-          icon="i-lucide-package-plus"
-          color="neutral"
-          variant="outline"
-          @click="createMod"
-        />
-        <UButton
-          label="New Workspace"
-          icon="i-lucide-plus"
-          @click="createWorkspace"
-        />
+        <UButton label="New Mod" icon="i-lucide-package-plus" color="neutral" variant="outline" @click="createMod" />
+        <UButton label="New Workspace" icon="i-lucide-plus" @click="createWorkspace" />
       </div>
     </div>
 
@@ -165,23 +151,13 @@ onActivated(() => {
       >
         <template #actions>
           <UButton label="Create Workspace" icon="i-lucide-plus" @click="createWorkspace" />
-          <UButton
-            label="New Mod"
-            icon="i-lucide-package-plus"
-            color="neutral"
-            variant="outline"
-            @click="createMod"
-          />
+          <UButton label="New Mod" icon="i-lucide-package-plus" color="neutral" variant="outline" @click="createMod" />
         </template>
       </UEmpty>
     </div>
 
     <template v-else>
-      <div
-        v-if="ctx.activeWorkspace"
-        class="mb-4 cursor-pointer"
-        @click="openWorkspace(ctx.activeWorkspace)"
-      >
+      <div v-if="ctx.activeWorkspace" class="mb-4 cursor-pointer" @click="openWorkspace(ctx.activeWorkspace)">
         <UCard class="transition-shadow hover:shadow-md">
           <template #header>
             <div class="flex items-center justify-between">
@@ -204,11 +180,7 @@ onActivated(() => {
                   variant="ghost"
                   @click.stop="askDelete(ctx.activeWorkspace, $event)"
                 />
-                <UBadge
-                  color="neutral"
-                  variant="outline"
-                  class="inline-flex items-center gap-1"
-                >
+                <UBadge color="neutral" variant="outline" class="inline-flex items-center gap-1">
                   <GameIcon :game-id="ctx.activeWorkspace.gameId" />
                   {{ ctx.shortName(ctx.activeWorkspace.gameId) }}
                 </UBadge>
@@ -217,29 +189,18 @@ onActivated(() => {
           </template>
           <div class="text-sm text-muted">
             <p>{{ ctx.workspaceMods.length }} mod(s) attached</p>
-            <LanguageHealthStrip
-              class="mt-2"
-              :workspace-id="ctx.activeWorkspace.id"
-            />
+            <LanguageHealthStrip class="mt-2" :workspace-id="ctx.activeWorkspace.id" />
           </div>
         </UCard>
       </div>
 
       <div v-for="section in sections" :key="section.gameId" class="mb-6">
-        <h2
-          class="mb-2 flex items-center gap-1.5 text-sm font-semibold
-            tracking-wide text-muted uppercase"
-        >
+        <h2 class="mb-2 flex items-center gap-1.5 text-sm font-semibold tracking-wide text-muted uppercase">
           <GameIcon :game-id="section.gameId" size="md" />
           {{ section.label }}
         </h2>
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <div
-            v-for="ws in section.workspaces"
-            :key="ws.id"
-            class="cursor-pointer"
-            @click="openWorkspace(ws)"
-          >
+          <div v-for="ws in section.workspaces" :key="ws.id" class="cursor-pointer" @click="openWorkspace(ws)">
             <UCard
               class="h-full transition-shadow hover:shadow-md"
               :class="{ 'ring-2 ring-primary': ws.id === ctx.activeWorkspaceId }"
@@ -262,12 +223,7 @@ onActivated(() => {
                       variant="ghost"
                       @click.stop="askDelete(ws, $event)"
                     />
-                    <UBadge
-                      color="neutral"
-                      variant="outline"
-                      size="xs"
-                      class="inline-flex items-center gap-1"
-                    >
+                    <UBadge color="neutral" variant="outline" size="xs" class="inline-flex items-center gap-1">
                       <GameIcon :game-id="ws.gameId" />
                       {{ ctx.shortName(ws.gameId) }}
                     </UBadge>
@@ -284,22 +240,12 @@ onActivated(() => {
       </div>
     </template>
 
-    <div
-      v-if="!ctx.loading"
-      class="mt-auto space-y-2 border-t border-default pt-4"
-    >
+    <div v-if="!ctx.loading" class="mt-auto space-y-2 border-t border-default pt-4">
       <p class="text-sm font-medium">Reset all PMT data</p>
       <p class="text-sm text-muted">
-        Workspaces, install records, and caches. Does not delete mods or game
-        files on disk.
+        Workspaces, install records, and caches. Does not delete mods or game files on disk.
       </p>
-      <UButton
-        label="Reset all data"
-        color="error"
-        variant="outline"
-        size="sm"
-        @click="resetOpen = true"
-      />
+      <UButton label="Reset all data" color="error" variant="outline" size="sm" @click="resetOpen = true" />
     </div>
 
     <RemoveWorkspaceModal
@@ -319,11 +265,7 @@ onActivated(() => {
           <UFormField v-if="attachItems.length > 1" label="Add to workspace">
             <USelect v-model="attachWsId" :items="attachItems" value-key="value" />
           </UFormField>
-          <CreateModForm
-            v-if="attachWsId"
-            :game-id="attachGameId"
-            @created="onModCreated"
-          />
+          <CreateModForm v-if="attachWsId" :game-id="attachGameId" @created="onModCreated" />
         </div>
       </template>
       <template #footer>
@@ -331,15 +273,15 @@ onActivated(() => {
           label="New workspace…"
           color="neutral"
           variant="outline"
-          @click="newModOpen = false; void router.push({ name: 'wizard', query: { newMod: '1' } })"
+          @click="
+            newModOpen = false;
+            void router.push({ name: 'wizard', query: { newMod: '1' } });
+          "
         />
       </template>
     </UModal>
 
-    <UModal
-      v-model:open="resetOpen"
-      title="Reset all Paradox Modding Tools data?"
-    >
+    <UModal v-model:open="resetOpen" title="Reset all Paradox Modding Tools data?">
       <template #body>
         <ul class="list-disc space-y-1 ps-4 text-sm text-muted">
           <li>Every workspace is removed from PMT.</li>
@@ -349,22 +291,13 @@ onActivated(() => {
           <li>Theme, UI scale, and editor font are kept.</li>
           <li>Mod folders and Steam/game installs on disk are not deleted.</li>
         </ul>
-        <UFormField
-          class="mt-4"
-          label="Type RESET to confirm"
-        >
+        <UFormField class="mt-4" label="Type RESET to confirm">
           <UInput v-model="resetTyped" placeholder="RESET" />
         </UFormField>
       </template>
       <template #footer="{ close }">
         <UButton label="Cancel" color="neutral" variant="outline" @click="close" />
-        <UButton
-          label="Reset"
-          color="error"
-          :disabled="!canReset"
-          :loading="resetting"
-          @click="resetData()"
-        />
+        <UButton label="Reset" color="error" :disabled="!canReset" :loading="resetting" @click="resetData()" />
       </template>
     </UModal>
   </div>

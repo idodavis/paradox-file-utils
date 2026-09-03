@@ -123,36 +123,38 @@ async function submit(): Promise<void> {
         :maxrows="6"
       />
     </UFormField>
-    <FileSelector
-      v-model="parent"
-      mode="folder"
-      label="Parent folder"
-      dialog-title="Select folder for the new mod"
-    />
+    <UFormField label="Parent folder">
+      <FileSelector
+        v-model="parent"
+        mode="folder"
+        dialog-title="Select folder for the new mod"
+      />
+    </UFormField>
     <p v-if="preview" class="text-xs text-muted">
       Creates {{ preview }} (folder name is made filesystem-safe).
     </p>
     <UFormField label="Loc language">
       <USelect v-model="lang" :items="LOC_LANG_ITEMS" value-key="value" />
     </UFormField>
-    <div class="flex items-end gap-2">
-      <FileSelector
-        v-model="thumbnailSrc"
-        mode="file"
-        label="Thumbnail"
-        dialog-title="Select thumbnail"
-        file-filter="*.png; *.jpg; *.jpeg; *.svg"
-        class="flex-1"
-      />
-      <UButton
-        v-if="thumbnailSrc"
-        label="Clear"
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        @click="thumbnailSrc = ''"
-      />
-    </div>
+    <UFormField label="Thumbnail">
+      <div class="flex items-center gap-2">
+        <FileSelector
+          v-model="thumbnailSrc"
+          mode="file"
+          dialog-title="Select thumbnail"
+          file-filter="*.png; *.jpg; *.jpeg; *.svg"
+          class="min-w-0 flex-1"
+        />
+        <UButton
+          v-if="thumbnailSrc"
+          label="Clear"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          @click="thumbnailSrc = ''"
+        />
+      </div>
+    </UFormField>
     <img
       v-if="thumbPreview"
       :src="thumbPreview"

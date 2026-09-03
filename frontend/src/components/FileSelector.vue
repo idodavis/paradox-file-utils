@@ -1,69 +1,24 @@
 <script lang="ts">
-/**
- * Native Wails v3 file/folder dialogs used by the wizard and this selector.
- */
-import { Dialogs } from "@wailsio/runtime";
-
-/** Open a folder picker. Cancel yields an empty path. */
-export async function pickDirectory(title: string): Promise<string> {
-  const path = await Dialogs.OpenFile({
-    Title: title,
-    CanChooseDirectories: true,
-    CanChooseFiles: false,
-  });
-  return typeof path === "string" ? path : "";
-}
-
-/** Open a file picker. Cancel yields an empty path. */
-export async function pickFile(title: string, filter: string): Promise<string> {
-  const path = await Dialogs.OpenFile({
-    Title: title,
-    CanChooseDirectories: false,
-    CanChooseFiles: true,
-    Filters: filter ? [{ DisplayName: filter, Pattern: filter }] : undefined,
-  });
-  return typeof path === "string" ? path : "";
-}
-
-/** Open a save-file picker. Cancel yields an empty path. */
-export async function pickSave(title: string, filter: string): Promise<string> {
-  const dialogs = Dialogs as typeof Dialogs & {
-    SaveFile?: (opts: {
-      Title: string;
-      Filters?: { DisplayName: string; Pattern: string }[];
-    }) => Promise<unknown>;
-  };
-  if (typeof dialogs.SaveFile !== "function") {
-    return pickFile(title, filter);
-  }
-  const path = await dialogs.SaveFile({
-    Title: title,
-    Filters: filter ? [{ DisplayName: filter, Pattern: filter }] : undefined,
-  });
-  return typeof path === "string" ? path : "";
-}
+export { pickDirectory, pickFile, pickSave } from "../lib/nativeDialog";
 </script>
 
 <script setup lang="ts">
 /**
- * File/folder selector used by pages that need native Wails dialogs.
+ * Read-only path input + Browse button. Wrap in UFormField for label/description.
  */
+import { pickDirectory, pickFile } from "../lib/nativeDialog";
+
 const selectedPath = defineModel<string>({ required: true });
 
 const props = withDefaults(
   defineProps<{
-    label: string;
     dialogTitle: string;
     mode: "file" | "folder";
     placeholder?: string;
-    hint?: string;
-    description?: string;
     fileFilter?: string;
   }>(),
   {
     placeholder: "",
-    hint: "",
-    description: "",
     fileFilter: "*.txt; *.json",
   },
 );
@@ -74,23 +29,17 @@ async function browse(): Promise<void> {
     props.mode === "folder"
       ? await pickDirectory(props.dialogTitle)
       : await pickFile(props.dialogTitle, props.fileFilter);
-  selectedPath.value = path;
+  if (path) selectedPath.value = path;
 }
 </script>
 
 <template>
-  <UFormField
-    :label="label"
-    :description="description || undefined"
-    :help="hint || undefined"
-  >
-    <UFieldGroup class="w-full">
-      <UInput v-model="selectedPath" readonly :placeholder="placeholder" class="w-full" />
-      <UButton
-        :icon="mode === 'folder' ? 'i-lucide-folder-open' : 'i-lucide-file-text'"
-        label="Browse"
-        @click="browse"
-      />
-    </UFieldGroup>
-  </UFormField>
+  <UFieldGroup class="w-full">
+    <UInput v-model="selectedPath" readonly :placeholder="placeholder" class="w-full" />
+    <UButton
+      :icon="mode === 'folder' ? 'i-lucide-folder-open' : 'i-lucide-file-text'"
+      label="Browse"
+      @click="browse"
+    />
+  </UFieldGroup>
 </template>

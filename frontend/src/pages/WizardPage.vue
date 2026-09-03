@@ -67,9 +67,7 @@ const installItems = computed(() =>
   })),
 );
 
-const selectedInstall = computed(() =>
-  installs.value.find((i) => i.id === selectedInstallId.value),
-);
+const selectedInstall = computed(() => installs.value.find((i) => i.id === selectedInstallId.value));
 const supportedVersion = computed(() => {
   const i = selectedInstall.value;
   if (!i) return "";
@@ -79,12 +77,18 @@ const supportedVersion = computed(() => {
 
 const canContinue = computed(() => {
   switch (step.value) {
-    case 1: return !!selectedGame.value;
-    case 2: return !!selectedInstallId.value;
-    case 3: return wantsNewMod.value ? modEntries.value.length > 0 : true;
-    case 4: return !!workspaceName.value.trim();
-    case 5: return !!selectedInstallId.value;
-    default: return false;
+    case 1:
+      return !!selectedGame.value;
+    case 2:
+      return !!selectedInstallId.value;
+    case 3:
+      return wantsNewMod.value ? modEntries.value.length > 0 : true;
+    case 4:
+      return !!workspaceName.value.trim();
+    case 5:
+      return !!selectedInstallId.value;
+    default:
+      return false;
   }
 });
 
@@ -111,9 +115,7 @@ const {
 
 const installs = computed(() => installPack.value?.installs ?? []);
 const detectedInstalls = computed(() => installPack.value?.detected ?? []);
-const savedInstallPaths = computed(() =>
-  installs.value.map((i) => i.path).filter(Boolean),
-);
+const savedInstallPaths = computed(() => installs.value.map((i) => i.path).filter(Boolean));
 
 watch(installs, (list) => {
   const keep = selectedInstallId.value;
@@ -203,8 +205,12 @@ function onStep(v: number | string | undefined): void {
   step.value = v;
 }
 
-function nextStep(): void { onStep(step.value + 1); }
-function prevStep(): void { step.value--; }
+function nextStep(): void {
+  onStep(step.value + 1);
+}
+function prevStep(): void {
+  step.value--;
+}
 
 const {
   mutateAsync: createWorkspace,
@@ -219,20 +225,11 @@ const {
       step.value = 2;
       throw new Error("Select or add a game install before creating.");
     }
-    const ws = await CreateWorkspace(
-      selectedGame.value,
-      workspaceName.value.trim(),
-      selectedInstallId.value,
-    );
+    const ws = await CreateWorkspace(selectedGame.value, workspaceName.value.trim(), selectedInstallId.value);
     if (!ws) throw new Error("Failed to create workspace");
     await SetWorkspaceLocLang(ws.id, defaultLocLang.value);
     if (stagingDir.value.trim()) {
-      await UpdateWorkspace(
-        ws.id,
-        ws.name,
-        ws.installId,
-        stagingDir.value.trim(),
-      );
+      await UpdateWorkspace(ws.id, ws.name, ws.installId, stagingDir.value.trim());
     }
     await EnsureStagingDir(ws.id);
     for (const mod of modEntries.value) {
@@ -246,12 +243,7 @@ const {
 });
 
 const busy = computed(
-  () =>
-    installsPending.value ||
-    adding.value ||
-    savingVersion.value ||
-    deleting.value ||
-    creating.value,
+  () => installsPending.value || adding.value || savingVersion.value || deleting.value || creating.value,
 );
 const error = computed(
   () =>
@@ -270,8 +262,7 @@ const error = computed(
       <div class="w-full" :class="step === 2 ? 'max-w-4xl' : 'max-w-2xl'">
         <h1 class="mb-6 text-center text-xl font-bold">Create Workspace</h1>
         <UAlert v-if="error" color="error" variant="subtle" :description="error" class="mb-4" />
-        <UStepper :model-value="step" :items="stepItems" class="mb-6"
-          @update:model-value="onStep" />
+        <UStepper :model-value="step" :items="stepItems" class="mb-6" @update:model-value="onStep" />
 
         <UCard>
           <template v-if="step === 1">
@@ -284,14 +275,9 @@ const error = computed(
           <template v-else-if="step === 2">
             <div class="space-y-4">
               <h2 class="font-semibold">Game Install</h2>
-              <p class="text-sm text-muted">
-                Pick a saved install, or draft one on the right and click Add install.
-              </p>
+              <p class="text-sm text-muted">Pick a saved install, or draft one on the right and click Add install.</p>
               <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
-                <UCard
-                  title="Added installs"
-                  description="These are saved. Select one before continuing."
-                >
+                <UCard title="Added installs" description="These are saved. Select one before continuing.">
                   <div class="space-y-4">
                     <URadioGroup
                       v-if="installs.length"
@@ -305,12 +291,7 @@ const error = computed(
                       <UFormField label="Version pin">
                         <div class="flex gap-2">
                           <UInput v-model="draftVersion" placeholder="latest" />
-                          <UButton
-                            label="latest"
-                            size="xs"
-                            variant="outline"
-                            @click="draftVersion = 'latest'"
-                          />
+                          <UButton label="latest" size="xs" variant="outline" @click="draftVersion = 'latest'" />
                           <UButton
                             label="Save"
                             size="xs"
@@ -322,15 +303,14 @@ const error = computed(
                       </UFormField>
                       <p class="text-xs text-muted">
                         <template v-if="selectedInstall.versionDetected">
-                          detected: {{ selectedInstall.versionDetected }} from
-                          launcher/launcher-settings.json
+                          detected: {{ selectedInstall.versionDetected }} from launcher/launcher-settings.json
                         </template>
                         <template v-else>no file — default latest, pin optional</template>
                       </p>
                       <p class="text-xs text-muted">
-                        {{ selectedInstall.scannedAt
-                          ? `cache ready (${selectedInstall.scannedAt})`
-                          : "cache not scanned" }}
+                        {{
+                          selectedInstall.scannedAt ? `cache ready (${selectedInstall.scannedAt})` : "cache not scanned"
+                        }}
                       </p>
                       <UButton
                         label="Delete"
@@ -367,9 +347,7 @@ const error = computed(
                 title="Creating a new mod"
                 description="Add at least one new or existing mod folder, then continue."
               />
-              <p v-else class="text-sm text-muted">
-                Add one or more mod folders to include in this workspace.
-              </p>
+              <p v-else class="text-sm text-muted">Add one or more mod folders to include in this workspace.</p>
               <div ref="wizardModsEl" class="space-y-2">
                 <div
                   v-for="(mod, idx) in modEntries"
@@ -393,24 +371,25 @@ const error = computed(
                       @click="removeModPath(idx)"
                     />
                   </div>
-                  <div class="flex items-end gap-2">
-                    <FileSelector
-                      v-model="mod.thumbnail"
-                      mode="file"
-                      label="Thumbnail"
-                      dialog-title="Select thumbnail"
-                      file-filter="*.png; *.jpg; *.jpeg; *.svg"
-                      class="flex-1"
-                    />
-                    <UButton
-                      v-if="mod.thumbnail"
-                      label="Clear"
-                      size="xs"
-                      color="neutral"
-                      variant="ghost"
-                      @click="mod.thumbnail = ''"
-                    />
-                  </div>
+                  <UFormField label="Thumbnail" class="flex-1">
+                    <div class="flex items-end gap-2">
+                      <FileSelector
+                        v-model="mod.thumbnail"
+                        mode="file"
+                        dialog-title="Select thumbnail"
+                        file-filter="*.png; *.jpg; *.jpeg; *.svg"
+                        class="min-w-0 flex-1"
+                      />
+                      <UButton
+                        v-if="mod.thumbnail"
+                        label="Clear"
+                        size="xs"
+                        color="neutral"
+                        variant="ghost"
+                        @click="mod.thumbnail = ''"
+                      />
+                    </div>
+                  </UFormField>
                 </div>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -462,8 +441,9 @@ const error = computed(
               <p class="text-sm text-muted">
                 Where merged/patched files are staged. Leave empty for the default location.
               </p>
-              <FileSelector v-model="stagingDir" mode="folder" label="Staging dir"
-                dialog-title="Select staging folder" />
+              <UFormField label="Staging dir">
+                <FileSelector v-model="stagingDir" mode="folder" dialog-title="Select staging folder" />
+              </UFormField>
             </div>
           </template>
 
@@ -471,12 +451,7 @@ const error = computed(
             <div class="flex justify-between">
               <UButton v-if="step > 1" label="Back" variant="outline" @click="prevStep" />
               <div v-else />
-              <UButton
-                v-if="step < 5"
-                label="Continue"
-                :disabled="!canContinue"
-                @click="nextStep"
-              />
+              <UButton v-if="step < 5" label="Continue" :disabled="!canContinue" @click="nextStep" />
               <UButton
                 v-else
                 label="Create Workspace"
@@ -489,12 +464,7 @@ const error = computed(
         </UCard>
 
         <div class="mt-4 flex justify-center">
-          <UButton
-            label="Cancel"
-            variant="ghost"
-            color="neutral"
-            @click="router.replace({ name: 'library' })"
-          />
+          <UButton label="Cancel" variant="ghost" color="neutral" @click="router.replace({ name: 'library' })" />
         </div>
       </div>
     </div>

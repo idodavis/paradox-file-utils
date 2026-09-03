@@ -23,9 +23,13 @@ const { data: downloadsDir } = useQuery({
   key: () => ["downloads-dir"],
   query: async () => (await GetUserDownloadsDir()) ?? "",
 });
-watch(downloadsDir, (d) => {
-  if (d && !outputDir.value) outputDir.value = d;
-}, { immediate: true });
+watch(
+  downloadsDir,
+  (d) => {
+    if (d && !outputDir.value) outputDir.value = d;
+  },
+  { immediate: true },
+);
 
 const mergeOptions = computed<MergerOptions>(() => ({
   addAdditionalEntries: true,
@@ -51,9 +55,7 @@ const {
   mutation: () => Merge(previewItems.value ?? [], mergeOptions.value),
 });
 
-const error = computed(
-  () => previewError.value?.message ?? mergeError.value?.message ?? "",
-);
+const error = computed(() => previewError.value?.message ?? mergeError.value?.message ?? "");
 
 /** Run preview to find matching files. */
 function runPreview(): void {
@@ -72,12 +74,15 @@ async function reviewItem(item: PreviewItem): Promise<void> {
   await startMergeOverlay({
     files: [item.pathA, item.pathB, item.outputPath],
     label: "Back to Merge",
-    back: () => { void router.push({ name: "tools-merge" }); },
-    open: () => openMergeEditor({
-      input1: item.pathA,
-      input2: item.pathB,
-      result: item.outputPath || item.pathA,
-    }),
+    back: () => {
+      void router.push({ name: "tools-merge" });
+    },
+    open: () =>
+      openMergeEditor({
+        input1: item.pathA,
+        input2: item.pathB,
+        result: item.outputPath || item.pathA,
+      }),
   });
 }
 
@@ -99,40 +104,24 @@ async function runMerge(): Promise<void> {
     <div class="mx-auto w-full max-w-4xl space-y-4">
       <div>
         <h1 class="text-xl font-bold">Ad-hoc Merge</h1>
-        <p class="text-sm text-muted">
-          Merge two paths; manual mode opens the merge editor
-        </p>
+        <p class="text-sm text-muted">Merge two paths; manual mode opens the merge editor</p>
       </div>
 
-      <UAlert
-        v-if="error"
-        color="error"
-        variant="subtle"
-        :description="error"
-      />
+      <UAlert v-if="error" color="error" variant="subtle" :description="error" />
 
       <UCard>
         <div class="grid gap-4 md:grid-cols-2">
-          <FileSelector
-            v-model="pathA"
-            mode="folder"
-            label="Path A"
-            dialog-title="Select folder A"
-          />
-          <FileSelector
-            v-model="pathB"
-            mode="folder"
-            label="Path B"
-            dialog-title="Select folder B"
-          />
+          <UFormField label="Path A">
+            <FileSelector v-model="pathA" mode="folder" dialog-title="Select folder A" />
+          </UFormField>
+          <UFormField label="Path B">
+            <FileSelector v-model="pathB" mode="folder" dialog-title="Select folder B" />
+          </UFormField>
         </div>
         <div class="mt-4">
-          <FileSelector
-            v-model="outputDir"
-            mode="folder"
-            label="Output directory"
-            dialog-title="Select output folder"
-          />
+          <UFormField label="Output directory">
+            <FileSelector v-model="outputDir" mode="folder" dialog-title="Select output folder" />
+          </UFormField>
         </div>
         <div class="mt-4 flex items-center justify-between">
           <USwitch v-model="manualMode" label="Manual conflict resolution" />
@@ -144,12 +133,7 @@ async function runMerge(): Promise<void> {
               :disabled="!pathA || !pathB || !outputDir"
               @click="runPreview"
             />
-            <UButton
-              label="Merge"
-              :loading="merging"
-              :disabled="!(previewItems ?? []).length"
-              @click="runMerge"
-            />
+            <UButton label="Merge" :loading="merging" :disabled="!(previewItems ?? []).length" @click="runMerge" />
             <UButton
               label="Cancel"
               color="neutral"
@@ -163,33 +147,14 @@ async function runMerge(): Promise<void> {
 
       <UCard v-if="(previewItems ?? []).length" :ui="{ body: 'max-h-48 overflow-auto' }">
         <template #header>
-          <span class="font-semibold">
-            {{ (previewItems ?? []).length }} file(s) to merge
-          </span>
+          <span class="font-semibold"> {{ (previewItems ?? []).length }} file(s) to merge </span>
         </template>
         <div class="space-y-1 text-sm">
-          <div
-            v-for="item in previewItems ?? []"
-            :key="item.relPath"
-            class="flex items-center justify-between gap-2"
-          >
+          <div v-for="item in previewItems ?? []" :key="item.relPath" class="flex items-center justify-between gap-2">
             <span class="truncate">{{ item.relPath }}</span>
             <div class="flex shrink-0 items-center gap-1">
-              <UBadge
-                v-if="item.wouldOverwrite"
-                color="warning"
-                variant="subtle"
-                size="xs"
-              >
-                Overwrite
-              </UBadge>
-              <UButton
-                v-if="manualMode"
-                label="Merge"
-                size="xs"
-                variant="outline"
-                @click="reviewItem(item)"
-              />
+              <UBadge v-if="item.wouldOverwrite" color="warning" variant="subtle" size="xs"> Overwrite </UBadge>
+              <UButton v-if="manualMode" label="Merge" size="xs" variant="outline" @click="reviewItem(item)" />
             </div>
           </div>
         </div>
