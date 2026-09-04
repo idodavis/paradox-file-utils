@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/parser/loc"
@@ -169,13 +170,9 @@ func modDeclaresNamespace(s *session.Session, ns string) bool {
 	if ns == "" {
 		return false
 	}
-	for _, d := range s.FindDefs(ns+".", 8, true, false) {
-		if game.CanonicalKind(d.Kind) == "event" &&
-			strings.HasPrefix(d.Key, ns+".") {
-			return true
-		}
-	}
-	return false
+	return s.ResolveMatching(ns, func(d catalog.Def) bool {
+		return game.CanonicalKind(d.Kind) == "namespace"
+	}) != nil
 }
 
 func descriptorDiags(s *session.Session, path string) []Diagnostic {

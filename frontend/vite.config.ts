@@ -11,7 +11,23 @@ import path from "path";
 export default defineConfig({
   plugins: [
     vue(),
-    ui({ colorMode: true }),
+    ui({
+      colorMode: true,
+      theme: {
+        colors: [
+          "primary",
+          "secondary",
+          "tertiary",
+          "success",
+          "info",
+          "warning",
+          "error",
+        ],
+      },
+      ui: {
+        colors: { tertiary: "stone" },
+      },
+    }),
     wails("./bindings"),
     tailwindcss(),
     {

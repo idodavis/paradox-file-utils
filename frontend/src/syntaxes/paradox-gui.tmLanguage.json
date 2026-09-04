@@ -15,7 +15,8 @@
   "repository": {
     "comment": {
       "name": "comment.line.number-sign.paradox-gui",
-      "match": "#.*$"
+      "begin": "#",
+      "end": "$"
     },
     "string": {
       "name": "string.quoted.double.paradox-gui",

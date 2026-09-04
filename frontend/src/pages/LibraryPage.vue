@@ -277,8 +277,8 @@ function modHex(mod: WorkspaceMod, index: number): string {
     <div v-if="!ctx.loading" class="mt-auto space-y-2 border-t border-default pt-4">
       <p class="text-sm font-medium">Reset all PMT data</p>
       <p class="text-sm text-muted">
-        Workspaces, install records, PMT staging folders, and caches. Does not
-        delete mods or game files on disk.
+        Workspaces, install records, leftover folders under the PMT config tree,
+        and caches. Does not delete mods or game files on disk.
       </p>
       <UButton label="Reset all data" color="error" variant="outline" size="sm" @click="resetOpen = true" />
     </div>
@@ -322,8 +322,7 @@ function modHex(mod: WorkspaceMod, index: number): string {
           <li>Every workspace is removed from PMT.</li>
           <li>You must re-add game installs.</li>
           <li>The language cache is wiped; the next open rescans vanilla.</li>
-          <li>PMT staging folders are deleted.</li>
-          <li>Patch history is gone.</li>
+          <li>Leftover folders under the PMT config tree are deleted.</li>
           <li>Theme, UI scale, and editor font are kept.</li>
           <li>Mod folders and Steam/game installs on disk are not deleted.</li>
         </ul>

@@ -29,17 +29,10 @@ export function GetEventGraph(workspaceID: string, params: views$0.EventGraphPar
 }
 
 /**
- * GetLocCoverage returns per-language localization health for workspace mods.
+ * GetHealth returns grouped compatibility and loc rows for Workspace Health.
  */
-export function GetLocCoverage(workspaceID: string): $CancellablePromise<views$0.LocCoverage[] | null> {
-    return $Call.ByID(475981069, workspaceID);
-}
-
-/**
- * GetOverrides returns FIOS/LIOS override rows for the conflict monitor.
- */
-export function GetOverrides(workspaceID: string): $CancellablePromise<views$0.OverrideRow[] | null> {
-    return $Call.ByID(1502410668, workspaceID);
+export function GetHealth(workspaceID: string, order: string[] | null): $CancellablePromise<views$0.HealthReport> {
+    return $Call.ByID(1332524529, workspaceID, order);
 }
 
 /**

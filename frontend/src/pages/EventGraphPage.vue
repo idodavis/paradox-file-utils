@@ -191,7 +191,31 @@ watch(workspaceId, () => {
   namespace.value = undefined;
   selectedId.value = "";
   expand.value = [];
+  applyGraphTargetFromQuery();
 });
+watch(
+  () => [queryStr(route.query.root), queryStr(route.query.namespace)] as const,
+  () => applyGraphTargetFromQuery(),
+  { immediate: true },
+);
+
+/** String query param, or empty when missing / repeated. */
+function queryStr(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+/** IDE hover deep-link: always set namespace from the id prefix. */
+function applyGraphTargetFromQuery(): void {
+  const rootId = queryStr(route.query.root);
+  if (!rootId) return;
+  const qns = queryStr(route.query.namespace);
+  const dot = rootId.indexOf(".");
+  const ns = qns || (dot > 0 ? rootId.slice(0, dot) : "");
+  namespace.value = ns || undefined;
+  root.value = rootId;
+  selectedId.value = rootId;
+  expand.value = [];
+}
 </script>
 
 <template>

@@ -29,6 +29,8 @@ import type {
 } from "@services/internal/lsp/models";
 import { originHexByOriginId } from "./rootDecorations";
 
+const OPEN_EVENT_GRAPH = "pmt.openInEventGraph";
+
 const LANGS = ["paradox", "paradox-gui", "paradox-loc", "paradox-info", "paradox-mod"];
 
 function pathOf(doc: vscode.TextDocument): string {
@@ -100,9 +102,7 @@ function withDoc(text: string): vscode.MarkdownString {
 
 /** One Markdown card: header, hint/docs, values/body, usage. */
 function hoverCardMarkdown(h: HoverResult): string {
-  const kind = h.kind ? `**${h.kind}**` : "";
-  const key = h.key ? ` \`${h.key}\`` : "";
-  const parts = [`${kind}${key}`.trim()];
+  const parts = [hoverCardHeader(h)];
   if (h.hint) parts.push(h.owner ? `${h.hint} of ${h.owner}` : h.hint);
   if (h.docs) parts.push(h.docs);
   const quote = hoverValuesText(h) || h.body;
@@ -112,11 +112,27 @@ function hoverCardMarkdown(h: HoverResult): string {
         .trim()
         .split("\n")
         .map((l) => `> ${l}`)
-        .join("\n"),
+        .join("\n>\n"),
     );
   }
   if (h.usage) parts.push("```\n" + h.usage.trim() + "\n```");
   return parts.join("\n\n");
+}
+
+/** Kind + key; overlay label is a second span so hover CSS can pin it right. */
+function hoverCardHeader(h: HoverResult): string {
+  const kindMd = h.kind ? `**${h.kind}**` : "";
+  const keyMd = h.key ? ` \`${h.key}\`` : "";
+  const leftMd = `${kindMd}${keyMd}`.trim();
+  if (!h.vanillaPath) return leftMd;
+  const raw = originHexByOriginId(h.origin || "");
+  const hex = /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : "#5B9A8B";
+  const kind = h.kind ? `<b>${escHtml(h.kind)}</b>` : "";
+  const key = h.key ? ` <code>${escHtml(h.key)}</code>` : "";
+  return (
+    `<span>${kind}${key}</span>` +
+    `<span style="color:${hex};">Game Override</span>`
+  );
 }
 
 /** Unique harvested values: `text ×count`, then leftover unique names. */
@@ -141,16 +157,14 @@ function hoverSiteMarkdown(h: HoverResult): string {
         h.vanillaCol,
       )
     : "";
-  const tag = h.vanillaPath ? hoverOverrideTag() : "";
-  const parts = [primary, vanilla, tag].filter(Boolean);
+  const parts = [primary, vanilla].filter(Boolean);
   return parts.join("<br>");
 }
 
-/** Footer chip when a mod def overlays vanilla. */
-function hoverOverrideTag(): string {
-  const raw = originHexByOriginId("vanilla");
-  const hex = /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : "#5B9A8B";
-  return `<span style="color:${hex};">game override</span>`;
+/** Trusted hover link that opens Event Graph on this event id. */
+function hoverEventGraphLink(key: string): string {
+  const args = encodeURIComponent(JSON.stringify([key]));
+  return `[Open in Event Graph](command:${OPEN_EVENT_GRAPH}?${args})`;
 }
 
 /** Colored origin + open-file link for one hover site. */
@@ -167,7 +181,7 @@ function hoverSiteLine(
   const key = origin || "vanilla";
   const raw = originHexByOriginId(key);
   const hex = /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : "#5B9A8B";
-  const icon = key === "vanilla" || key === "staging" ? "$(root-folder)" : "$(package)";
+  const icon = key === "vanilla" ? "$(root-folder)" : "$(package)";
   const name = label || escHtml(key === "vanilla" ? "Game" : key);
   const site = `<span style="color:${hex};">${icon} ${name}</span>`;
   const pathBit = hoverOpenLink(rel, path, line, col);
@@ -319,10 +333,13 @@ export function registerLanguageClient(getWorkspaceId: () => string): vscode.Dis
         const md = new vscode.MarkdownString("", true);
         md.supportHtml = true;
         md.supportThemeIcons = true;
-        md.isTrusted = { enabledCommands: ["vscode.open"] };
+        md.isTrusted = { enabledCommands: ["vscode.open", OPEN_EVENT_GRAPH] };
         md.appendMarkdown(hoverCardMarkdown(h));
         const site = hoverSiteMarkdown(h);
         if (site) md.appendMarkdown(`\n\n---\n\n${site}`);
+        if (h.kind === "event" && h.key) {
+          md.appendMarkdown(`\n\n${hoverEventGraphLink(h.key)}`);
+        }
         return new vscode.Hover(md);
       },
     }),
@@ -540,6 +557,17 @@ export function registerLanguageClient(getWorkspaceId: () => string): vscode.Dis
       void refreshDiags(doc);
     }
   });
+
+  // Deferred import: commands.ts pulls workbenchHost, which registers this module.
+  subs.push(
+    vscode.commands.registerCommand(OPEN_EVENT_GRAPH, (key?: string) => {
+      const id = getWorkspaceId();
+      if (!id || typeof key !== "string" || !key) return;
+      void import("./commands").then(({ openEventGraph }) => {
+        void openEventGraph(id, key);
+      });
+    }),
+  );
 
   return {
     dispose() {

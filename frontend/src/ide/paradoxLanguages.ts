@@ -13,6 +13,9 @@ import paradoxInfoGrammar from "../syntaxes/paradox-info.tmLanguage.json";
 import { registerPmtColorThemes } from "./colorThemes";
 import { registerPmtFileIcons } from "./fileIcons";
 
+/** TM scopes the bracket-pair overlay must treat as comment/string. */
+const GRAMMAR_TOKEN_TYPES = { comment: "comment", string: "string" };
+
 /** Language ids that share Clausewitz/Jomini `#` line comments. */
 const PARADOX_LANGUAGE_IDS = [
   "paradox",
@@ -64,26 +67,31 @@ export async function registerParadoxLanguages(): Promise<void> {
             language: "paradox",
             scopeName: paradoxGrammar.scopeName,
             path: "./syntaxes/paradox.tmLanguage.json",
+            tokenTypes: GRAMMAR_TOKEN_TYPES,
           },
           {
             language: "paradox-gui",
             scopeName: paradoxGuiGrammar.scopeName,
             path: "./syntaxes/paradox-gui.tmLanguage.json",
+            tokenTypes: GRAMMAR_TOKEN_TYPES,
           },
           {
             language: "paradox-loc",
             scopeName: paradoxLocGrammar.scopeName,
             path: "./syntaxes/paradox-loc.tmLanguage.json",
+            tokenTypes: GRAMMAR_TOKEN_TYPES,
           },
           {
             language: "paradox-info",
             scopeName: paradoxInfoGrammar.scopeName,
             path: "./syntaxes/paradox-info.tmLanguage.json",
+            tokenTypes: GRAMMAR_TOKEN_TYPES,
           },
           {
             language: "paradox-mod",
             scopeName: paradoxGrammar.scopeName,
             path: "./syntaxes/paradox.tmLanguage.json",
+            tokenTypes: GRAMMAR_TOKEN_TYPES,
           },
         ],
       },

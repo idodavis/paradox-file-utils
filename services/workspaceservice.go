@@ -124,7 +124,7 @@ func (w *WorkspaceService) GetWorkspace(id string) (*Workspace, error) {
 	return ws, nil
 }
 
-// CreateWorkspace creates a new workspace and default staging dir.
+// CreateWorkspace creates a new workspace.
 func (w *WorkspaceService) CreateWorkspace(
 	gameID, name, installID string,
 ) (*Workspace, error) {
@@ -132,18 +132,11 @@ func (w *WorkspaceService) CreateWorkspace(
 		return nil, fmt.Errorf("unknown game %s", gameID)
 	}
 	id := uuid.New().String()
-	stagingDir, err := w.defaultStagingDir(id)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create staging dir: %w", err)
-	}
 	ws := Workspace{
 		ID: id, GameID: gameID, Name: name, InstallID: installID,
-		StagingDir: stagingDir, CreatedAt: nowUTC(),
+		CreatedAt: nowUTC(),
 	}
-	err = w.Store.Mutate(func(c *Config) error {
+	err := w.Store.Mutate(func(c *Config) error {
 		c.Workspaces = append(c.Workspaces, ws)
 		return nil
 	})
@@ -177,17 +170,15 @@ func (w *WorkspaceService) DeleteWorkspace(id string) error {
 }
 
 // UpdateWorkspace updates workspace fields.
-func (w *WorkspaceService) UpdateWorkspace(
-	id, name, installID, stagingDir string,
-) error {
+func (w *WorkspaceService) UpdateWorkspace(id, name, installID string) error {
 	var rebuild bool
 	err := w.Store.Mutate(func(c *Config) error {
 		ws := findWorkspace(c, id)
 		if ws == nil {
 			return fmt.Errorf("workspace not found")
 		}
-		rebuild = ws.InstallID != installID || ws.StagingDir != stagingDir
-		ws.Name, ws.InstallID, ws.StagingDir = name, installID, stagingDir
+		rebuild = ws.InstallID != installID
+		ws.Name, ws.InstallID = name, installID
 		return nil
 	})
 	if err != nil {
@@ -484,15 +475,14 @@ var legalDefaultTools = map[string]bool{
 	"":              true,
 	"workspace-ide": true,
 	"event-graph":   true,
-	"conflicts":     true,
-	"loc-coverage":  true,
+	"health":        true,
 	"patcher":       true,
 	"release":       true,
 }
 
-// UpdateWorkspacePrefs sets IDE persist, default landing page, and origin colors.
+// UpdateWorkspacePrefs sets IDE persist, default landing page, and game origin color.
 func (w *WorkspaceService) UpdateWorkspacePrefs(
-	workspaceID string, resetIdeOnOpen bool, defaultTool, gameColor, stagingColor string,
+	workspaceID string, resetIdeOnOpen bool, defaultTool, gameColor string,
 ) error {
 	if !legalDefaultTools[defaultTool] {
 		return fmt.Errorf("invalid default tool")
@@ -505,7 +495,6 @@ func (w *WorkspaceService) UpdateWorkspacePrefs(
 		ws.ResetIdeOnOpen = resetIdeOnOpen
 		ws.DefaultTool = defaultTool
 		ws.GameColor = gameColor
-		ws.StagingColor = stagingColor
 		return nil
 	})
 }
@@ -566,38 +555,6 @@ func (w *WorkspaceService) UpdateGameInstall(id, path string) (*GameInstall, err
 	return out, nil
 }
 
-func (w *WorkspaceService) defaultStagingDir(workspaceID string) (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("user config dir: %w", err)
-	}
-	return filepath.Join(configDir, appConfigDirName, "workspaces", workspaceID, "staging"), nil
-}
-
-// EnsureStagingDir creates the staging directory if it doesn't exist.
-func (w *WorkspaceService) EnsureStagingDir(workspaceID string) (string, error) {
-	ws, err := w.GetWorkspace(workspaceID)
-	if err != nil {
-		return "", err
-	}
-	dir, needPersist := ws.StagingDir, ws.StagingDir == ""
-	if needPersist {
-		if dir, err = w.defaultStagingDir(workspaceID); err != nil {
-			return "", err
-		}
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create staging dir: %w", err)
-	}
-	if needPersist {
-		err = w.UpdateWorkspace(ws.ID, ws.Name, ws.InstallID, dir)
-		if err != nil {
-			return "", fmt.Errorf("persist staging dir: %w", err)
-		}
-	}
-	return dir, nil
-}
-
 // IdeRoot is one folder in the workspace IDE multi-root set.
 type IdeRoot struct {
 	Label     string `json:"label"`
@@ -617,7 +574,7 @@ type IdeRoots struct {
 	IdeActiveFile  string    `json:"ideActiveFile,omitempty"`
 }
 
-// GetIdeRoots returns game / mod / staging folders and tab restore for the IDE.
+// GetIdeRoots returns game / mod folders and tab restore for the IDE.
 func (w *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace id is required")
@@ -642,12 +599,6 @@ func (w *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
 		out.Roots = append(out.Roots, IdeRoot{
 			Label: label, Path: mod.Path, Kind: "mod",
 			Origin: mod.ID, Color: mod.Color, Thumbnail: mod.Thumbnail,
-		})
-	}
-	if ws.StagingDir != "" {
-		out.Roots = append(out.Roots, IdeRoot{
-			Label: "Staging", Path: ws.StagingDir, Kind: "staging",
-			Origin: "staging", Color: ws.StagingColor,
 		})
 	}
 	var scriptRoot string

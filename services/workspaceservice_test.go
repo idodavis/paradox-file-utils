@@ -107,11 +107,17 @@ func TestWorkspaceService_PrefsAndIdeSession(t *testing.T) {
 	svc := testWorkspaceService(t)
 	seedWorkspace(t, svc.Store, "ws1", "inst1")
 
-	if err := svc.UpdateWorkspacePrefs("ws1", true, "event-graph", "", ""); err != nil {
+	if err := svc.UpdateWorkspacePrefs("ws1", true, "event-graph", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.UpdateWorkspacePrefs("ws1", false, "not-a-tool", "", ""); err == nil {
+	if err := svc.UpdateWorkspacePrefs("ws1", false, "not-a-tool", ""); err == nil {
 		t.Fatal("want invalid default tool")
+	}
+	if err := svc.UpdateWorkspacePrefs("ws1", false, "conflicts", ""); err == nil {
+		t.Fatal("want invalid default tool")
+	}
+	if err := svc.UpdateWorkspacePrefs("ws1", true, "health", ""); err != nil {
+		t.Fatal(err)
 	}
 	if err := svc.SaveIdeSession("ws1", []string{"/a.txt"}, "/a.txt"); err != nil {
 		t.Fatal(err)
@@ -120,7 +126,7 @@ func TestWorkspaceService_PrefsAndIdeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ws.ResetIdeOnOpen || ws.DefaultTool != "event-graph" {
+	if !ws.ResetIdeOnOpen || ws.DefaultTool != "health" {
 		t.Fatalf("prefs: %+v", ws)
 	}
 	if len(ws.IdeOpenFiles) != 1 || ws.IdeActiveFile != "/a.txt" {
@@ -132,7 +138,6 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 	t.Parallel()
 	svc := testWorkspaceService(t)
 	install := t.TempDir()
-	staging := t.TempDir()
 	modDir := t.TempDir()
 	if err := svc.Store.Mutate(func(c *Config) error {
 		c.Installs = append(c.Installs, GameInstall{
@@ -140,7 +145,7 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 		})
 		c.Workspaces = append(c.Workspaces, Workspace{
 			ID: "ws1", GameID: "ck3", Name: "Test",
-			InstallID: "inst1", StagingDir: staging,
+			InstallID: "inst1",
 		})
 		return nil
 	}); err != nil {
@@ -154,14 +159,14 @@ func TestGetIdeRoots_OrderAndGameTitle(t *testing.T) {
 		t.Fatal(err)
 	}
 	roots := got.Roots
-	if len(roots) != 3 {
+	if len(roots) != 2 {
 		t.Fatalf("len %d %+v", len(roots), roots)
 	}
-	if roots[0].Kind != "mod" || roots[1].Kind != "staging" || roots[2].Kind != "game" {
+	if roots[0].Kind != "mod" || roots[1].Kind != "game" {
 		t.Fatalf("kinds %+v", roots)
 	}
-	if roots[2].Label != "Crusader Kings III" || roots[2].Origin != "vanilla" {
-		t.Fatalf("game root %+v", roots[2])
+	if roots[1].Label != "Crusader Kings III" || roots[1].Origin != "vanilla" {
+		t.Fatalf("game root %+v", roots[1])
 	}
 }
 

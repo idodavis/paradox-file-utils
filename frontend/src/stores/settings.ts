@@ -5,10 +5,7 @@ import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { GetSettings, SaveSettings } from "@services/settingsservice";
 import { applyEditorFontSize } from "../ide/themeBridge";
-import {
-  WORKSPACE_TOOL_NAMES,
-  type WorkspaceToolName,
-} from "../workspaceTools";
+import { WORKSPACE_TOOL_NAMES, type WorkspaceToolName } from "../workspaceTools";
 
 /** Drop undefined values from a settings map. */
 function normalizeSettings(
@@ -38,8 +35,8 @@ function parseVisibleTools(raw: string | undefined): WorkspaceToolName[] {
   try {
     const arr: unknown = JSON.parse(raw);
     if (!Array.isArray(arr)) return [...WORKSPACE_TOOL_NAMES];
-    return arr.filter((n): n is WorkspaceToolName =>
-      typeof n === "string" &&
+    const names = arr.filter((n): n is string => typeof n === "string");
+    return [...new Set(names)].filter((n): n is WorkspaceToolName =>
       (WORKSPACE_TOOL_NAMES as readonly string[]).includes(n),
     );
   } catch {
@@ -135,8 +132,9 @@ export const useSettingsStore = defineStore("settings", () => {
 
   /** Persist which workspace tool pills are shown. Empty means IDE-only in the toolbar. */
   async function setVisibleTools(names: string[]): Promise<void> {
-    const next = names.filter((n): n is WorkspaceToolName =>
-      (WORKSPACE_TOOL_NAMES as readonly string[]).includes(n),
+    const next = [...new Set(names)].filter(
+      (n): n is WorkspaceToolName =>
+        (WORKSPACE_TOOL_NAMES as readonly string[]).includes(n),
     );
     await set("ui.visibleTools", JSON.stringify(next));
   }

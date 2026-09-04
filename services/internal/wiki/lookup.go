@@ -207,27 +207,3 @@ func patchPageOf(p *Page) *PatchPage {
 		ModdingSections: modSecs,
 	}
 }
-
-// PatchRange returns patch pages whose version is in (from, to].
-func PatchRange(gameID, from, to string) []Page {
-	f, err := LoadPatches(gameID)
-	if err != nil || f == nil {
-		return nil
-	}
-	lo, ok1 := parseBound(from)
-	hi, ok2 := parseBound(to)
-	if !ok1 || !ok2 {
-		return nil
-	}
-	var out []Page
-	for _, p := range f.Pages {
-		pv, ok := parsePatchTitle(p.Title)
-		if !ok {
-			continue
-		}
-		if inRange(pv, lo, hi) {
-			out = append(out, p)
-		}
-	}
-	return out
-}

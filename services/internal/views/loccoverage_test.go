@@ -7,17 +7,13 @@ import (
 	"testing"
 
 	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/session"
 )
 
-func coverageIssue(rows []LocCoverage, lang, kind, key string) bool {
-	for _, row := range rows {
-		if row.Language != lang {
-			continue
-		}
-		for _, m := range row.Issues {
-			if m.Kind == kind && m.Key == key {
-				return true
-			}
+func coverageIssue(rows []HealthRow, lang, kind, key string) bool {
+	for _, r := range rows {
+		if r.Language == lang && r.Type == kind && r.Name == key {
+			return true
 		}
 	}
 	return false
@@ -36,15 +32,22 @@ ns.1 = {
 }
 `,
 		"localization/english/a_l_english.yml": "" +
-			"l_english:\n used_key:0 \"Hi\"\n orphan_key:0 \"Bye\"\n",
+			"l_english:\n used_key:0 \"Hi\"\n orphan_key:0 \"Bye\"\n" +
+			" war:0 \"$ORDER$ $no_such_key$\"\n",
 		"localization/english/game_rules_l_english.yml": "" +
 			"l_english:\n setting_rule:0 \"Rule\"\n",
 		"localization/english/message_filter_l_english.yml": "" +
 			"l_english:\n filter_key:0 \"Filter\"\n",
 	})})
-	cov := Coverage(s)
+	_, cov := Coverage(s)
 	if !coverageIssue(cov, "english", "missing", "missing_key") {
 		t.Fatalf("missing_key not reported: %+v", cov)
+	}
+	if lu := Lookup(s, "used_key"); lu == nil || lu.Text != "Hi" {
+		t.Fatalf("Lookup used_key = %+v", lu)
+	}
+	if lu := Lookup(s, "vanilla_key"); lu == nil || lu.Origin != "vanilla" {
+		t.Fatalf("Lookup vanilla_key = %+v", lu)
 	}
 	if coverageIssue(cov, "english", "missing", "some_var") {
 		t.Fatal("loc-broad name= should not be missing")
@@ -58,6 +61,12 @@ ns.1 = {
 	if !coverageIssue(cov, "english", "orphaned", "orphan_key") {
 		t.Fatal("unused loc should stay orphaned")
 	}
+	if coverageIssue(cov, "english", "missing", "ORDER") {
+		t.Fatal("$ORDER$ is engine data, not a missing loc key")
+	}
+	if !coverageIssue(cov, "english", "missing", "no_such_key") {
+		t.Fatal("$no_such_key$ reuse should stay missing")
+	}
 }
 
 func TestCoverageConventionLocsInGenericFile(t *testing.T) {
@@ -67,17 +76,51 @@ func TestCoverageConventionLocsInGenericFile(t *testing.T) {
 	opt_a = { }
 }
 `,
+		"common/decisions/00.txt": `ai_mogyer_adopt_christianity = { }
+`,
+		"common/casus_belli_types/cb.txt": "hre_conquest = { war_name = \"HRE_CONQUEST_WAR_NAME\" " +
+			"cb_name = \"HRE_CONQUEST_DUCHY_CB_NAME\" }\n",
+		"common/character_interactions/i.txt": "demand_x = { notification_text = DEMAND_IMPERIAL_SUBJUGATION_NOTIFICATION }\n",
+		"common/flavorization/f.txt":          "hungarian_empire = { type = empire }\n",
 		"common/messages/00.txt": `my_msg = { }
 `,
 		"localization/english/mod_l_english.yml": "" +
-			"l_english:\n rule_my_rule:0 \"R\"\n setting_opt_a:0 \"A\"\n my_msg:0 \"M\"\n unused_key:0 \"U\"\n",
+			"l_english:\n rule_my_rule:0 \"R\"\n setting_opt_a:0 \"A\"\n my_msg:0 \"M\"\n" +
+			" ai_mogyer_adopt_christianity:0 \"A\"\n" +
+			" ai_mogyer_adopt_christianity_tooltip:0 \"T\"\n" +
+			" ai_mogyer_adopt_christianity_confirm:0 \"C\"\n" +
+			" HRE_CONQUEST_WAR_NAME:0 \"War\"\n" +
+			" HRE_CONQUEST_DUCHY_CB_NAME:0 \"CB\"\n" +
+			" DEMAND_IMPERIAL_SUBJUGATION_NOTIFICATION:0 \"N\"\n" +
+			" cn_hungarian_empire_adj:0 \"Hungarian\"\n unused_key:0 \"U\"\n",
 	})})
-	cov := Coverage(s)
+	_, cov := Coverage(s)
 	if coverageIssue(cov, "english", "orphaned", "rule_my_rule") {
 		t.Fatal("rule_<id> should not be orphaned")
 	}
 	if coverageIssue(cov, "english", "orphaned", "setting_opt_a") {
 		t.Fatal("game_rules option setting should not be orphaned")
+	}
+	if coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity") {
+		t.Fatal("decision id loc should not be orphaned")
+	}
+	if coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity_tooltip") {
+		t.Fatal("decision <id>_tooltip should not be orphaned")
+	}
+	if coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity_confirm") {
+		t.Fatal("decision <id>_confirm should not be orphaned")
+	}
+	if coverageIssue(cov, "english", "orphaned", "HRE_CONQUEST_WAR_NAME") {
+		t.Fatal("war_name cite should not be orphaned")
+	}
+	if coverageIssue(cov, "english", "orphaned", "HRE_CONQUEST_DUCHY_CB_NAME") {
+		t.Fatal("cb_name cite should not be orphaned")
+	}
+	if coverageIssue(cov, "english", "orphaned", "DEMAND_IMPERIAL_SUBJUGATION_NOTIFICATION") {
+		t.Fatal("notification_text cite should not be orphaned")
+	}
+	if coverageIssue(cov, "english", "orphaned", "cn_hungarian_empire_adj") {
+		t.Fatal("flavorization cn_<id>_adj should not be orphaned")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "my_msg") {
 		t.Fatal("message def id is not a loc key")
@@ -101,7 +144,7 @@ ns.1 = { title = event_message_title }
 		"localization/english/zz_l_english.yml": "" +
 			"l_english:\n event_message_title:0 \"T\"\n unused_mod:0 \"U\"\n",
 	})})
-	cov := Coverage(s)
+	_, cov := Coverage(s)
 	if coverageIssue(cov, "english", "missing", "vanilla_title") {
 		t.Fatal("vanilla cache loc refs must not be missing")
 	}
@@ -116,6 +159,25 @@ ns.1 = { title = event_message_title }
 	}
 }
 
+func TestCoverageMissingNotSuppressedByDefaultLang(t *testing.T) {
+	s := session.NewWithLoc("ws", "ck3", "english", nil, nil, []catalog.ModInput{
+		oneMod(t, "ck3", map[string]string{
+			"events/x.txt": `namespace = ns
+ns.1 = { type = character_event title = used_key }
+`,
+			"localization/english/a_l_english.yml": "l_english:\n used_key:0 \"Hi\"\n",
+			"localization/french/a_l_french.yml":   "l_french:\n other:0 \"Bonjour\"\n",
+		}),
+	})
+	_, cov := Coverage(s)
+	if !coverageIssue(cov, "french", "missing", "used_key") {
+		t.Fatalf("french missing used_key (english has it): %+v", cov)
+	}
+	if coverageIssue(cov, "english", "missing", "used_key") {
+		t.Fatal("english defines used_key")
+	}
+}
+
 func TestCoverageSkipsDescriptorName(t *testing.T) {
 	s := buildSession(t, "ck3", nil, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
 		"events/x.txt": `namespace = ns
@@ -123,12 +185,15 @@ ns.1 = { type = character_event title = used_key }
 `,
 		"localization/english/a_l_english.yml": "l_english:\n used_key:0 \"Hi\"\n",
 	})})
-	for _, row := range Coverage(s) {
-		for _, m := range row.Issues {
-			if strings.Contains(strings.ToLower(m.Path), "descriptor.mod") ||
-				m.Key == "t" && m.Kind == "missing" {
-				t.Fatalf("descriptor name leaked: %+v", m)
-			}
+	_, rows := Coverage(s)
+	for _, m := range rows {
+		path := m.Rel
+		if len(m.Sites) > 0 {
+			path = m.Sites[0].Path
+		}
+		if strings.Contains(strings.ToLower(path), "descriptor.mod") ||
+			m.Name == "t" && m.Type == "missing" {
+			t.Fatalf("descriptor name leaked: %+v", m)
 		}
 	}
 }
@@ -140,11 +205,14 @@ ns.1 = { type = character_event title = used_key }
 `,
 		"localization/english/a_l_english.yml": "l_english:\n used_key:0 \"Hi\"\n",
 	})})
-	for _, row := range Coverage(s) {
-		for _, m := range row.Issues {
-			if strings.Contains(strings.ToLower(m.Path), "metadata.json") {
-				t.Fatalf("metadata leaked: %+v", m)
-			}
+	_, rows := Coverage(s)
+	for _, m := range rows {
+		path := m.Rel
+		if len(m.Sites) > 0 {
+			path = m.Sites[0].Path
+		}
+		if strings.Contains(strings.ToLower(path), "metadata.json") {
+			t.Fatalf("metadata leaked: %+v", m)
 		}
 	}
 }

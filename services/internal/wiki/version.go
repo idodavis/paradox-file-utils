@@ -104,31 +104,3 @@ func cmpPatch(a, b patchVer) int {
 	}
 	return a.Patch - b.Patch
 }
-
-func parseBound(s string) (patchVer, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return patchVer{}, false
-	}
-	if pv, ok := parsePatchTitle("Patch " + s); ok {
-		return pv, true
-	}
-	if pv, ok := parsePatchTitle(s); ok {
-		return pv, true
-	}
-	maj, min, ok := ParseMajorMinor(s)
-	if !ok {
-		return patchVer{}, false
-	}
-	p := 0
-	m := verRe.FindStringSubmatch(s)
-	if m != nil && m[3] != "" && !strings.EqualFold(m[3], "x") {
-		p, _ = strconv.Atoi(m[3])
-	}
-	return patchVer{Major: maj, Minor: min, Patch: p, Label: s}, true
-}
-
-// inRange reports whether v is in (from, to] using numeric components.
-func inRange(v, from, to patchVer) bool {
-	return cmpPatch(v, from) > 0 && cmpPatch(v, to) <= 0
-}

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -49,6 +50,7 @@ type EventGraphNode struct {
 	Title      string `json:"title,omitempty"`
 	Role       string `json:"role,omitempty"`
 	Fires      int    `json:"fires,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
 }
 
 // EventGraphEdge is a directed link. Via names the referencing field or hop chain.
@@ -122,44 +124,25 @@ type RefKindGroup struct {
 
 // EventDetail is the inspector payload for one resolved def (event or other).
 type EventDetail struct {
-	ID        string             `json:"id"`
-	Kind      string             `json:"kind,omitempty"`
+	ID         string             `json:"id"`
+	Kind       string             `json:"kind,omitempty"`
 	Path       string             `json:"path"`
 	Rel        string             `json:"rel,omitempty"`
 	Origin     string             `json:"origin,omitempty"`
 	OriginName string             `json:"originName,omitempty"`
 	Line       int                `json:"line"`
-	Fields    []EventFieldInfo   `json:"fields"`
-	Type      string             `json:"type,omitempty"`
-	Hidden    bool               `json:"hidden,omitempty"`
-	Theme     string             `json:"theme,omitempty"`
-	Title     *EventLocField     `json:"title,omitempty"`
-	Desc      *EventLocField     `json:"desc,omitempty"`
-	Flavor    *EventLocField     `json:"flavor,omitempty"`
-	Sections  []EventSectionInfo `json:"sections"`
-	Options   []EventOptionInfo  `json:"options"`
-	RefGroups []RefKindGroup     `json:"refGroups,omitempty"`
-	Incoming  []EventGraphEdge   `json:"incoming,omitempty"`
-}
-
-// LocIssueRow is one flat coverage finding for the table and overview tree.
-type LocIssueRow struct {
-	Language   string `json:"language"`
-	Kind       string `json:"kind"`
-	Key        string `json:"key"`
-	Path       string `json:"path,omitempty"`
-	Rel        string `json:"rel,omitempty"`
-	Line       int    `json:"line,omitempty"`
-	Value      string `json:"value,omitempty"`
-	Origin     string `json:"origin,omitempty"`
-	OriginName string `json:"originName,omitempty"`
-}
-
-// LocCoverage is per-language localization health for the workspace mods.
-type LocCoverage struct {
-	Language string        `json:"language"`
-	Defined  int           `json:"defined"`
-	Issues   []LocIssueRow `json:"issues"`
+	Fields     []EventFieldInfo   `json:"fields"`
+	Type       string             `json:"type,omitempty"`
+	Hidden     bool               `json:"hidden,omitempty"`
+	Theme      string             `json:"theme,omitempty"`
+	Namespace  string             `json:"namespace,omitempty"`
+	Title      *EventLocField     `json:"title,omitempty"`
+	Desc       *EventLocField     `json:"desc,omitempty"`
+	Flavor     *EventLocField     `json:"flavor,omitempty"`
+	Sections   []EventSectionInfo `json:"sections"`
+	Options    []EventOptionInfo  `json:"options"`
+	RefGroups  []RefKindGroup     `json:"refGroups,omitempty"`
+	Incoming   []EventGraphEdge   `json:"incoming,omitempty"`
 }
 
 // LocLookup is one localization key's resolved english text and site.
@@ -177,6 +160,25 @@ var targetNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]*$`)
 func locValue(s *session.Session, key string) string {
 	v, _ := s.DefaultLoc(key)
 	return v
+}
+
+// eventNamespace is the declared namespace for an event, else the id prefix.
+func eventNamespace(s *session.Session, d *catalog.Def, id string) string {
+	if d != nil {
+		var last string
+		for _, x := range s.DefsInFile(d.Path) {
+			if game.CanonicalKind(x.Kind) == "namespace" && x.Line <= d.Line {
+				last = x.Key
+			}
+		}
+		if last != "" {
+			return last
+		}
+	}
+	if i := strings.IndexByte(id, '.'); i > 0 {
+		return id[:i]
+	}
+	return ""
 }
 
 func titleOf(s *session.Session, id string) string {

@@ -1,4 +1,4 @@
-// graph_test.go covers neighborhood BFS, graph/detail/override/loc payloads.
+// graph_test.go covers neighborhood BFS and graph/detail payloads.
 
 package views
 
@@ -219,35 +219,6 @@ mod.1 = { type = character_event
 	if !fired {
 		t.Fatalf("detail should target ns.3/ns.4; sections=%+v", d.Sections)
 	}
-	cov := Coverage(s)
-	byLang := map[string]*LocCoverage{}
-	for i := range cov {
-		byLang[cov[i].Language] = &cov[i]
-	}
-	en, fr := byLang["english"], byLang["french"]
-	if en == nil || fr == nil {
-		t.Fatalf("languages = %v", cov)
-	}
-	var missing, orphan, untr bool
-	for _, m := range en.Issues {
-		missing = missing || (m.Kind == "missing" && m.Key == "missing_key")
-		if m.Kind == "orphaned" && m.Key == "orphan_key" {
-			orphan = true
-			if m.Value != "Bye" {
-				t.Fatalf("orphan value = %q", m.Value)
-			}
-		}
-	}
-	for _, u := range fr.Issues {
-		untr = untr || (u.Kind == "untranslated" && u.Key == "used_key")
-	}
-	if !missing || !orphan || !untr {
-		t.Fatalf("missing=%v orphan=%v untr=%v en=%+v fr=%+v",
-			missing, orphan, untr, en.Issues, fr.Issues)
-	}
-	if lu := Lookup(s, "used_key"); lu == nil || lu.Text != "Hi" {
-		t.Fatalf("Lookup used_key = %+v", lu)
-	}
 
 	empty := Graph(s, EventGraphParams{})
 	if len(empty.Nodes) != 0 || empty.EmptyReason == "" {
@@ -274,19 +245,6 @@ mod.1 = { type = character_event
 		if !strings.HasPrefix(it.ID, "birth.") {
 			t.Fatalf("namespace filter leaked %q", it.ID)
 		}
-	}
-	for _, row := range Coverage(s) {
-		if row.Language != "english" {
-			continue
-		}
-		for _, m := range row.Issues {
-			if m.Key == "vanilla_key" {
-				t.Fatalf("vanilla_key listed as %s: %+v", m.Kind, m)
-			}
-		}
-	}
-	if lu := Lookup(s, "vanilla_key"); lu == nil || lu.Origin != "vanilla" || lu.Path != locFile {
-		t.Fatalf("Lookup vanilla_key = %+v", lu)
 	}
 
 	fg := Graph(s, EventGraphParams{Root: "r.1"})
@@ -334,87 +292,30 @@ mod.1 = { type = character_event
 	}
 }
 
-func twoMods(t *testing.T, game, aBody, bBody string) *session.Session {
-	t.Helper()
-	a, b := t.TempDir(), t.TempDir()
-	desc, body := "descriptor.mod", "name = \"t\"\n"
-	if game != "ck3" {
-		desc, body = ".metadata/metadata.json", `{"name":"t"}`
-	}
-	write(t, a, desc, body)
-	write(t, b, desc, body)
-	write(t, a, "common/traits/a.txt", aBody)
-	write(t, b, "common/traits/b.txt", bBody)
-	return session.NewWithLoc("ws", game, "english", nil, nil, []catalog.ModInput{
-		{Origin: "modA", Root: a, Order: 0},
-		{Origin: "modB", Root: b, Order: 1},
-	})
+func TestEventNamespacePayload(t *testing.T) {
+	s := buildSession(t, "ck3", nil, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
+		"events/x.txt": `namespace = court
+court.1 = { type = character_event
+	immediate = { trigger_event = court.2 }
 }
-
-func TestOverrideRows(t *testing.T) {
-	tests := []struct {
-		name, game, a, b, rule, winner string
-		sites                          int
-	}{
-		{"LIOS last mod", "ck3",
-			"brave = { category = personality }\n",
-			"brave = { category = personality }\n",
-			"LIOS", "modB", 0},
-		{"INJECT REPLACE collide", "eu5",
-			"INJECT:brave = { category = personality }\n",
-			"REPLACE:brave = { category = personality }\n",
-			"", "modB", 2},
+court.2 = { type = character_event }
+`,
+		"common/on_actions/o.txt": "yearly_pulse = { events = { court.1 } }\n",
+	})})
+	g := Graph(s, EventGraphParams{Root: "court.1"})
+	n := nodeIDs(g)["court.1"]
+	if n.Kind != "event" || n.Namespace != "court" {
+		t.Fatalf("event node = %+v", n)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rows := OverrideRows(twoMods(t, tt.game, tt.a, tt.b))
-			var hit *OverrideRow
-			for i := range rows {
-				if rows[i].Name == "brave" {
-					hit = &rows[i]
-				}
-			}
-			if hit == nil || hit.Overlay {
-				t.Fatalf("brave row = %+v", hit)
-			}
-			if tt.rule != "" && (hit.Rule != tt.rule || hit.Winner != tt.winner) {
-				t.Fatalf("rule=%s winner=%s", hit.Rule, hit.Winner)
-			}
-			if tt.sites > 0 {
-				n := 0
-				for _, site := range hit.Sites {
-					if site.Origin != "" {
-						n++
-					}
-					if site.Path != "" && site.Rel == "" {
-						t.Fatalf("site missing rel: %+v", site)
-					}
-				}
-				if n != tt.sites {
-					t.Fatalf("mod sites = %d, want %d", n, tt.sites)
-				}
-			}
-		})
+	if d := Detail(s, "court.1"); d == nil || d.Namespace != "court" {
+		t.Fatalf("event detail = %+v", d)
 	}
-}
-
-func TestOverrideSitesDedupe(t *testing.T) {
-	t.Parallel()
-	s := twoMods(t, "ck3",
-		"brave = { category = personality }\n",
-		"brave = { category = personality }\n")
-	path := s.ModDefsOf("brave")[0].Path
-	twins := []catalog.Def{
-		{Origin: "modA", Path: path, Line: 1},
-		{Origin: "modA", Path: path, Line: 1},
-		{Origin: "modA", Path: path, Line: 9},
+	oa := Detail(s, "yearly_pulse")
+	if oa == nil || oa.Kind != "on_action" || oa.Namespace != "" {
+		t.Fatalf("on_action detail = %+v", oa)
 	}
-	got := overrideSites(s, twins)
-	if len(got) != 2 {
-		t.Fatalf("sites = %d, want 2 (same-line twin dropped)", len(got))
-	}
-	if got[0].Line == got[1].Line {
-		t.Fatalf("expected distinct lines, got %+v", got)
+	if pulse, ok := nodeIDs(g)["yearly_pulse"]; ok && pulse.Namespace != "" {
+		t.Fatalf("on_action node ns = %+v", pulse)
 	}
 }
 

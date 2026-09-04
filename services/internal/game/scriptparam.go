@@ -4,7 +4,6 @@
 package game
 
 import (
-	"strconv"
 	"strings"
 	"unicode"
 )
@@ -45,16 +44,28 @@ func isScriptParamByte(c byte, first bool) bool {
 		(c >= '0' && c <= '9')
 }
 
-// IsLocEngineValue reports loc $key|filter$ where filter is a numeric format
-// (engine-supplied value), not a loc-key reuse filter like U or l.
+// IsLocEngineValue reports a loc $key$ / $key|filter$ that is engine data,
+// not a loc-key reuse ($other_key$ / $INDEPENDENCE_WAR_NAME$ / $key|U$).
 func IsLocEngineValue(key, filter string) bool {
-	if filter == "" {
+	if isLocEngineToken(key) {
+		return true
+	}
+	return strings.EqualFold(key, "VALUE") && isNumericLocFilter(filter)
+}
+
+// isLocEngineToken reports a single ALL_CAPS token ($ORDER$, $VALUE$, $NAME$).
+// SNAKE_CASE ($INDEPENDENCE_WAR_NAME$) is loc-key reuse.
+func isLocEngineToken(key string) bool {
+	if key == "" || strings.Contains(key, "_") {
 		return false
 	}
-	if !strings.EqualFold(key, "VALUE") {
-		return false
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		if c < 'A' || c > 'Z' {
+			return false
+		}
 	}
-	return isNumericLocFilter(filter)
+	return true
 }
 
 func isNumericLocFilter(filter string) bool {
@@ -73,16 +84,6 @@ func isNumericLocFilter(filter string) bool {
 	return true
 }
 
-// IsScriptValueField reports assignment keys that commonly name a script_value.
-func IsScriptValueField(field string) bool {
-	switch strings.ToLower(field) {
-	case "value", "add", "multiply", "subtract", "divide", "min", "max":
-		return true
-	default:
-		return false
-	}
-}
-
 // MessageTypeParent reports blocks where type= names a message def.
 func MessageTypeParent(parentKey string) bool {
 	switch strings.ToLower(parentKey) {
@@ -91,19 +92,4 @@ func MessageTypeParent(parentKey string) bool {
 	default:
 		return false
 	}
-}
-
-// IsScriptValueRHS reports a scalar that could name a script_value (not a number).
-func IsScriptValueRHS(text string) bool {
-	text = strings.TrimSpace(text)
-	if text == "" || text == "yes" || text == "no" {
-		return false
-	}
-	if strings.ContainsAny(text, ":.$") {
-		return false
-	}
-	if _, err := strconv.ParseFloat(text, 64); err == nil {
-		return false
-	}
-	return isScriptParamByte(text[0], true)
 }

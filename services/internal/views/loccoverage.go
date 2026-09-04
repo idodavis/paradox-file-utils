@@ -1,5 +1,6 @@
 // loccoverage.go reports missing, orphan, and untranslated loc keys per
-// language from the Index loc maps plus vanilla sidecar inherit (capped at 500).
+// language from the loc maps plus vanilla sidecar inherit. DefaultLocLang is
+// not used here (IDE/LSP only). Untranslated compares to english.
 
 package views
 
@@ -12,15 +13,20 @@ import (
 	"paradox-modding-tools/services/internal/session"
 )
 
-const issueCap = 500
+// locSourceLang is the game inherit / authoring language for untranslated.
+const locSourceLang = "english"
+
+const healthLocCap = 500
 
 type locSite struct {
 	key, value, file string
 	line             int
 }
 
-// Coverage returns per-language loc health for every workspace mod.
-func Coverage(s *session.Session) []LocCoverage {
+type locGID struct{ lang, kind, name, origin string }
+
+// Coverage returns per-language loc KPIs and grouped Health rows.
+func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 	byLang := map[string]map[string]locSite{}
 	for lang, m := range s.LocByLang() {
 		entries := map[string]locSite{}
@@ -30,10 +36,10 @@ func Coverage(s *session.Session) []LocCoverage {
 		byLang[lang] = entries
 	}
 	if len(byLang) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	referenced := map[string]locSite{}
+	referenced := map[string][]locSite{}
 	used := s.UsedLocKeys()
 	for _, r := range s.LocRefs() {
 		if r.Kind != "loc" {
@@ -42,13 +48,12 @@ func Coverage(s *session.Session) []LocCoverage {
 		if skipLocIssueFile(s, r.Path) {
 			continue
 		}
-		if _, ok := referenced[r.Key]; !ok {
-			referenced[r.Key] = locSite{key: r.Key, file: r.Path, line: r.Line}
-		}
+		referenced[r.Key] = append(referenced[r.Key], locSite{
+			key: r.Key, file: r.Path, line: r.Line,
+		})
 	}
 
-	defaultLang := s.DefaultLang()
-	source := byLang[defaultLang]
+	source := byLang[locSourceLang]
 	if source == nil {
 		source = map[string]locSite{}
 	}
@@ -59,69 +64,105 @@ func Coverage(s *session.Session) []LocCoverage {
 	}
 	slices.Sort(langs)
 
-	out := make([]LocCoverage, 0, len(langs))
+	groups := map[locGID]*HealthRow{}
+	var order []locGID
+	addIssue := func(lang, kind string, site locSite) {
+		origin, _, _ := s.Locate(site.file)
+		origin = originID(origin)
+		os := OverrideSite{
+			Origin: origin, OriginName: s.OriginName(origin),
+			Path: site.file, Rel: s.DisplayRel(site.file), Line: site.line,
+		}
+		fillSnippet(s, &os)
+		id := locGID{lang, kind, site.key, origin}
+		if g := groups[id]; g != nil {
+			g.Sites = append(g.Sites, os)
+			g.Refs++
+			return
+		}
+		groups[id] = &HealthRow{
+			Type: kind, Name: site.key, Language: lang,
+			Origin: origin, OriginName: s.OriginName(origin),
+			From: origin, FromName: s.OriginName(origin),
+			Rel: os.Rel, Sites: []OverrideSite{os}, Refs: 1,
+		}
+		order = append(order, id)
+	}
+
+	outLangs := make([]HealthLang, 0, len(langs))
 	for _, lang := range langs {
 		inheritedKeys := inheritKeys(s, lang)
 		entries := byLang[lang]
-		row := LocCoverage{Language: lang, Defined: len(entries)}
-		addIssue := func(kind string, site locSite, value string) {
-			if len(row.Issues) >= issueCap {
-				return
-			}
-			origin, _, _ := s.Locate(site.file)
-			origin = originID(origin)
-			row.Issues = append(row.Issues, LocIssueRow{
-				Language: lang, Kind: kind, Key: site.key,
-				Path: site.file, Rel: s.DisplayRel(site.file),
-				Line: site.line, Value: value, Origin: origin,
-				OriginName: s.OriginName(origin),
-			})
-		}
-		for key, site := range referenced {
-			if locPresent(s, key, entries, inheritedKeys) {
+		outLangs = append(outLangs, HealthLang{Language: lang, Defined: len(entries)})
+		for key, sites := range referenced {
+			if _, ok := entries[key]; ok || inheritedKeys[key] {
 				continue
 			}
-			addIssue("missing", site, "")
+			for _, site := range sites {
+				addIssue(lang, "missing", site)
+			}
 		}
 		for key, site := range entries {
 			if used[key] || inheritedKeys[key] || skipOrphanLocFile(site.file) {
 				continue
 			}
-			addIssue("orphaned", site, site.value)
+			addIssue(lang, "orphaned", site)
 		}
-		if lang != defaultLang {
-			for key, site := range entries {
-				src, ok := source[key]
-				if !ok {
-					continue
-				}
-				isCopy := src.value == site.value && strings.TrimSpace(site.value) != ""
-				blank := strings.TrimSpace(site.value) == ""
-				if !isCopy && !blank {
-					continue
-				}
-				addIssue("untranslated", site, src.value)
+		if lang == locSourceLang {
+			continue
+		}
+		for key, site := range entries {
+			src, ok := source[key]
+			if !ok {
+				continue
 			}
+			isCopy := src.value == site.value && strings.TrimSpace(site.value) != ""
+			blank := strings.TrimSpace(site.value) == ""
+			if !isCopy && !blank {
+				continue
+			}
+			addIssue(lang, "untranslated", site)
 		}
-		slices.SortFunc(row.Issues, func(a, b LocIssueRow) int {
-			return cmp.Compare(a.Key, b.Key)
-		})
-		out = append(out, row)
 	}
-	return out
-}
 
-func locPresent(
-	s *session.Session, key string, entries map[string]locSite, inherited map[string]bool,
-) bool {
-	if _, ok := entries[key]; ok || inherited[key] {
-		return true
+	byKPI := map[string]*HealthLang{}
+	for i := range outLangs {
+		byKPI[outLangs[i].Language] = &outLangs[i]
 	}
-	if _, ok := s.DefaultLoc(key); ok {
-		return true
+	for _, id := range order {
+		hl := byKPI[id.lang]
+		if hl == nil {
+			continue
+		}
+		switch id.kind {
+		case "missing":
+			hl.Missing++
+		case "orphaned":
+			hl.Orphaned++
+		case "untranslated":
+			hl.Untranslated++
+		}
 	}
-	_, _, _, ok := s.LocSite(key)
-	return ok
+	slices.SortFunc(order, func(a, b locGID) int {
+		if c := cmp.Compare(a.lang, b.lang); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.name, b.name); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.kind, b.kind)
+	})
+	rows := make([]HealthRow, 0, len(order))
+	kept := map[string]int{}
+	for _, id := range order {
+		if kept[id.lang] >= healthLocCap {
+			continue
+		}
+		kept[id.lang]++
+		rows = append(rows, *groups[id])
+	}
+	slices.SortFunc(rows, healthRowLess)
+	return outLangs, rows
 }
 
 func inheritKeys(s *session.Session, lang string) map[string]bool {

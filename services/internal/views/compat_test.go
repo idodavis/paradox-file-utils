@@ -1,0 +1,173 @@
+// compat_test.go covers preview-order LIOS flips, depends, and dangling refs.
+
+package views
+
+import (
+	"testing"
+
+	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/session"
+)
+
+func twoModTrees(t *testing.T, aFiles, bFiles map[string]string) *session.Session {
+	t.Helper()
+	return twoModTreesWithCache(t, nil, aFiles, bFiles)
+}
+
+func twoModTreesWithCache(
+	t *testing.T, cache *catalog.VanillaCache, aFiles, bFiles map[string]string,
+) *session.Session {
+	t.Helper()
+	a, b := t.TempDir(), t.TempDir()
+	write(t, a, "descriptor.mod", "name = \"a\"\n")
+	write(t, b, "descriptor.mod", "name = \"b\"\n")
+	for rel, body := range aFiles {
+		write(t, a, rel, body)
+	}
+	for rel, body := range bFiles {
+		write(t, b, rel, body)
+	}
+	return session.NewWithLoc("ws", "ck3", "english", cache, nil, []catalog.ModInput{
+		{Origin: "modA", Root: a, Order: 0, Name: "A"},
+		{Origin: "modB", Root: b, Order: 1, Name: "B"},
+	})
+}
+
+func TestCompatibilityOrderFlip(t *testing.T) {
+	t.Parallel()
+	s := twoMods(t, "ck3",
+		"brave = { category = personality }\n",
+		"brave = { category = personality }\n")
+	got := Compatibility(s, nil)
+	hit := findCompat(got.Rows, compatConflict, "brave")
+	if hit == nil || hit.Winner != "modB" {
+		t.Fatalf("default order winner = %+v", hit)
+	}
+	flipped := Compatibility(s, []string{"modB", "modA"})
+	hit = findCompat(flipped.Rows, compatConflict, "brave")
+	if hit == nil || hit.Winner != "modA" {
+		t.Fatalf("reversed order winner = %+v", hit)
+	}
+}
+
+func TestCompatibilityDependsAndDangling(t *testing.T) {
+	t.Parallel()
+	s := twoModTrees(t,
+		map[string]string{
+			"events/a.txt": `namespace = t
+t.1 = {
+	type = character_event
+	immediate = {
+		trigger_event = t.2
+		trigger_event = t.ghost
+	}
+}
+`,
+		},
+		map[string]string{
+			"events/b.txt": `namespace = t
+t.2 = { type = character_event }
+`,
+		})
+	got := Compatibility(s, nil)
+	dep := findCompat(got.Rows, compatDepends, "t.2")
+	if dep == nil || dep.From != "modA" || dep.To != "modB" {
+		t.Fatalf("depends = %+v rows=%d defs=%d refs=%d",
+			dep, len(got.Rows), len(s.ModDefsOf("t.2")), len(s.RefsTo("t.2")))
+	}
+	dang := findCompat(got.Rows, compatDangling, "t.ghost")
+	if dang == nil || dang.From != "modA" || dang.Refs < 1 {
+		t.Fatalf("dangling = %+v", dang)
+	}
+	if got.Depends < 1 || got.Dangling < 1 {
+		t.Fatalf("counts depends=%d dangling=%d", got.Depends, got.Dangling)
+	}
+}
+
+func twoMods(t *testing.T, game, aBody, bBody string) *session.Session {
+	t.Helper()
+	a, b := t.TempDir(), t.TempDir()
+	desc, body := "descriptor.mod", "name = \"t\"\n"
+	if game != "ck3" {
+		desc, body = ".metadata/metadata.json", `{"name":"t"}`
+	}
+	write(t, a, desc, body)
+	write(t, b, desc, body)
+	write(t, a, "common/traits/a.txt", aBody)
+	write(t, b, "common/traits/b.txt", bBody)
+	return session.NewWithLoc("ws", game, "english", nil, nil, []catalog.ModInput{
+		{Origin: "modA", Root: a, Order: 0},
+		{Origin: "modB", Root: b, Order: 1},
+	})
+}
+
+func TestCompatibilityContests(t *testing.T) {
+	tests := []struct {
+		name, game, a, b, rule, winner string
+		sites                          int
+	}{
+		{"LIOS last mod", "ck3",
+			"brave = { category = personality }\n",
+			"brave = { category = personality }\n",
+			"LIOS", "modB", 0},
+		{"INJECT REPLACE collide", "eu5",
+			"INJECT:brave = { category = personality }\n",
+			"REPLACE:brave = { category = personality }\n",
+			"", "modB", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Compatibility(twoMods(t, tt.game, tt.a, tt.b), nil)
+			hit := findCompat(got.Rows, compatConflict, "brave")
+			if hit == nil || hit.Overlay {
+				t.Fatalf("brave row = %+v", hit)
+			}
+			if tt.rule != "" && (hit.Rule != tt.rule || hit.Winner != tt.winner) {
+				t.Fatalf("rule=%s winner=%s", hit.Rule, hit.Winner)
+			}
+			if tt.sites > 0 {
+				n := 0
+				for _, site := range hit.Sites {
+					if site.Origin != "" {
+						n++
+					}
+					if site.Path != "" && site.Rel == "" {
+						t.Fatalf("site missing rel: %+v", site)
+					}
+				}
+				if n != tt.sites {
+					t.Fatalf("mod sites = %d, want %d", n, tt.sites)
+				}
+			}
+		})
+	}
+}
+
+func TestOverrideSitesDedupe(t *testing.T) {
+	t.Parallel()
+	s := twoMods(t, "ck3",
+		"brave = { category = personality }\n",
+		"brave = { category = personality }\n")
+	path := s.ModDefsOf("brave")[0].Path
+	twins := []catalog.Def{
+		{Origin: "modA", Path: path, Line: 1},
+		{Origin: "modA", Path: path, Line: 1},
+		{Origin: "modA", Path: path, Line: 9},
+	}
+	got := overrideSites(s, twins)
+	if len(got) != 2 {
+		t.Fatalf("sites = %d, want 2 (same-line twin dropped)", len(got))
+	}
+	if got[0].Line == got[1].Line {
+		t.Fatalf("expected distinct lines, got %+v", got)
+	}
+}
+
+func findCompat(rows []HealthRow, typ, name string) *HealthRow {
+	for i := range rows {
+		if rows[i].Type == typ && rows[i].Name == name {
+			return &rows[i]
+		}
+	}
+	return nil
+}

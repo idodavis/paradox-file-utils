@@ -6,7 +6,8 @@
   "repository": {
     "comment": {
       "name": "comment.line.number-sign.paradox-loc",
-      "match": "#.*$"
+      "begin": "#",
+      "end": "$"
     },
     "language-header": {
       "name": "keyword.control.language.paradox-loc",
@@ -31,7 +32,8 @@
             { "name": "constant.other.formatting.paradox-loc", "match": "#[!A-Za-z_;]*" },
             { "name": "constant.other.icon.paradox-loc", "match": "@[A-Za-z0-9_]+!" }
           ]
-        }
+        },
+        { "include": "#comment" }
       ]
     }
   }

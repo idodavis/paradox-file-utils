@@ -29,8 +29,13 @@ function open(): void {
 </script>
 
 <template>
-  <aside class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-default">
-    <div v-if="!title" class="p-2 text-xs text-muted">
+  <aside
+    class="flex h-full min-h-0 w-full flex-col overflow-hidden border-l border-default bg-elevated"
+  >
+    <div
+      v-if="!title"
+      class="m-2 rounded-md border border-dashed border-muted px-3 py-4 text-xs text-muted"
+    >
       <slot name="empty">Select a row.</slot>
     </div>
     <template v-else>

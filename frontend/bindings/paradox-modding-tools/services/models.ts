@@ -27,22 +27,6 @@ export interface FileBytes {
 }
 
 /**
- * FileMergeResult is the result of merging one file.
- */
-export interface FileMergeResult {
-    "filePath": string;
-    "fileAPath": string;
-    "fileBPath": string;
-    "outputPath": string;
-    "changed": number;
-    "added": number;
-    "entriesChanged"?: string[] | null;
-    "entriesAdded"?: string[] | null;
-    "resolvedConflicts"?: ResolvedConflict[] | null;
-    "error"?: string;
-}
-
-/**
  * FileSearchHit is one path from FileSearch.
  */
 export interface FileSearchHit {
@@ -150,65 +134,6 @@ export interface Listing {
 }
 
 /**
- * MergerOptions configures how files are merged.
- */
-export interface MergerOptions {
-    "addAdditionalEntries": boolean;
-}
-
-/**
- * PatchRun is one patch of a mod onto a target install.
- */
-export interface PatchRun {
-    "id": string;
-    "workspaceId": string;
-    "modId": string;
-    "targetVersion": string;
-    "targetInstallId": string;
-    "status": string;
-    "stagingDir": string;
-    "createdAt": string;
-    "updatedAt": string;
-    "files": PatchRunFile[] | null;
-}
-
-/**
- * PatchRunFile is one file in a patch run.
- */
-export interface PatchRunFile {
-    "id": string;
-    "relPath": string;
-    "status": string;
-    "decision": string;
-    "previewPath": string;
-    "modPath"?: string;
-    "targetPath"?: string;
-    "stats": PatchRunFileStats;
-}
-
-/**
- * PatchRunFileStats is merge preview stats for one file.
- */
-export interface PatchRunFileStats {
-    "changed": number;
-    "added": number;
-    "conflicts": number;
-    "error": string;
-}
-
-/**
- * PatchRunPreview is the result of previewing a patch run.
- */
-export interface PatchRunPreview {
-    "runId": string;
-    "files": PatchRunFile[] | null;
-    "totalFiles": number;
-    "safeCount": number;
-    "reviewCount": number;
-    "skippedCount": number;
-}
-
-/**
  * PathStat describes a filesystem node for the workbench FS bridge.
  */
 export interface PathStat {
@@ -220,17 +145,6 @@ export interface PathStat {
 }
 
 /**
- * PreviewItem is a single file match for the merge preview.
- */
-export interface PreviewItem {
-    "relPath": string;
-    "pathA": string;
-    "pathB": string;
-    "outputPath": string;
-    "wouldOverwrite": boolean;
-}
-
-/**
  * PublishResult is the Steam helper outcome plus the saved listing on success.
  */
 export interface PublishResult {
@@ -238,23 +152,6 @@ export interface PublishResult {
     "needsLegalAgreement": boolean;
     "legalUrl"?: string;
     "listing"?: Listing | null;
-}
-
-/**
- * ResolvedConflict records a conflict that was auto-resolved (for report/audit).
- */
-export interface ResolvedConflict {
-    "key": string;
-
-    /**
-     * "A" or "B"
-     */
-    "usedSide": string;
-
-    /**
-     * "directive", "keyList", "default"
-     */
-    "reason": string;
 }
 
 /**
@@ -316,10 +213,8 @@ export interface Workspace {
     "gameId": string;
     "name": string;
     "installId": string;
-    "stagingDir": string;
     "defaultLocLang": string;
     "gameColor"?: string;
-    "stagingColor"?: string;
     "resetIdeOnOpen": boolean;
     "defaultTool"?: string;
     "ideOpenFiles"?: string[] | null;

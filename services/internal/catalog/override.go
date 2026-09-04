@@ -50,7 +50,8 @@ func Winner(gameID string, defs []Def, order map[string]int) *Def {
 }
 
 func skipOverrideKind(t string) bool {
-	return t == "loc_key" || t == "mod_descriptor" || game.IsEphemeral(t)
+	return t == "loc_key" || t == "mod_descriptor" || t == "namespace" ||
+		game.IsEphemeral(t)
 }
 
 // Contests returns override rows from workspace and vanilla defs.

@@ -1,5 +1,5 @@
 /**
- * Explorer color tags for Game / Mod / Staging workspace roots.
+ * Explorer color tags for Game / Mod workspace roots.
  *
  * Accent hex comes from Settings (`originHex`) via injected CSS, not
  * static ThemeColor ids.
@@ -23,8 +23,6 @@ let thumbStyle: HTMLStyleElement | null = null;
 
 /** Fixed Game root accent (muted teal). */
 const GAME_COLOR_ID = "pmt.root.game";
-/** Fixed Staging root accent (muted amber). */
-const STAGING_COLOR_ID = "pmt.root.staging";
 /** Soft mod palette — wrap by SortOrder % 10. */
 const MOD_COLOR_IDS = [
   "pmt.root.mod0",
@@ -42,7 +40,6 @@ const MOD_COLOR_IDS = [
 /** Default hex for contributed colors (work on dark + light themes). */
 const COLOR_DEFAULTS: Record<string, string> = {
   [GAME_COLOR_ID]: "#5B9A8B",
-  [STAGING_COLOR_ID]: "#B08948",
   [MOD_COLOR_IDS[0]]: "#7A8FB5",
   [MOD_COLOR_IDS[1]]: "#8F7AA8",
   [MOD_COLOR_IDS[2]]: "#6F9E7A",
@@ -59,7 +56,7 @@ let roots: IdeRoot[] = [];
 let registered = false;
 const changeEmitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
 
-/** Hex for a root or origin: custom #RRGGBB, else game/staging default, else palette. */
+/** Hex for a root or origin: custom #RRGGBB, else game default, else palette. */
 export function originHex(origin: {
   kind: string;
   path: string;
@@ -69,12 +66,11 @@ export function originHex(origin: {
 }): string {
   if (origin.color && /^#[0-9A-Fa-f]{6}$/.test(origin.color)) return origin.color;
   if (origin.kind === "game") return COLOR_DEFAULTS[GAME_COLOR_ID]!;
-  if (origin.kind === "staging") return COLOR_DEFAULTS[STAGING_COLOR_ID]!;
   const i = wrapIndexFor(origin);
   return COLOR_DEFAULTS[MOD_COLOR_IDS[i]!] ?? COLOR_DEFAULTS[MOD_COLOR_IDS[0]]!;
 }
 
-/** Hex for a Go origin id (`vanilla`, mod id, `staging`). Fallback teal. */
+/** Hex for a Go origin id (`vanilla` or mod id). Fallback teal. */
 export function originHexByOriginId(id: string): string {
   const key = id || "vanilla";
   const store = useWorkspaceStore();
@@ -83,13 +79,6 @@ export function originHexByOriginId(id: string): string {
       kind: "game",
       path: "",
       color: store.activeWorkspace?.gameColor,
-    });
-  }
-  if (key === "staging") {
-    return originHex({
-      kind: "staging",
-      path: "",
-      color: store.activeWorkspace?.stagingColor,
     });
   }
   const mods = store.workspaceMods;
@@ -129,8 +118,6 @@ function tooltipFor(root: IdeRoot): string {
   switch (root.kind) {
     case "game":
       return "Game root";
-    case "staging":
-      return "Staging";
     case "mod":
       return `Mod: ${root.label}`;
     default:

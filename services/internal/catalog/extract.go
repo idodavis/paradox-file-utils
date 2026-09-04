@@ -103,7 +103,9 @@ func ExtractParsed(
 		ex.Defs, ex.GUITypes, ex.GUIProps = extractGUI(res.Root, res.Lines(), absPath)
 	case game.ModeTopLevelKey, game.ModeEventID:
 		if rule.Mode == game.ModeEventID {
-			ex.Defs = extractEvents(res.Root, res.Lines(), gameID, absPath, origin)
+			var nsRefs []Ref
+			ex.Defs, nsRefs = extractEvents(res.Root, res.Lines(), gameID, absPath, origin)
+			ex.Refs = nsRefs
 		} else {
 			ex.Defs = extractTopLevel(res.Root, res.Lines(), gameID, rule.Kind, absPath, origin)
 		}
@@ -117,7 +119,9 @@ func ExtractParsed(
 	default:
 		return ex
 	}
-	ex.Refs, ex.Edges, ex.Cands = extractRefsAndEdges(gameID, res.Root, res.Lines(), absPath, ex.Defs)
+	bodyRefs, edges, cands := extractRefsAndEdges(gameID, res.Root, res.Lines(), absPath, ex.Defs)
+	ex.Refs = append(ex.Refs, bodyRefs...)
+	ex.Edges, ex.Cands = edges, cands
 	nameDefs, nameRefs := extractScriptNames(gameID, res.Root, res.Lines(), absPath, origin)
 	ex.Defs = append(ex.Defs, nameDefs...)
 	ex.Refs = append(ex.Refs, nameRefs...)
@@ -127,10 +131,9 @@ func ExtractParsed(
 	if ck := game.CanonicalKind(rule.Kind); ck == "game_rule" {
 		ex.Defs = append(ex.Defs, extractGameRuleSettings(res.Root, res.Lines(), absPath, origin)...)
 	}
-	if conventionLocKind(rule.Kind) {
-		ex.Refs = append(ex.Refs, conventionLocRefs(
-			res.Root, res.Lines(), absPath, ex.Defs, rule.Kind)...)
-	}
+	ex.Refs = append(ex.Refs, conventionLocRefs(
+		res.Root, res.Lines(), absPath, ex.Defs, rule.Kind,
+	)...)
 	ex.FieldRHS = extractFieldRHS(res.Root)
 	return ex
 }
@@ -160,6 +163,12 @@ func makeDef(kind, key, path, origin string, kr jomini.Range, li *jomini.LineInd
 }
 
 func extractTopLevel(root *jomini.Root, li *jomini.LineIndex, gameID, kind, path, origin string) []Def {
+	if game.CanonicalKind(kind) == "title" {
+		return extractTitleTree(root, li, gameID, path, origin)
+	}
+	if game.CanonicalKind(kind) == "religion" {
+		return extractReligionTree(root, li, gameID, kind, path, origin)
+	}
 	var defs []Def
 	for _, st := range root.Statements {
 		a, ok := st.(*jomini.Assignment)
@@ -175,8 +184,88 @@ func extractTopLevel(root *jomini.Root, li *jomini.LineIndex, gameID, kind, path
 	return defs
 }
 
-func extractEvents(root *jomini.Root, li *jomini.LineIndex, gameID, path, origin string) []Def {
+// extractTitleTree walks landed_titles once and emits e_/k_/d_/c_/b_ keys at any depth.
+func extractTitleTree(root *jomini.Root, li *jomini.LineIndex, gameID, path, origin string) []Def {
+	if root == nil {
+		return nil
+	}
 	var defs []Def
+	var walk func([]jomini.Statement)
+	walk = func(stmts []jomini.Statement) {
+		for _, st := range stmts {
+			a, ok := st.(*jomini.Assignment)
+			if !ok || a.Key.Quoted || (a.Op != "=" && a.Op != "?=") {
+				continue
+			}
+			name := game.KeyIdentity(gameID, a.Key.Text)
+			if isTitleID(name) {
+				defs = append(defs, makeDef("title", name, path, origin, a.Key.Range, li))
+			}
+			if b := jomini.BlockOf(a.Value); b != nil {
+				walk(b.Statements)
+			}
+		}
+	}
+	walk(root.Statements)
+	return defs
+}
+
+func isTitleID(s string) bool {
+	return len(s) > 2 && s[1] == '_' &&
+		(s[0] == 'e' || s[0] == 'k' || s[0] == 'd' || s[0] == 'c' || s[0] == 'b')
+}
+
+// extractReligionTree emits top-level religions and nested `faiths = { }` keys.
+func extractReligionTree(
+	root *jomini.Root, li *jomini.LineIndex, gameID, kind, path, origin string,
+) []Def {
+	if root == nil {
+		return nil
+	}
+	var defs []Def
+	for _, st := range root.Statements {
+		a, ok := st.(*jomini.Assignment)
+		if !ok || a.Key.Quoted || (a.Op != "=" && a.Op != "?=") {
+			continue
+		}
+		name := game.KeyIdentity(gameID, a.Key.Text)
+		if !defNameRe.MatchString(name) || name == "namespace" {
+			continue
+		}
+		defs = append(defs, makeDef(kind, name, path, origin, a.Key.Range, li))
+		b := jomini.BlockOf(a.Value)
+		if b == nil {
+			continue
+		}
+		for _, inner := range b.Statements {
+			ia, ok := inner.(*jomini.Assignment)
+			if !ok || ia.Key.Quoted || ia.Key.Text != "faiths" {
+				continue
+			}
+			fb := jomini.BlockOf(ia.Value)
+			if fb == nil {
+				continue
+			}
+			for _, fs := range fb.Statements {
+				fa, ok := fs.(*jomini.Assignment)
+				if !ok || fa.Key.Quoted || (fa.Op != "=" && fa.Op != "?=") {
+					continue
+				}
+				fname := game.KeyIdentity(gameID, fa.Key.Text)
+				if !defNameRe.MatchString(fname) || jomini.BlockOf(fa.Value) == nil {
+					continue
+				}
+				defs = append(defs, makeDef("faith", fname, path, origin, fa.Key.Range, li))
+			}
+		}
+	}
+	return defs
+}
+
+func extractEvents(
+	root *jomini.Root, li *jomini.LineIndex, gameID, path, origin string,
+) (defs []Def, refs []Ref) {
+	var currentNs string
 	var walk func(stmts []jomini.Statement, depth int)
 	walk = func(stmts []jomini.Statement, depth int) {
 		var marker string
@@ -202,10 +291,25 @@ func extractEvents(root *jomini.Root, li *jomini.LineIndex, gameID, path, origin
 			m := marker
 			marker = ""
 			if !a.Key.Quoted && (a.Op == "=" || a.Op == "?=") {
-				if m != "" && defNameRe.MatchString(a.Key.Text) {
+				if depth == 0 && strings.EqualFold(a.Key.Text, "namespace") {
+					if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted &&
+						sc.Text != "" && defNameRe.MatchString(sc.Text) {
+						currentNs = sc.Text
+						defs = append(defs, makeDef(
+							"namespace", sc.Text, path, origin, sc.Range, li,
+						))
+					}
+				} else if m != "" && defNameRe.MatchString(a.Key.Text) {
 					defs = append(defs, makeDef(m, a.Key.Text, path, origin, a.Key.Range, li))
 				} else if depth == 0 && eventIDRe.MatchString(a.Key.Text) {
 					defs = append(defs, makeDef("event", a.Key.Text, path, origin, a.Key.Range, li))
+					if currentNs != "" {
+						refs = append(refs, Ref{
+							Key: currentNs, Kind: "namespace", Path: path,
+							Line:  li.PositionAt(a.Key.Range.Start).Line,
+							Start: a.Key.Range.Start, End: a.Key.Range.End,
+						})
+					}
 				}
 			}
 			if b := jomini.BlockOf(a.Value); b != nil {
@@ -213,8 +317,10 @@ func extractEvents(root *jomini.Root, li *jomini.LineIndex, gameID, path, origin
 			}
 		}
 	}
-	walk(root.Statements, 0)
-	return defs
+	if root != nil {
+		walk(root.Statements, 0)
+	}
+	return defs, refs
 }
 
 func extractGUI(root *jomini.Root, li *jomini.LineIndex, path string) ([]Def, map[string]bool, map[string]bool) {
@@ -318,7 +424,7 @@ type defAtLine struct {
 func defContainers(defs []Def) []defAtLine {
 	var out []defAtLine
 	for _, d := range defs {
-		if d.Kind != "loc_key" {
+		if d.Kind != "loc_key" && d.Kind != "namespace" {
 			out = append(out, defAtLine{d.Line, d.Key})
 		}
 	}
@@ -338,6 +444,20 @@ func containerAt(containers []defAtLine, line int) string {
 		}
 	}
 	return best
+}
+
+// objectRefKey is the stored key for a RefFieldKind RHS, or false to skip.
+func objectRefKey(gameID, kind, text string) (string, bool) {
+	if game.SkipFieldRHS(kind, text) {
+		return "", false
+	}
+	if _, ok := game.ParsePrefixed(text); ok {
+		return "", false
+	}
+	if _, id, ok := game.ParseTyped(gameID, text); ok {
+		return id, true
+	}
+	return text, true
 }
 
 func extractRefsAndEdges(
@@ -377,19 +497,13 @@ func extractRefsAndEdges(
 					if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted && sc.Text != "" {
 						if prop == loc.PropNone {
 							if rk := game.RefFieldKind(gameID, key); rk != "" {
-								refs = append(refs, Ref{
-									Key: sc.Text, Kind: rk, Path: path,
-									Line:  li.PositionAt(sc.Range.Start).Line,
-									Start: sc.Range.Start, End: sc.Range.End,
-								})
-							} else if game.IsScriptValueField(key) &&
-								game.IsScriptValueRHS(sc.Text) &&
-								!scriptNameValueSlot(gameID, stack, key) {
-								refs = append(refs, Ref{
-									Key: sc.Text, Kind: "script_value", Path: path,
-									Line:  li.PositionAt(sc.Range.Start).Line,
-									Start: sc.Range.Start, End: sc.Range.End,
-								})
+								if refKey, ok := objectRefKey(gameID, rk, sc.Text); ok {
+									refs = append(refs, Ref{
+										Key: refKey, Kind: rk, Path: path,
+										Line:  li.PositionAt(sc.Range.Start).Line,
+										Start: sc.Range.Start, End: sc.Range.End,
+									})
+								}
 							} else if key == "type" && len(stack) > 0 &&
 								game.MessageTypeParent(stack[len(stack)-1].key) {
 								refs = append(refs, Ref{
@@ -640,11 +754,12 @@ func cloneFieldEnums(
 	return out
 }
 
-// locKindRefs keeps loc / loc-broad uses for the vanilla sidecar.
+// locKindRefs keeps loc / loc-broad / loc-convention uses for the vanilla sidecar.
 func locKindRefs(refs []Ref) []Ref {
 	var out []Ref
 	for _, r := range refs {
-		if r.Kind == "loc" || r.Kind == "loc-broad" {
+		switch r.Kind {
+		case "loc", "loc-broad", "loc-convention":
 			out = append(out, r)
 		}
 	}

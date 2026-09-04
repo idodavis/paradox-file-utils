@@ -106,22 +106,5 @@ type PatchPage struct {
 	ModdingSections []Section `json:"moddingSections"`
 }
 
-// AffectedRow is one Impact Check hit.
-type AffectedRow struct {
-	Rel        string `json:"rel"`
-	Origin     string `json:"origin"`
-	OriginName string `json:"originName"`
-	Path       string `json:"path"`
-	Why        string `json:"why"`
-	Token      string `json:"token"`
-	PatchTitle string `json:"patchTitle"`
-}
-
-// AffectedReport is the WikiService.ModAffected payload.
-type AffectedReport struct {
-	Likely            []AffectedRow `json:"likely"`
-	NotesWithoutMatch int           `json:"notesWithoutMatch"`
-}
-
 // Progress reports wiki fetch counts for lang:scan-progress.
 type Progress func(done, total int, kind string)

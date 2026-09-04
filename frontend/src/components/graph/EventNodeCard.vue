@@ -71,12 +71,18 @@ const badge = computed(() => props.data?.originName || "");
       :connectable="false"
     />
     <div
-      class="flex h-5 items-center gap-1 border-b px-1.5 text-[10px] text-muted"
+      class="flex h-5 items-center justify-between gap-1 border-b px-1.5 text-[10px] text-muted"
       :class="isMore ? 'border-dashed border-muted' : 'border-default'"
       :style="header.tint ? { backgroundColor: header.tint } : undefined"
     >
-      <UIcon :name="header.icon" class="size-2.5 shrink-0" />
-      <span class="truncate">{{ isMore ? "" : props.data?.kind }}</span>
+      <span class="flex min-w-0 items-center gap-1">
+        <UIcon :name="header.icon" class="size-2.5 shrink-0" />
+        <span class="truncate">{{ isMore ? "" : props.data?.kind }}</span>
+      </span>
+      <span
+        v-if="props.data?.kind === 'event' && props.data.namespace"
+        class="max-w-[50%] shrink-0 truncate"
+      >{{ props.data.namespace }}</span>
     </div>
     <div class="px-2 py-1">
       <div class="truncate text-sm font-medium text-default">

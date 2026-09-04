@@ -1,5 +1,5 @@
-// viewsservice.go is the Wails RPC shell for event graph, conflicts, and loc
-// coverage. It holds a pointer to SessionService and delegates to package views.
+// viewsservice.go is the Wails RPC shell for event graph and workspace health.
+// It holds a pointer to SessionService and delegates to package views.
 
 package services
 
@@ -27,17 +27,10 @@ func (s *ViewsService) GetEventDetail(workspaceID, eventID string) (*views.Event
 	})
 }
 
-// GetOverrides returns FIOS/LIOS override rows for the conflict monitor.
-func (s *ViewsService) GetOverrides(workspaceID string) ([]views.OverrideRow, error) {
-	return withSession(s.Session, workspaceID, func(sess *session.Session) []views.OverrideRow {
-		return views.OverrideRows(sess)
-	})
-}
-
-// GetLocCoverage returns per-language localization health for workspace mods.
-func (s *ViewsService) GetLocCoverage(workspaceID string) ([]views.LocCoverage, error) {
-	return withSession(s.Session, workspaceID, func(sess *session.Session) []views.LocCoverage {
-		return views.Coverage(sess)
+// GetHealth returns grouped compatibility and loc rows for Workspace Health.
+func (s *ViewsService) GetHealth(workspaceID string, order []string) (views.HealthReport, error) {
+	return withSession(s.Session, workspaceID, func(sess *session.Session) views.HealthReport {
+		return views.Health(sess, order)
 	})
 }
 

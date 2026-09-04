@@ -106,6 +106,9 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 			n.OriginName = s.OriginName(n.Origin)
 		}
 		n.Title = titleOf(s, id)
+		if n.Kind == "event" {
+			n.Namespace = eventNamespace(s, d, id)
+		}
 		if c := firesCount[id]; c > 0 {
 			n.Fires = c
 		}

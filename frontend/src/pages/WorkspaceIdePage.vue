@@ -38,7 +38,7 @@ const { error, isPending } = useQuery({
     const rec = await GetIdeRoots(id);
     const roots = rec?.roots ?? [];
     if (!roots.length) {
-      throw new Error("No game, mod, or staging paths available for this workspace.");
+      throw new Error("No game or mod paths available for this workspace.");
     }
     await setWorkbenchRoots(roots, currentWorkbenchTheme(), {
       workspaceId: id,

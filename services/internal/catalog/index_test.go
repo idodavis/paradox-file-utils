@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"paradox-modding-tools/services/internal/parser/jomini"
 )
 
 func writeMod(t *testing.T, root, rel, content string) {
@@ -177,6 +179,36 @@ test.1 = {
 			t.Fatalf("flag_definitions defs=%v", fd.Defs)
 		}
 	})
+	t.Run("event namespace defs and refs", func(t *testing.T) {
+		src := `namespace = a
+a.1 = { type = character_event }
+namespace = b
+b.1 = { type = character_event }
+`
+		ex := extractCK3("events/x.txt", src, "modA")
+		if !findDef(ex.Defs, "namespace", "a") || !findDef(ex.Defs, "namespace", "b") {
+			t.Fatalf("ns defs=%v", ex.Defs)
+		}
+		if !findDef(ex.Defs, "event", "a.1") || !findDef(ex.Defs, "event", "b.1") {
+			t.Fatalf("event defs=%v", ex.Defs)
+		}
+		if !hasRef(ex.Refs, "namespace", "a") || !hasRef(ex.Refs, "namespace", "b") {
+			t.Fatalf("ns refs=%v", ex.Refs)
+		}
+	})
+	t.Run("on_action file skips namespace key", func(t *testing.T) {
+		ex := extractCK3("common/on_actions/x.txt",
+			"namespace = foo\nfoo = { events = { bar.1 } }\n", "modA")
+		if findDef(ex.Defs, "namespace", "foo") {
+			t.Fatalf("on_action harvested namespace: %v", ex.Defs)
+		}
+		if findDef(ex.Defs, "on_action", "namespace") {
+			t.Fatalf("on_action named namespace: %v", ex.Defs)
+		}
+		if !findDef(ex.Defs, "on_action", "foo") {
+			t.Fatalf("want on_action foo: %v", ex.Defs)
+		}
+	})
 	t.Run("on_action container", func(t *testing.T) {
 		oa := extractCK3("common/on_action/x.txt", "on_birth = {\n\tevents = { test.5 }\n}\n", "modA")
 		if !hasEdge(oa.Edges, "on_birth", "test.5", "events") {
@@ -230,13 +262,124 @@ real_effect = {
 			t.Fatalf("missing title loc: %v", ex.Refs)
 		}
 	})
-	t.Run("script_value skips prefixed RHS", func(t *testing.T) {
+	t.Run("typed prefix and noisy RHS", func(t *testing.T) {
+		src := `e.1 = {
+	immediate = {
+		culture = english
+		culture = culture:english
+		culture = capital_province.culture
+		coat_of_arms = $COA$
+		exists = culture:danish
+	}
+}
+`
+		ex := extractCK3("events/x.txt", src, "mod")
+		if !hasRef(ex.Refs, "culture", "english") {
+			t.Fatalf("bare culture = english: %v", ex.Refs)
+		}
+		if hasRef(ex.Refs, "culture", "culture:english") {
+			t.Fatalf("typed cite stored raw: %v", ex.Refs)
+		}
+		var english int
+		for _, r := range ex.Refs {
+			if r.Kind == "culture" && r.Key == "english" {
+				english++
+			}
+		}
+		if english != 2 {
+			t.Fatalf("want two english culture refs, got %d: %v", english, ex.Refs)
+		}
+		if hasRef(ex.Refs, "culture", "capital_province.culture") {
+			t.Fatalf("dotted link harvested: %v", ex.Refs)
+		}
+		if hasRef(ex.Refs, "coat_of_arms", "$COA$") {
+			t.Fatalf("$COA$ harvested: %v", ex.Refs)
+		}
+		if !hasRef(ex.Refs, "culture", "danish") {
+			t.Fatalf("exists = culture:danish: %v", ex.Refs)
+		}
+	})
+	t.Run("nested faiths and target_titles", func(t *testing.T) {
+		rel := extractCK3("common/religion/religion_types/r.txt",
+			"christianity_religion = {\n\tfaiths = {\n\t\tcatholic = { color = { 1 1 1 } }\n\t}\n}\n",
+			"mod")
+		if !findDef(rel.Defs, "religion", "christianity_religion") ||
+			!findDef(rel.Defs, "faith", "catholic") {
+			t.Fatalf("religion tree: %v", rel.Defs)
+		}
+		if findDef(rel.Defs, "faith", "color") {
+			t.Fatal("color must not be a faith")
+		}
+		oldRel := extractCK3("common/religion/religions/r.txt",
+			"christianity_religion = {\n\tfaiths = {\n\t\torthodox = { color = { 1 1 1 } }\n\t}\n}\n",
+			"mod")
+		if !findDef(oldRel.Defs, "faith", "orthodox") {
+			t.Fatalf("legacy religions folder: %v", oldRel.Defs)
+		}
 		ex := extractCK3("events/x.txt",
-			"e.1 = { immediate = { set_variable = { name = x value = scope:foo } } }\n",
+			"e.1 = { immediate = { faith = catholic faith = faith:orthodox } }\n",
+			"mod")
+		if !hasRef(ex.Refs, "faith", "catholic") || !hasRef(ex.Refs, "faith", "orthodox") {
+			t.Fatalf("faith cites: %v", ex.Refs)
+		}
+		if hasRef(ex.Refs, "faith", "faith:orthodox") {
+			t.Fatalf("typed faith stored raw: %v", ex.Refs)
+		}
+		cb := extractCK3("common/casus_belli_types/c.txt",
+			"my_cb = { titles = target_titles titles = e_hre "+
+				"war_name = \"HRE_WAR\" cb_name = \"HRE_CB\" }\n",
+			"mod")
+		if hasRef(cb.Refs, "title", "target_titles") {
+			t.Fatalf("target_titles harvested: %v", cb.Refs)
+		}
+		if !hasRef(cb.Refs, "title", "e_hre") {
+			t.Fatalf("missing title cite: %v", cb.Refs)
+		}
+		if !hasRef(cb.Refs, "loc", "HRE_WAR") {
+			t.Fatalf("war_name not loc: %v", cb.Refs)
+		}
+		if !hasRef(cb.Refs, "loc", "HRE_CB") {
+			t.Fatalf("cb_name not loc: %v", cb.Refs)
+		}
+	})
+	t.Run("titles prefix", func(t *testing.T) {
+		ex := extractCK3("events/x.txt",
+			"e.1 = { immediate = { exists = titles:e_x } }\n", "mod")
+		if hasRef(ex.Refs, "title", "titles:e_x") {
+			t.Fatalf("typed title cite stored raw: %v", ex.Refs)
+		}
+		if !hasRef(ex.Refs, "title", "e_x") {
+			t.Fatalf("want titles:e_x as title id: %v", ex.Refs)
+		}
+		tree := extractCK3("common/landed_titles/t.txt",
+			"e_x = {\n\tcolor = { 1 2 3 }\n\tk_x = {\n\t\tc_x = { }\n\t}\n}\n",
+			"mod")
+		if !findDef(tree.Defs, "title", "e_x") ||
+			!findDef(tree.Defs, "title", "k_x") ||
+			!findDef(tree.Defs, "title", "c_x") {
+			t.Fatalf("nested titles: %v", tree.Defs)
+		}
+		if findDef(tree.Defs, "title", "color") {
+			t.Fatal("color must not be a title def")
+		}
+	})
+	t.Run("script_value skips formula RHS", func(t *testing.T) {
+		ex := extractCK3("events/x.txt",
+			"e.1 = { immediate = {\n"+
+				"\tset_variable = { name = x value = scope:foo }\n"+
+				"\tvalue = script_value:my_val\n"+
+				"\tvalue = current_military_strength\n"+
+				"\tvalue = tier\n"+
+				"} }\n",
 			"mod")
 		if hasRef(ex.Refs, "script_value", "scope:foo") ||
-			hasRef(ex.Refs, "script_value", "x") {
+			hasRef(ex.Refs, "script_value", "x") ||
+			hasRef(ex.Refs, "script_value", "tier") ||
+			hasRef(ex.Refs, "script_value", "current_military_strength") {
 			t.Fatalf("noisy script_value refs: %v", ex.Refs)
+		}
+		if !hasRef(ex.Refs, "script_value", "my_val") {
+			t.Fatalf("script_value:my_val: %v", ex.Refs)
 		}
 	})
 	t.Run("game_rule_setting defs", func(t *testing.T) {
@@ -244,6 +387,19 @@ real_effect = {
 			"my_rule = {\n\tdefault = a\n\tsuf_quieter = { }\n}\n", "mod")
 		if !findDef(ex.Defs, "game_rule_setting", "suf_quieter") {
 			t.Fatalf("missing setting def: %v", ex.Defs)
+		}
+	})
+	t.Run("decision convention keys", func(t *testing.T) {
+		ex := extractCK3("common/decisions/x.txt",
+			"ai_mogyer_adopt_christianity = {\n"+
+				"\tselection_tooltip = ai_mogyer_adopt_christianity_tooltip\n}\n",
+			"mod")
+		if !hasRef(ex.Refs, "loc-convention", "ai_mogyer_adopt_christianity_tooltip") ||
+			!hasRef(ex.Refs, "loc-convention", "ai_mogyer_adopt_christianity_confirm") {
+			t.Fatalf("missing decision convention loc: %v", ex.Refs)
+		}
+		if !hasRef(ex.Refs, "loc", "ai_mogyer_adopt_christianity_tooltip") {
+			t.Fatalf("selection_tooltip not harvested: %v", ex.Refs)
 		}
 	})
 	t.Run("game_rules convention keys", func(t *testing.T) {
@@ -291,13 +447,20 @@ real_effect = {
 		}
 	})
 	t.Run("loc file interpolations", func(t *testing.T) {
-		bom := "\ufeffl_english:\n used:0 \"Hi\"\n other:0 \"see $used$ and $used|U$\"\n"
+		bom := "\ufeffl_english:\n used:0 \"Hi\"\n other:0 \"see $used$ and $used|U$\"\n" +
+			" war:0 \"$ORDER$ $INDEPENDENCE_WAR_NAME$\"\n"
 		ex := extractCK3("localization/english/a_l_english.yml", bom, "mod")
 		if !findDef(ex.Defs, "loc_key", "used") || !findDef(ex.Defs, "loc_key", "other") {
 			t.Fatalf("defs=%v", ex.Defs)
 		}
 		if !hasRef(ex.Refs, "loc", "used") {
 			t.Fatalf("missing $used$ ref: %v", ex.Refs)
+		}
+		if hasRef(ex.Refs, "loc", "ORDER") {
+			t.Fatalf("$ORDER$ harvested: %v", ex.Refs)
+		}
+		if !hasRef(ex.Refs, "loc", "INDEPENDENCE_WAR_NAME") {
+			t.Fatalf("missing $INDEPENDENCE_WAR_NAME$ ref: %v", ex.Refs)
 		}
 	})
 }
@@ -374,5 +537,20 @@ func TestVoteFieldEnums(t *testing.T) {
 	}
 	if _, hit := got["event"]["id"]; hit {
 		t.Fatalf("single value should be omitted: %v", got)
+	}
+}
+
+func TestCK3InstallReligionTypesFaiths(t *testing.T) {
+	const rel = "common/religion/religion_types/00_christianity.txt"
+	p := filepath.Join(`C:\Program Files (x86)\Steam\steamapps\common\Crusader Kings III`,
+		"game", filepath.FromSlash(rel))
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Skip(err)
+	}
+	text, _ := jomini.Decode(raw)
+	ex := ExtractFile("ck3", p, rel, "", text, false)
+	if !findDef(ex.Defs, "faith", "catholic") {
+		t.Fatalf("catholic missing from religion_types (%d defs)", len(ex.Defs))
 	}
 }

@@ -57,6 +57,13 @@ func extractScriptNames(
 								End:   sc.Range.Start + p.NameOff + len(p.Name),
 							})
 						}
+					} else if kind, id, ok := game.ParseTyped(gameID, sc.Text); ok &&
+						game.RefFieldKind(gameID, a.Key.Text) == "" {
+						refs = append(refs, Ref{
+							Key: id, Kind: kind, Path: path,
+							Line:  li.PositionAt(sc.Range.Start).Line,
+							Start: sc.Range.Start, End: sc.Range.End,
+						})
 					}
 				}
 			}
@@ -321,16 +328,6 @@ func scriptNameValue(a *jomini.Assignment, r game.ScriptNameRule) string {
 	return "yes"
 }
 
-func conventionLocKind(kind string) bool {
-	switch game.CanonicalKind(kind) {
-	case "game_rules", "game_rule", "game_rule_category",
-		"messages", "message_filter_types", "message_group_types", "message":
-		return true
-	default:
-		return false
-	}
-}
-
 func conventionLocRefs(
 	root *jomini.Root, li *jomini.LineIndex, path string, defs []Def, kind string,
 ) []Ref {
@@ -346,14 +343,8 @@ func conventionLocRefs(
 	}
 	ck := game.CanonicalKind(kind)
 	for _, d := range defs {
-		switch ck {
-		case "game_rules", "game_rule":
-			add("rule_"+d.Key, d.Start, d.End)
-		case "game_rule_category":
-			add("game_rule_category_"+d.Key, d.Start, d.End)
-		case "message_filter_types":
-			add("message_filter_"+d.Key, d.Start, d.End)
-			add("message_filter_"+d.Key+"_desc", d.Start, d.End)
+		for _, key := range game.ConventionLocKeys(d.Kind, d.Key) {
+			add(key, d.Start, d.End)
 		}
 	}
 	if (ck != "game_rules" && ck != "game_rule") || root == nil {
@@ -393,12 +384,4 @@ func dropEphemeralDefs(defs []Def) []Def {
 		out = append(out, d)
 	}
 	return out
-}
-
-func scriptNameValueSlot(gameID string, stack []edgeFrame, key string) bool {
-	if len(stack) == 0 {
-		return false
-	}
-	_, ok := game.ScriptName(gameID, stack[len(stack)-1].key)
-	return ok && (key == "value" || key == "name")
 }

@@ -6,12 +6,10 @@ export type PageId =
   | "wizard"
   | "workspace-ide"
   | "event-graph"
-  | "conflicts"
-  | "loc-coverage"
+  | "health"
   | "patcher"
   | "release"
-  | "workspace-settings"
-  | "tools-merge";
+  | "workspace-settings";
 
 /** Route meta shared by the header, Help modal, toolbar, and KeepAlive. */
 export type PageEntry = {
@@ -39,14 +37,14 @@ export const PAGE_CATALOG: Record<PageId, PageEntry> = {
       "This is your workspace library. A workspace is one game install plus the mods you are editing.",
       "Click a card to open that workspace’s default page. Edit opens Workspace Settings. Delete removes the workspace from PMT only — mod folders on disk stay.",
       "New Workspace starts the setup wizard. New Mod creates a skeleton in an existing workspace, or starts the wizard when the library is empty.",
-      "Reset all data at the bottom wipes PMT workspaces, install records, caches, and patch history. It does not delete mods or Steam/game installs on disk. Theme, UI scale, and editor font are kept.",
+      "Reset all data at the bottom wipes PMT workspaces, install records, leftover folders under the PMT config tree, and caches. It does not delete mods or Steam/game installs on disk. Theme, UI scale, and editor font are kept.",
     ],
   },
   wizard: {
     title: "Create Workspace",
     description: "Set up a new modding workspace.",
     help: [
-      "Walk through game, install, mods, name, and staging.",
+      "Walk through game, install, mods, and name.",
       "Add existing mod to workspace or Create new mod (descriptor, empty common/ and events/, readmes, localization stub with UTF-8 BOM).",
       "Drag mods to set load order (SortOrder). You can change all of this later in Workspace Settings.",
       "After create you land in the IDE so you can open the files you just attached.",
@@ -58,7 +56,7 @@ export const PAGE_CATALOG: Record<PageId, PageEntry> = {
     workspace: true,
     tool: { label: "IDE", icon: "i-lucide-code" },
     help: [
-      "Folders come from this workspace: your mods, Staging, then the game files. There is no Open Folder — PMT owns the folder set. Back returns to the Library, not the create-workspace wizard.",
+      "Folders come from this workspace: your mods, then the game files. There is no Open Folder — PMT owns the folder set. Back returns to the Library, not the create-workspace wizard.",
       "Game files (Crusader Kings III, Victoria 3, or Europa Universalis V) are read-only. Edit in a mod folder. Search and Ctrl+P index every root. Deleting a mod’s root folder in the explorer also detaches it from this workspace; files inside a mod delete normally.",
       "Open editor tabs persist across workspace switch and app close unless you turn that off in Workspace Settings. Themes live in the PMT header, not in VS Code settings.",
       "The Guide pull-tab on the editor’s right edge opens a resizable wiki pane (search, contents, related pages). It stays closed until you open it. Snooze or turn off the toast under Display.",
@@ -74,49 +72,38 @@ export const PAGE_CATALOG: Record<PageId, PageEntry> = {
       "Pick a root event to see what it fires and what fires it. Origins filter which mods (and game files) feed the graph.",
       "Namespace narrows the picker; leave it empty to search every id. Double-click a node to re-root. Drag is temporary until you change layout or root.",
       "Recenter only pans to fit — it does not undo a layout change.",
+      "Hover an event id in the IDE (the definition or a trigger_event) for Open in Event Graph.",
     ],
   },
-  conflicts: {
-    title: "Conflicts",
-    description: "FIOS/LIOS overlapping definitions.",
+  health: {
+    title: "Workspace Health",
+    description: "Compatibility contests and localization coverage for this workspace.",
     keepAlive: true,
     workspace: true,
-    tool: { label: "Conflicts", icon: "i-lucide-layers" },
+    tool: { label: "Workspace Health", icon: "i-lucide-heart-pulse" },
     help: [
-      "This lists overlapping definitions (FIOS / LIOS). The winner is who actually loads in game. The left rail is workspace load order; last listed wins except first-wins kinds for that game.",
-      "Use Conflicts vs game-file overrides to switch scope. Origin names match the IDE explorer.",
-      "Open a row to jump to the file in the IDE.",
-    ],
-  },
-  "loc-coverage": {
-    title: "Loc Coverage",
-    description: "Missing, orphaned, and untranslated localization keys.",
-    keepAlive: true,
-    workspace: true,
-    tool: { label: "Loc Coverage", icon: "i-lucide-languages" },
-    help: [
-      "Missing keys are used in script but have no loc. Orphans are loc with no script use. Untranslated compares languages.",
-      "Default loc language is a workspace setting. Coverage looks at every language the mods ship.",
+      "Compatibility cards: contests (FIOS / LIOS), game-file overrides, cross-mod depends, and dangling refs. Localization cards: missing, orphans, and untranslated for the language in the heading select.",
+      "Drag load-order chips to preview winners without writing the workspace. Save as workspace order persists the same SortOrder as Settings.",
+      "Row detail shows a colorized snippet around the hit. Default loc language is an IDE/LSP setting; coverage lists every language the mods ship.",
     ],
   },
   patcher: {
     title: "Patch Center",
-    description: "Patch notes, impact check, and file retarget.",
+    description: "Wiki patch notes for the workspace game.",
     keepAlive: true,
     workspace: true,
     tool: { label: "Patch Center", icon: "i-lucide-arrow-left-right" },
     help: [
-      "Three tabs: Patch Notes (wiki changelog), Impact Check (heuristic overlap with your mod), and Patcher (file retarget).",
-      "Patch Notes is a cached wiki reader. Impact Check is incomplete — wiki bullets miss a lot. Patcher previews diffs in the workbench, then writes accepted files.",
-      "This is not a full merge of two mods — use Ad-hoc Merge for that.",
+      "Patch Notes is a cached wiki changelog reader for the game this workspace uses.",
+      "Pick a version to read the notes. This page does not retarget or merge files.",
     ],
   },
   release: {
-    title: "Release",
+    title: "Publish",
     description: "Edit the listing and publish to Steam Workshop or Paradox Mods.",
     keepAlive: true,
     workspace: true,
-    tool: { label: "Release", icon: "i-lucide-upload" },
+    tool: { label: "Publish", icon: "i-lucide-upload" },
     help: [
       "This page edits the mod folder: descriptor, mod-description.md, mod-description.bbcode, and changelog/<version>.bbcode.",
       "Description is Markdown in a rich editor. Save writes the Markdown file and converts to BBCode. Steam always uploads BBCode. Description paths are in Workspace Settings.",
@@ -131,28 +118,15 @@ export const PAGE_CATALOG: Record<PageId, PageEntry> = {
     workspace: true,
     help: [
       "Overview: name, default loc language, whether the IDE remembers open files, and which page Library should open.",
-      "Game: pick or add an install and pin a version. Changing install rebuilds language intelligence. Mods: attach an existing folder or create a new skeleton, then color, reorder, or detach. Detach does not delete the folder on disk. Per-mod description file paths and Workshop ignore live here. Staging: where patched output lands.",
+      "Game: pick or add an install and pin a version. Changing install rebuilds language intelligence. Mods: attach an existing folder or create a new skeleton, then color, reorder, or detach. Detach does not delete the folder on disk. Per-mod description file paths and Workshop ignore live here.",
       "Remove this workspace deletes the PMT record only. Reset all data lives on the Library page. Appearance (scale, editor font, which tools show) lives in the header Display control, not here.",
-    ],
-  },
-  "tools-merge": {
-    title: "Ad-hoc Merge",
-    description: "Merge two files or directories without a workspace.",
-    keepAlive: true,
-    help: [
-      "Merge two files or folders without a workspace. Useful for one-off compares.",
-      "This does not change your workspace mods. Results go where you choose.",
     ],
   },
 };
 
 /** Toolbar pills in catalog order. */
-export const WORKSPACE_TOOLS = (
-  Object.entries(PAGE_CATALOG) as [PageId, PageEntry][]
-)
-  .filter((entry): entry is [PageId, PageEntry & { tool: { label: string; icon: string } }] =>
-    !!entry[1].tool,
-  )
+export const WORKSPACE_TOOLS = (Object.entries(PAGE_CATALOG) as [PageId, PageEntry][])
+  .filter((entry): entry is [PageId, PageEntry & { tool: { label: string; icon: string } }] => !!entry[1].tool)
   .map(([name, page]) => ({
     name,
     label: page.tool.label,
@@ -163,9 +137,7 @@ export const WORKSPACE_TOOLS = (
 export type WorkspaceToolName = (typeof WORKSPACE_TOOLS)[number]["name"];
 
 /** All workspace tool route names, in toolbar order. */
-export const WORKSPACE_TOOL_NAMES: WorkspaceToolName[] = WORKSPACE_TOOLS.map(
-  (t) => t.name,
-);
+export const WORKSPACE_TOOL_NAMES: WorkspaceToolName[] = WORKSPACE_TOOLS.map((t) => t.name);
 
 /** Landing route for a workspace, honoring DefaultTool and visible-tool filter. */
 export function workspaceHomeRoute(

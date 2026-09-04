@@ -11,7 +11,7 @@ Builds are published under [GitHub Releases](https://github.com/idodavis/paradox
 ## What's in the app
 
 - **Workspace Library** — Manage modding workspaces tied to specific game installs and mod folders. Create, switch, and organize your modding projects.
-- **Workspace IDE** — File browser across game, mod, and staging roots with integrated editor/diff viewer. Compare files, switch themes, and navigate to patching tools.
+- **Workspace IDE** — File browser across game and mod roots with integrated editor/diff viewer. Compare files, switch themes, and navigate to patching tools.
 - **Patch Center** — Browse wiki patch notes for each game version and import game error.log files for analysis.
 - **Mod Patcher** — Update mods between game versions. Preview changes, accept/skip files, resolve conflicts with the merge editor.
 - **Event Graph** — Explore definitions and event flows harvested into the live workspace session (maps rebuilt on open; no persisted mod index).

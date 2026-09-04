@@ -3,6 +3,6 @@
 // game call things, and where do they live?" It contains NO bundled schema/data
 // dumps — all game data is derived from the install by the catalog package.
 //
-// Files: registry.go, detect.go, rules.go, prefix.go (ParsePrefixed / scope:),
+// Files: registry.go, detect.go, rules.go, prefix.go (ParsePrefixed / ParseTyped),
 // kind.go (KindLabel / KindHint).
 package game

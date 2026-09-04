@@ -2,7 +2,7 @@
 /**
  * Per-workspace settings: section sidebar and two-column form.
  */
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useDebounceFn } from "@vueuse/core";
 import { useSortable } from "@vueuse/integrations/useSortable";
@@ -12,7 +12,6 @@ import {
   AddGameInstall,
   AddWorkspaceMod,
   CountWorkspacesUsingInstall,
-  EnsureStagingDir,
   FindGameInstalls,
   ListGameInstalls,
   GetWorkspace,
@@ -36,6 +35,7 @@ import CreateModForm from "../components/CreateModForm.vue";
 import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
 import AddInstallCard from "../components/AddInstallCard.vue";
 import OriginColorField, { ORIGIN_COLOR_DESC } from "../components/OriginColorField.vue";
+import WorkspaceModCard, { MOD_HELP, type ModPatch } from "../components/WorkspaceModCard.vue";
 import { LOC_LANG_ITEMS, useWorkspaceStore } from "../stores/workspace";
 import { WORKSPACE_TOOLS } from "../workspaceTools";
 import { refreshIdeRootDecorations } from "../ide/workbenchHost";
@@ -54,12 +54,11 @@ const name = ref("");
 const locLang = ref("english");
 const rememberOpen = ref(true);
 const defaultTool = ref("workspace-ide");
-const stagingDir = ref("");
 const gameColor = ref("");
-const stagingColor = ref("");
 const installId = ref("");
 const mods = ref<WorkspaceMod[]>([]);
 const modListEl = ref<HTMLElement | null>(null);
+const expandedIds = shallowRef<Record<string, boolean>>({});
 
 const newInstallPath = ref("");
 const newInstallName = ref("");
@@ -110,10 +109,11 @@ function applyWorkspace(): void {
   name.value = w.name;
   locLang.value = w.defaultLocLang || "english";
   rememberOpen.value = !w.resetIdeOnOpen;
-  defaultTool.value = w.defaultTool || "workspace-ide";
-  stagingDir.value = w.stagingDir;
+  const tool = w.defaultTool || "workspace-ide";
+  defaultTool.value = pageItems.some((i) => i.value === tool)
+    ? tool
+    : "workspace-ide";
   gameColor.value = w.gameColor ?? "";
-  stagingColor.value = w.stagingColor ?? "";
   installId.value = w.installId;
   mods.value = p.mods.map((m) => ({ ...m }));
   const inst = p.installs.find((i) => i.id === w.installId);
@@ -144,21 +144,51 @@ const sharingWarn = computed(() => {
 const savedInstallPaths = computed(() => (page.value?.installs ?? []).map((i) => i.path).filter(Boolean));
 const error = computed(() => loadError.value?.message ?? "");
 
+watch(
+  () => mods.value.map((m) => m.id),
+  (ids) => {
+    if (!ids.length) return;
+    if (ids.some((id) => expandedIds.value[id])) return;
+    const first = ids[0];
+    if (first) expandedIds.value = { [first]: true };
+  },
+  { immediate: true },
+);
+
+/** Expand or collapse one mod card. */
+function setModExpanded(id: string, open: boolean): void {
+  expandedIds.value = { ...expandedIds.value, [id]: open };
+}
+
+/** Persist the current card order into config and the live session. */
+async function persistLoadOrder(): Promise<void> {
+  await nextTick();
+  mods.value.forEach((m, i) => {
+    m.sortOrder = i;
+  });
+  try {
+    await ReorderWorkspaceMods(
+      id.value,
+      mods.value.map((m) => m.id),
+    );
+    await wsStore.refresh();
+    const rec = await GetIdeRoots(id.value);
+    refreshIdeRootDecorations(rec?.roots ?? []);
+    toastOk("Load order saved.");
+  } catch (e) {
+    toast.add({
+      title: e instanceof Error ? e.message : String(e),
+      color: "error",
+    });
+  }
+}
+
 useSortable(modListEl, mods, {
   handle: ".mod-handle",
   animation: 150,
   watchElement: true,
   onEnd: () => {
-    mods.value.forEach((m, i) => {
-      m.sortOrder = i;
-    });
-    void (async () => {
-      await ReorderWorkspaceMods(
-        id.value,
-        mods.value.map((m) => m.id),
-      );
-      await wsStore.refresh();
-    })();
+    void persistLoadOrder();
   },
 });
 
@@ -176,11 +206,11 @@ const { mutateAsync: saveOverview, isLoading: savingOverview } = useMutation({
     const wsId = id.value;
     const w = page.value?.workspace;
     if (!w) return;
-    await UpdateWorkspace(wsId, name.value.trim(), w.installId, w.stagingDir);
+    await UpdateWorkspace(wsId, name.value.trim(), w.installId);
     if (locLang.value !== (w.defaultLocLang || "english")) {
       await SetWorkspaceLocLang(wsId, locLang.value);
     }
-    await UpdateWorkspacePrefs(wsId, !rememberOpen.value, defaultTool.value, gameColor.value, stagingColor.value);
+    await UpdateWorkspacePrefs(wsId, !rememberOpen.value, defaultTool.value, gameColor.value);
     await wsStore.refresh();
   },
   onSuccess: () => {
@@ -194,7 +224,7 @@ const { mutateAsync: changeInstall, isLoading: changingInstall } = useMutation({
     const w = page.value?.workspace;
     if (!w) return;
     installId.value = nextId;
-    await UpdateWorkspace(id.value, w.name, nextId, w.stagingDir);
+    await UpdateWorkspace(id.value, w.name, nextId);
     await wsStore.refresh();
   },
   onSuccess: () => {
@@ -240,21 +270,6 @@ const { mutateAsync: addInstall, isLoading: addingInstall } = useMutation({
     newInstallName.value = "";
     newInstallVersion.value = "latest";
     await changeInstall(inst.id);
-  },
-});
-
-const { mutateAsync: saveStaging, isLoading: savingStaging } = useMutation({
-  mutation: async () => {
-    const w = page.value?.workspace;
-    if (!w) return;
-    const dir = stagingDir.value.trim();
-    await UpdateWorkspace(id.value, w.name, w.installId, dir);
-    if (!dir) await EnsureStagingDir(id.value);
-    await wsStore.refresh();
-  },
-  onSuccess: () => {
-    toastOk("Staging saved.");
-    void refetch();
   },
 });
 
@@ -315,7 +330,7 @@ async function removeMod(mod: WorkspaceMod): Promise<void> {
 }
 
 const persistColors = useDebounceFn(async () => {
-  await UpdateWorkspacePrefs(id.value, !rememberOpen.value, defaultTool.value, gameColor.value, stagingColor.value);
+  await UpdateWorkspacePrefs(id.value, !rememberOpen.value, defaultTool.value, gameColor.value);
   await wsStore.refresh();
   const rec = await GetIdeRoots(id.value);
   refreshIdeRootDecorations(rec?.roots ?? []);
@@ -332,15 +347,9 @@ const COPY = {
   versionPin: "Version of the game that this install is. Your pin wins over auto-detection.",
   installPath: "Top-level folder of the game; needed for scanning the game and supporting most features.",
   addInstall: "Draft a Steam or browsed path, then Add install. Selecting a found path does not save it.",
-  mods: "Generally, Last listed wins (LIOS). Drag the grip. Color and thumbnail paint explorer and origin chips.",
+  mods: "Last listed wins (LIOS). Drag the left grip to reorder. Color and thumbnail paint explorer and origin chips.",
   modColor: ORIGIN_COLOR_DESC,
-  modThumb: "Explorer folder icon and origin menus. Not used on OriginBadge chips.",
-  descMd: "Markdown listing description. Empty uses mod-description.md in the mod folder. The file must already exist.",
-  descBb: "BBCode sent to Steam. Empty uses mod-description.bbcode. The file must already exist.",
-  workshopIgnore:
-    "Gitignore syntax, stored in this workspace. Steam never uploads: dotfiles (except .metadata/), .gitignore, and patterns in a .gitignore in the mod folder. Export writes .workshop-ignore; Import reads it. Editing that file in the IDE does nothing until Import.",
-  staging: "Scratch folder for patch/merge output. Not a playset.",
-  stagingColor: ORIGIN_COLOR_DESC,
+  ...MOD_HELP,
   remove: "Drops the workspace record. Mod folders on disk stay.",
 } as const;
 
@@ -391,7 +400,7 @@ const showMods = computed(() =>
     "Origin color",
     COPY.modColor,
     "Thumbnail",
-    COPY.modThumb,
+    COPY.thumb,
     "Description Markdown",
     COPY.descMd,
     "Description BBCode",
@@ -405,15 +414,12 @@ const showMods = computed(() =>
 const loadOrderCopy = computed(() => {
   const extra = wsStore.firstWins(page.value?.workspace.gameId ?? "");
   return extra
-    ? `Last listed wins for most kinds. ${extra} Vanilla loses to any mod. Staging is not in this list. Conflicts labels each row.`
-    : "Last listed wins for most kinds. Vanilla loses to any mod. Staging is not in this list. Conflicts labels each row.";
+    ? `Last listed wins for most kinds. ${extra} Vanilla loses to any mod. Conflicts labels each row.`
+    : "Last listed wins for most kinds. Vanilla loses to any mod. Conflicts labels each row.";
 });
-const showStaging = computed(() =>
-  matchesFilter("Staging", "Staging directory", COPY.staging, "Origin color (staging)", COPY.stagingColor),
-);
 const showDanger = computed(() => matchesFilter("Danger", "Remove workspace", COPY.remove));
 
-type SettingsSection = "overview" | "game" | "mods" | "staging" | "danger";
+type SettingsSection = "overview" | "game" | "mods" | "danger";
 
 const section = shallowRef<SettingsSection>("overview");
 
@@ -422,7 +428,6 @@ const visibleSections = computed<SettingsSection[]>(() => {
     ["overview", showOverview.value],
     ["game", showGame.value],
     ["mods", showMods.value],
-    ["staging", showStaging.value],
     ["danger", showDanger.value],
   ];
   return rows.filter(([, on]) => on).map(([id]) => id);
@@ -440,7 +445,6 @@ watch(
       case "overview":
       case "game":
       case "mods":
-      case "staging":
       case "danger":
         section.value = s;
         return;
@@ -455,7 +459,6 @@ const sectionMeta: Record<SettingsSection, { label: string; icon: string }> = {
   overview: { label: "Overview", icon: "i-lucide-layout-dashboard" },
   game: { label: "Game", icon: "i-lucide-gamepad-2" },
   mods: { label: "Mods", icon: "i-lucide-puzzle" },
-  staging: { label: "Staging", icon: "i-lucide-package" },
   danger: { label: "Danger", icon: "i-lucide-triangle-alert" },
 };
 
@@ -471,16 +474,13 @@ const navItems = computed<NavigationMenuItem[]>(() =>
   })),
 );
 
-const showFooter = computed(() => section.value === "overview" || section.value === "staging");
+const showFooter = computed(() => section.value === "overview");
 
-/** Save the section that uses the sticky footer (overview / staging). */
+/** Save the section that uses the sticky footer (overview). */
 function saveSection(): void {
   switch (section.value) {
     case "overview":
       void saveOverview();
-      return;
-    case "staging":
-      void saveStaging();
       return;
     case "game":
     case "mods":
@@ -493,28 +493,9 @@ function saveSection(): void {
   }
 }
 
-function onModColor(mod: WorkspaceMod, hex: string): void {
-  mod.color = hex;
-  void persistMod(mod);
-}
-
-function onModThumb(mod: WorkspaceMod, path: string): void {
-  mod.thumbnail = path;
-  void persistMod(mod);
-}
-
-function clearModThumb(mod: WorkspaceMod): void {
-  mod.thumbnail = "";
-  void persistMod(mod);
-}
-
-function onDescMd(mod: WorkspaceMod, path: string): void {
-  mod.descMdRel = path;
-  void persistMod(mod);
-}
-
-function onDescBb(mod: WorkspaceMod, path: string): void {
-  mod.descBbRel = path;
+/** Merge one card edit into the draft mod and persist. */
+function patchMod(mod: WorkspaceMod, patch: ModPatch): void {
+  Object.assign(mod, patch);
   void persistMod(mod);
 }
 
@@ -670,132 +651,22 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
             <UAlert
               color="neutral"
               variant="subtle"
-              title="Generally, Last listed wins (LIOS). Drag the grip."
+              title="Last listed wins (LIOS). Drag the left grip to reorder."
               :description="loadOrderCopy"
             />
             <div ref="modListEl" class="space-y-2">
-              <div v-for="(mod, idx) in mods" :key="mod.id" class="space-y-2 rounded border border-default p-2">
-                <div class="flex items-center gap-2">
-                  <UBadge
-                    :label="String((mod.sortOrder ?? idx) + 1)"
-                    color="neutral"
-                    variant="subtle"
-                    size="xs"
-                    class="w-6 justify-center tabular-nums"
-                  />
-                  <UButton
-                    icon="i-lucide-grip-vertical"
-                    color="neutral"
-                    variant="ghost"
-                    size="xs"
-                    class="mod-handle cursor-grab"
-                  />
-                  <UInput v-model="mod.name" class="flex-1" @update:model-value="persistMod(mod)" />
-                  <UBadge v-if="mod.isBroken" color="error" variant="subtle" size="xs"> Missing </UBadge>
-                  <UButton icon="i-lucide-trash-2" color="error" variant="ghost" size="xs" @click="removeMod(mod)" />
-                </div>
-                <p class="truncate text-xs text-muted">{{ mod.path }}</p>
-                <div class="grid grid-cols-1 gap-x-6 gap-y-3 md:grid-cols-2">
-                  <OriginColorField
-                    :model-value="mod.color ?? ''"
-                    kind="mod"
-                    :wrap-index="idx"
-                    @update:model-value="onModColor(mod, $event)"
-                  />
-                  <UFormField label="Thumbnail" :description="COPY.modThumb">
-                    <div class="flex items-center gap-2">
-                      <img
-                        v-if="mod.thumbnail && wsStore.thumbUrls[mod.id]"
-                        :src="wsStore.thumbUrls[mod.id]"
-                        alt=""
-                        class="size-6 rounded-sm object-cover"
-                      />
-                      <FileSelector
-                        :model-value="mod.thumbnail ?? ''"
-                        mode="file"
-                        dialog-title="Select thumbnail"
-                        file-filter="*.png; *.jpg; *.jpeg; *.svg"
-                        class="min-w-0 flex-1"
-                        @update:model-value="onModThumb(mod, $event)"
-                      />
-                      <UButton
-                        v-if="mod.thumbnail"
-                        label="Clear"
-                        size="xs"
-                        variant="ghost"
-                        @click="clearModThumb(mod)"
-                      />
-                    </div>
-                  </UFormField>
-                  <UFormField label="Mod description File (Markdown)" :description="COPY.descMd">
-                    <div class="flex items-center gap-2">
-                      <FileSelector
-                        :model-value="mod.descMdRel ?? ''"
-                        mode="file"
-                        dialog-title="Select description Markdown"
-                        file-filter="*.md; *.markdown; *.txt"
-                        class="min-w-0 flex-1"
-                        @update:model-value="onDescMd(mod, $event)"
-                      />
-                      <UButton
-                        v-if="mod.descMdRel"
-                        label="Clear"
-                        size="xs"
-                        variant="ghost"
-                        @click="onDescMd(mod, '')"
-                      />
-                    </div>
-                  </UFormField>
-                  <UFormField label="Mod description File (BBCode)" :description="COPY.descBb">
-                    <div class="flex items-center gap-2">
-                      <FileSelector
-                        :model-value="mod.descBbRel ?? ''"
-                        mode="file"
-                        dialog-title="Select description BBCode"
-                        file-filter="*.bbcode; *.txt"
-                        class="min-w-0 flex-1"
-                        @update:model-value="onDescBb(mod, $event)"
-                      />
-                      <UButton
-                        v-if="mod.descBbRel"
-                        label="Clear"
-                        size="xs"
-                        variant="ghost"
-                        @click="onDescBb(mod, '')"
-                      />
-                    </div>
-                  </UFormField>
-                </div>
-                <UFormField label="Workshop ignore" :description="COPY.workshopIgnore" class="col-span-full">
-                  <div class="flex flex-col gap-2">
-                    <UTextarea
-                      :model-value="mod.workshopIgnore ?? ''"
-                      :rows="4"
-                      class="w-full font-mono text-sm"
-                      placeholder="# e.g. docs/&#10;*.psd"
-                      @update:model-value="
-                        mod.workshopIgnore = $event;
-                        persistMod(mod);
-                      "
-                    />
-                    <div class="flex flex-wrap gap-2">
-                      <UButton
-                        label="Import .workshop-ignore"
-                        icon="i-lucide-download"
-                        size="xs"
-                        variant="outline"
-                        @click="importIgnore(mod)"
-                      />
-                      <UButton
-                        label="Export .workshop-ignore"
-                        icon="i-lucide-upload"
-                        size="xs"
-                        variant="outline"
-                        @click="exportIgnore(mod)"
-                      />
-                    </div>
-                  </div>
-                </UFormField>
+              <div v-for="(mod, idx) in mods" :key="mod.id">
+                <WorkspaceModCard
+                  :mod="mod"
+                  :index="idx"
+                  :expanded="!!expandedIds[mod.id]"
+                  :thumb-url="wsStore.thumbUrls[mod.id]"
+                  @update:expanded="setModExpanded(mod.id, $event)"
+                  @patch="patchMod(mod, $event)"
+                  @import-ignore="importIgnore(mod)"
+                  @export-ignore="exportIgnore(mod)"
+                  @remove="removeMod(mod)"
+                />
               </div>
             </div>
             <p v-if="!mods.length" class="text-sm text-muted">No mods yet.</p>
@@ -822,18 +693,6 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
             />
           </div>
 
-          <div v-else-if="section === 'staging'" class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
-            <UFormField label="Staging directory" :description="COPY.staging">
-              <FileSelector v-model="stagingDir" mode="folder" dialog-title="Select staging folder" />
-            </UFormField>
-            <OriginColorField
-              v-model="stagingColor"
-              kind="staging"
-              label="Origin color (staging)"
-              @update:model-value="persistColors()"
-            />
-          </div>
-
           <div v-else-if="section === 'danger'" class="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
             <UFormField label="Remove workspace" :description="COPY.remove">
               <UButton label="Remove workspace" color="error" variant="outline" size="sm" @click="removeOpen = true" />
@@ -844,7 +703,7 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
           <UButton label="Cancel" color="neutral" variant="outline" @click="applyWorkspace" />
           <UButton
             label="Save"
-            :loading="section === 'overview' ? savingOverview : savingStaging"
+            :loading="savingOverview"
             @click="saveSection"
           />
         </div>

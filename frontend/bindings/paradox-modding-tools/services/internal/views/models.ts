@@ -16,6 +16,7 @@ export interface EventDetail {
     "type"?: string;
     "hidden"?: boolean;
     "theme"?: string;
+    "namespace"?: string;
     "title"?: EventLocField | null;
     "desc"?: EventLocField | null;
     "flavor"?: EventLocField | null;
@@ -68,6 +69,7 @@ export interface EventGraphNode {
     "title"?: string;
     "role"?: string;
     "fires"?: number;
+    "namespace"?: string;
 }
 
 /**
@@ -148,25 +150,50 @@ export interface EventStepTarget {
 }
 
 /**
- * LocCoverage is per-language localization health for the workspace mods.
+ * HealthLang is per-language loc KPI counts (every language, not just default).
  */
-export interface LocCoverage {
+export interface HealthLang {
     "language": string;
     "defined": number;
-    "issues": LocIssueRow[] | null;
+    "missing": number;
+    "orphaned": number;
+    "untranslated": number;
 }
 
 /**
- * LocIssueRow is one flat coverage finding for the table and overview tree.
+ * HealthReport is GetHealth: compatibility + localization rows and counts.
  */
-export interface LocIssueRow {
-    "language": string;
-    "kind": string;
-    "key": string;
-    "path"?: string;
+export interface HealthReport {
+    "conflicts": number;
+    "overrides": number;
+    "depends": number;
+    "dangling": number;
+    "missing": number;
+    "orphaned": number;
+    "untranslated": number;
+    "languages": HealthLang[] | null;
+    "rows": HealthRow[] | null;
+}
+
+/**
+ * HealthRow is one Workspace Health table row. Display labels are filled in Go.
+ */
+export interface HealthRow {
+    "type": string;
+    "kind"?: string;
+    "name": string;
+    "rule"?: string;
+    "winner"?: string;
+    "winnerName"?: string;
+    "sites"?: OverrideSite[] | null;
+    "from"?: string;
+    "fromName"?: string;
+    "to"?: string;
+    "toName"?: string;
     "rel"?: string;
-    "line"?: number;
-    "value"?: string;
+    "overlay"?: boolean;
+    "refs"?: number;
+    "language"?: string;
     "origin"?: string;
     "originName"?: string;
 }
@@ -184,21 +211,7 @@ export interface LocLookup {
 }
 
 /**
- * OverrideRow is one contested (kind, key): resolution rule, winning origin, and
- * every site that defines it. Overlay is true when exactly one mod shadows vanilla.
- */
-export interface OverrideRow {
-    "kind": string;
-    "name": string;
-    "rule": string;
-    "winner": string;
-    "winnerName"?: string;
-    "sites": OverrideSite[] | null;
-    "overlay"?: boolean;
-}
-
-/**
- * OverrideSite is one place a key is defined, for the conflict monitor.
+ * OverrideSite is one place a key is defined or referenced.
  */
 export interface OverrideSite {
     "origin": string;
@@ -206,6 +219,8 @@ export interface OverrideSite {
     "path": string;
     "rel"?: string;
     "line": number;
+    "snippet"?: string;
+    "snippetFrom"?: number;
 }
 
 /**

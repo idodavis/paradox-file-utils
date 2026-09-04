@@ -1,11 +1,13 @@
 <script setup lang="ts">
 /**
- * Indented script lines plus clickable outbound target chips.
+ * Colorized pretty-script lines plus clickable outbound target chips.
  */
+import { ref, watch } from "vue";
 import type {
   EventScriptLine,
   EventStepTarget,
 } from "@services/internal/views/models";
+import { colorizeText } from "../../colorize";
 
 const props = defineProps<{
   lines?: EventScriptLine[] | null;
@@ -16,10 +18,18 @@ const emit = defineEmits<{
   select: [id: string];
 }>();
 
-/** Indent a rendered script line from Go (display only). */
-function linePad(line: EventScriptLine): string {
-  return `${Math.min(line.depth, 8) * 0.75}rem`;
-}
+const html = ref("");
+
+watch(
+  () => props.lines,
+  async (lines) => {
+    const text = (lines ?? [])
+      .map((l) => `${"  ".repeat(Math.min(l.depth, 8))}${l.text}`)
+      .join("\n");
+    html.value = text ? await colorizeText(text, "paradox") : "";
+  },
+  { immediate: true },
+);
 
 /** Select a target event. */
 function onTarget(t: EventStepTarget): void {
@@ -29,14 +39,11 @@ function onTarget(t: EventStepTarget): void {
 
 <template>
   <div class="space-y-1">
-    <div
-      v-for="(line, i) in props.lines ?? []"
-      :key="i"
-      class="font-mono text-xs text-default"
-      :style="{ paddingLeft: linePad(line) }"
-    >
-      {{ line.text }}
-    </div>
+    <pre
+      v-if="html"
+      class="my-0 overflow-x-auto rounded-md bg-elevated px-2 py-1.5 text-xs leading-relaxed"
+      v-html="html"
+    />
     <div
       v-if="(props.targets ?? []).length"
       class="flex flex-wrap gap-1 pt-0.5"

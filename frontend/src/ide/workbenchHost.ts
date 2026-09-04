@@ -82,7 +82,6 @@ import { registerLanguageClient } from "./languageClient";
 import { setIdeActiveFile } from "../composables/useIdeActiveFile";
 import { registerRootDecorations, setDecoratedRoots } from "./rootDecorations";
 import { useWorkspaceStore } from "../stores/workspace";
-import { useIdeShellStore } from "../stores/ideShell";
 import {
   GetIdeRoots,
   RemoveWorkspaceMod,
@@ -411,16 +410,8 @@ function foldersMatch(roots: IdeRoot[]): boolean {
   });
 }
 
-/** Hide or restore activity bar / sidebar / panel for merge review. */
-export function setMergeChrome(hidden: boolean): void {
-  setPartVisibility(Parts.ACTIVITYBAR_PART, !hidden);
-  setPartVisibility(Parts.SIDEBAR_PART, !hidden);
-  setPartVisibility(Parts.PANEL_PART, !hidden);
-}
-
 /** Re-open Explorer and Problems after a folder remount. */
 async function restoreIdeViews(): Promise<void> {
-  if (useIdeShellStore().mergeReview) return;
   try {
     await vscode.commands.executeCommand("workbench.view.explorer");
   } catch {
@@ -522,7 +513,7 @@ async function writeWorkspaceFolders(roots: IdeRoot[]): Promise<void> {
   });
 }
 
-/** Restore Game / mods / Staging if the user mutates workbench folders. */
+/** Restore Game / mods if the user mutates workbench folders. */
 function lockWorkbenchFolders(): vscode.Disposable {
   return vscode.workspace.onDidChangeWorkspaceFolders(() => {
     if (mutatingFolders || !workbenchReady) return;
@@ -595,7 +586,6 @@ function pathUnderRoots(path: string): boolean {
 }
 
 async function flushIdeSession(): Promise<void> {
-  if (useIdeShellStore().mergeReview) return;
   if (!persistTabsForMounted || !mountedWorkspaceId || restoringTabs) return;
   const { files, active } = collectOpenFiles();
   try {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Workspace creation wizard: game → install → mods → name → staging → create.
+ * Workspace creation wizard: game → install → mods → name → create.
  */
 import { computed, ref, useTemplateRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -16,8 +16,6 @@ import {
   AddGameInstall,
   CreateWorkspace,
   AddWorkspaceMod,
-  EnsureStagingDir,
-  UpdateWorkspace,
   FindGameInstalls,
   DeleteGameInstall,
   SetInstallVersion,
@@ -40,7 +38,6 @@ const draftVersion = ref("latest");
 const defaultLocLang = ref("english");
 const modEntries = ref<{ path: string; thumbnail: string }[]>([]);
 const workspaceName = ref("");
-const stagingDir = ref("");
 const wizardModsEl = useTemplateRef<HTMLElement>("wizardModsEl");
 
 useSortable(wizardModsEl, modEntries, {
@@ -55,7 +52,6 @@ const stepItems: StepperItem[] = [
   { title: "Install", icon: "i-lucide-folder", value: 1 },
   { title: "Mods", icon: "i-lucide-package", value: 2 },
   { title: "Details", icon: "i-lucide-file-text", value: 3 },
-  { title: "Staging", icon: "i-lucide-folder-output", value: 4 },
 ];
 
 /** Install options for the radio group. */
@@ -85,8 +81,6 @@ const canContinue = computed(() => {
       return wantsNewMod.value ? modEntries.value.length > 0 : true;
     case 3:
       return !!workspaceName.value.trim();
-    case 4:
-      return !!selectedInstallId.value;
     default:
       return false;
   }
@@ -228,10 +222,6 @@ const {
     const ws = await CreateWorkspace(selectedGame.value, workspaceName.value.trim(), selectedInstallId.value);
     if (!ws) throw new Error("Failed to create workspace");
     await SetWorkspaceLocLang(ws.id, defaultLocLang.value);
-    if (stagingDir.value.trim()) {
-      await UpdateWorkspace(ws.id, ws.name, ws.installId, stagingDir.value.trim());
-    }
-    await EnsureStagingDir(ws.id);
     for (const mod of modEntries.value) {
       const name = mod.path.split(/[/\\]/).pop() || "Mod";
       await AddWorkspaceMod(ws.id, name, mod.path, mod.thumbnail);
@@ -428,30 +418,11 @@ const error = computed(
             </div>
           </template>
 
-          <template v-else-if="step === 4">
-            <div class="space-y-4">
-              <h2 class="font-semibold">Staging Directory</h2>
-              <UAlert
-                v-if="!selectedInstallId"
-                color="warning"
-                variant="subtle"
-                title="No game install selected"
-                description="Go back to Install and select or add an install before creating."
-              />
-              <p class="text-sm text-muted">
-                Where merged/patched files are staged. Leave empty for the default location.
-              </p>
-              <UFormField label="Staging dir">
-                <FileSelector v-model="stagingDir" mode="folder" dialog-title="Select staging folder" />
-              </UFormField>
-            </div>
-          </template>
-
           <template #footer>
             <div class="flex justify-between">
               <UButton v-if="step > 0" label="Back" variant="outline" @click="prevStep" />
               <div v-else />
-              <UButton v-if="step < 4" label="Continue" :disabled="!canContinue" @click="nextStep" />
+              <UButton v-if="step < 3" label="Continue" :disabled="!canContinue" @click="nextStep" />
               <UButton
                 v-else
                 label="Create Workspace"

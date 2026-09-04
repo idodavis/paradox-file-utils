@@ -50,9 +50,10 @@ func MatchExtract(gameID, relPath string) ExtractRule {
 	}
 }
 
-// CanonicalKind maps folder plurals to singular def types used everywhere else.
+// CanonicalKind is the stored/compare identity for a folder, cite, or hover kind.
 func CanonicalKind(kind string) string {
-	switch kind {
+	k := strings.ReplaceAll(kind, " ", "_")
+	switch k {
 	case "scripted_effects":
 		return "scripted_effect"
 	case "scripted_triggers":
@@ -67,12 +68,24 @@ func CanonicalKind(kind string) string {
 		return "flag_definition"
 	case "script_values":
 		return "script_value"
+	case "events":
+		return "event"
+	case "namespaces", "event_namespace":
+		return "namespace"
 	case "game_rules":
 		return "game_rule"
 	case "messages":
 		return "message"
+	case "landed_titles", "titles":
+		return "title"
+	case "cultures":
+		return "culture"
+	case "religions", "religion_types":
+		return "religion"
+	case "faiths":
+		return "faith"
 	default:
-		return kind
+		return k
 	}
 }
 
@@ -176,11 +189,13 @@ func RefFieldKind(gameID, field string) string {
 		return r.Kind
 	}
 	switch f {
+	case "namespace":
+		return "namespace"
 	case "culture":
 		return "culture"
 	case "faith":
 		return "faith"
-	case "title":
+	case "title", "titles":
 		return "title"
 	case "define":
 		return "define"
@@ -206,15 +221,17 @@ func RefFieldKind(gameID, field string) string {
 	return ""
 }
 
-// RequiredLocKeys are convention loc keys for a def kind+id (empty if none).
+// RequiredLocKeys are loc keys the IDE warns about when missing.
+// Decisions/CBs/titles use ConventionLocKeys only — they often override
+// selection_tooltip / war_name instead of the suffix set.
 func RequiredLocKeys(kind, id string) []string {
 	if id == "" {
 		return nil
 	}
 	switch CanonicalKind(kind) {
-	case "trait", "traits":
+	case "traits":
 		return []string{"trait_" + id}
-	case "game_rules", "game_rule":
+	case "game_rule":
 		return []string{"rule_" + id}
 	case "game_rule_setting":
 		return []string{"setting_" + id, "setting_" + id + "_desc"}
@@ -225,6 +242,32 @@ func RequiredLocKeys(kind, id string) []string {
 	default:
 		return nil
 	}
+}
+
+// ConventionLocKeys are loc keys implied by a def (orphan UsedLocKeys).
+// Includes RequiredLocKeys plus optional suffixes that script may override.
+func ConventionLocKeys(kind, id string) []string {
+	if id == "" {
+		return nil
+	}
+	req := RequiredLocKeys(kind, id)
+	var extra []string
+	switch CanonicalKind(kind) {
+	case "decision":
+		extra = []string{id, id + "_desc", id + "_tooltip", id + "_confirm", id + "_tt"}
+	case "character_interactions":
+		extra = []string{id, id + "_desc", id + "_tooltip", id + "_tt", id + "_extra"}
+	case "casus_belli", "casus_belli_types":
+		extra = []string{id}
+	case "title":
+		extra = []string{id, id + "_adj"}
+	case "flavorization":
+		extra = []string{id, id + "_adj", "cn_" + id, "cn_" + id + "_adj"}
+	}
+	if len(extra) == 0 {
+		return req
+	}
+	return append(req, extra...)
 }
 
 // FireKind reports whether key is an event or on_action fire site.

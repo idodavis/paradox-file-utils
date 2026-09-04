@@ -47,7 +47,7 @@ export function CreateMod(gameID: string, parentDir: string, name: string, locLa
 }
 
 /**
- * CreateWorkspace creates a new workspace and default staging dir.
+ * CreateWorkspace creates a new workspace.
  */
 export function CreateWorkspace(gameID: string, name: string, installID: string): $CancellablePromise<$models.Workspace | null> {
     return $Call.ByID(2742011767, gameID, name, installID);
@@ -82,13 +82,6 @@ export function DetectGameVersion(path: string): $CancellablePromise<string> {
 }
 
 /**
- * EnsureStagingDir creates the staging directory if it doesn't exist.
- */
-export function EnsureStagingDir(workspaceID: string): $CancellablePromise<string> {
-    return $Call.ByID(1205241180, workspaceID);
-}
-
-/**
  * ExportWorkshopIgnore writes the saved ignore text to .workshop-ignore in the mod root.
  */
 export function ExportWorkshopIgnore(workspaceID: string, modID: string): $CancellablePromise<void> {
@@ -103,7 +96,7 @@ export function FindGameInstalls(gameID: string): $CancellablePromise<game$0.Det
 }
 
 /**
- * GetIdeRoots returns game / mod / staging folders and tab restore for the IDE.
+ * GetIdeRoots returns game / mod folders and tab restore for the IDE.
  */
 export function GetIdeRoots(workspaceID: string): $CancellablePromise<$models.IdeRoots | null> {
     return $Call.ByID(720395743, workspaceID);
@@ -196,8 +189,8 @@ export function UpdateGameInstall(id: string, path: string): $CancellablePromise
 /**
  * UpdateWorkspace updates workspace fields.
  */
-export function UpdateWorkspace(id: string, name: string, installID: string, stagingDir: string): $CancellablePromise<void> {
-    return $Call.ByID(2311242704, id, name, installID, stagingDir);
+export function UpdateWorkspace(id: string, name: string, installID: string): $CancellablePromise<void> {
+    return $Call.ByID(2311242704, id, name, installID);
 }
 
 /**
@@ -208,8 +201,8 @@ export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: str
 }
 
 /**
- * UpdateWorkspacePrefs sets IDE persist, default landing page, and origin colors.
+ * UpdateWorkspacePrefs sets IDE persist, default landing page, and game origin color.
  */
-export function UpdateWorkspacePrefs(workspaceID: string, resetIdeOnOpen: boolean, defaultTool: string, gameColor: string, stagingColor: string): $CancellablePromise<void> {
-    return $Call.ByID(3501301930, workspaceID, resetIdeOnOpen, defaultTool, gameColor, stagingColor);
+export function UpdateWorkspacePrefs(workspaceID: string, resetIdeOnOpen: boolean, defaultTool: string, gameColor: string): $CancellablePromise<void> {
+    return $Call.ByID(3501301930, workspaceID, resetIdeOnOpen, defaultTool, gameColor);
 }

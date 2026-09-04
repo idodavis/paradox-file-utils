@@ -1,4 +1,4 @@
-// store.go is the JSON app config (installs, workspaces, settings, patch runs).
+// store.go is the JSON app config (installs, workspaces, settings).
 
 package services
 
@@ -19,7 +19,6 @@ const (
 	appConfigDirName    = "Paradox Modding Tools"
 	configFileName      = "config.json"
 	configFormatVersion = 1
-	maxPatchRuns        = 20
 	legacyDBName        = "pmt-workspace.db"
 )
 
@@ -28,8 +27,7 @@ type Config struct {
 	FormatVersion int                          `json:"formatVersion"`
 	Installs      []GameInstall                `json:"installs"`
 	Workspaces    []Workspace                  `json:"workspaces"`
-	Settings      map[string]map[string]string `json:"settings"`
-	PatchRuns     []PatchRun                   `json:"patchRuns"`
+	Settings   map[string]map[string]string `json:"settings"`
 }
 
 // GameInstall is a user-configured game installation.
@@ -51,10 +49,8 @@ type Workspace struct {
 	GameID         string         `json:"gameId"`
 	Name           string         `json:"name"`
 	InstallID      string         `json:"installId"`
-	StagingDir     string         `json:"stagingDir"`
 	DefaultLocLang string         `json:"defaultLocLang"`
 	GameColor      string         `json:"gameColor,omitempty"`
-	StagingColor   string         `json:"stagingColor,omitempty"`
 	ResetIdeOnOpen bool           `json:"resetIdeOnOpen"`
 	DefaultTool    string         `json:"defaultTool,omitempty"`
 	IdeOpenFiles   []string       `json:"ideOpenFiles,omitempty"`
@@ -76,40 +72,6 @@ type WorkspaceMod struct {
 	WorkshopIgnore string `json:"workshopIgnore,omitempty"`
 	IsBroken       bool   `json:"isBroken"`
 	CreatedAt      string `json:"createdAt"`
-}
-
-// PatchRun is one patch of a mod onto a target install.
-type PatchRun struct {
-	ID              string         `json:"id"`
-	WorkspaceID     string         `json:"workspaceId"`
-	ModID           string         `json:"modId"`
-	TargetVersion   string         `json:"targetVersion"`
-	TargetInstallID string         `json:"targetInstallId"`
-	Status          string         `json:"status"`
-	StagingDir      string         `json:"stagingDir"`
-	CreatedAt       string         `json:"createdAt"`
-	UpdatedAt       string         `json:"updatedAt"`
-	Files           []PatchRunFile `json:"files"`
-}
-
-// PatchRunFile is one file in a patch run.
-type PatchRunFile struct {
-	ID          string            `json:"id"`
-	RelPath     string            `json:"relPath"`
-	Status      string            `json:"status"`
-	Decision    string            `json:"decision"`
-	PreviewPath string            `json:"previewPath"`
-	ModPath     string            `json:"modPath,omitempty"`
-	TargetPath  string            `json:"targetPath,omitempty"`
-	Stats       PatchRunFileStats `json:"stats"`
-}
-
-// PatchRunFileStats is merge preview stats for one file.
-type PatchRunFileStats struct {
-	Changed   int    `json:"changed"`
-	Added     int    `json:"added"`
-	Conflicts int    `json:"conflicts"`
-	Error     string `json:"error"`
 }
 
 // Store is the mutex-guarded JSON config.
@@ -210,9 +172,6 @@ func (s *Store) Mutate(fn func(*Config) error) error {
 	if err := fn(&s.cfg); err != nil {
 		return err
 	}
-	if n := len(s.cfg.PatchRuns); n > maxPatchRuns {
-		s.cfg.PatchRuns = append([]PatchRun(nil), s.cfg.PatchRuns[n-maxPatchRuns:]...)
-	}
 	s.cfg.FormatVersion = configFormatVersion
 	if s.cfg.Settings == nil {
 		s.cfg.Settings = map[string]map[string]string{}
@@ -271,24 +230,6 @@ func findMod(c *Config, id string) *WorkspaceMod {
 		for j := range c.Workspaces[i].Mods {
 			if c.Workspaces[i].Mods[j].ID == id {
 				return &c.Workspaces[i].Mods[j]
-			}
-		}
-	}
-	return nil
-}
-func findRun(c *Config, id string) *PatchRun {
-	for i := range c.PatchRuns {
-		if c.PatchRuns[i].ID == id {
-			return &c.PatchRuns[i]
-		}
-	}
-	return nil
-}
-func findRunFile(c *Config, fileID string) *PatchRunFile {
-	for i := range c.PatchRuns {
-		for j := range c.PatchRuns[i].Files {
-			if c.PatchRuns[i].Files[j].ID == fileID {
-				return &c.PatchRuns[i].Files[j]
 			}
 		}
 	}

@@ -68,34 +68,24 @@ func (s *SettingsService) SaveSettings(settings map[string]string) error {
 	})
 }
 
-// ResetData wipes workspaces, mods, installs, patch runs, PMT staging dirs,
+// ResetData wipes workspaces, mods, installs, leftover PMT workspace dirs,
 // the semantic cache, and in-memory wiki sidecars. Mod and game folders stay.
 func (s *SettingsService) ResetData() error {
 	root, rootErr := pmtDataRoot()
 	var wipe []string
 	s.Store.Read(func(c *Config) {
 		for _, ws := range c.Workspaces {
-			if ws.StagingDir != "" {
-				wipe = append(wipe, ws.StagingDir)
-			}
 			if rootErr == nil && ws.ID != "" {
 				wipe = append(wipe, filepath.Join(root, "workspaces", ws.ID))
 			}
 		}
-		for _, run := range c.PatchRuns {
-			if run.StagingDir != "" {
-				wipe = append(wipe, run.StagingDir)
-			}
-			if rootErr == nil && run.ID != "" {
-				wipe = append(wipe, filepath.Join(root, "patch_runs", run.ID))
-			}
-		}
 	})
 	if rootErr == nil {
+		wipe = append(wipe, filepath.Join(root, "patch_runs"))
 		removeOwnedDirs(root, wipe)
 	}
 	if err := s.Store.Mutate(func(c *Config) error {
-		c.Installs, c.Workspaces, c.PatchRuns = nil, nil, nil
+		c.Installs, c.Workspaces = nil, nil
 		return nil
 	}); err != nil {
 		return err

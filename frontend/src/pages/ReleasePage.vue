@@ -137,17 +137,14 @@ const mediaSlides = computed((): MediaSlide[] =>
   (listing.value?.previews ?? []).map((p) => previewSlide(p, previewUrls.value)),
 );
 
-watch(
-  [() => listing.value?.thumbnailAbs ?? "", thumbNonce],
-  async ([abs]) => {
-    const prev = listingThumbUrl.value;
-    listingThumbUrl.value = "";
-    if (prev) URL.revokeObjectURL(prev);
-    if (!abs) return;
-    const url = await blobUrl(abs);
-    if (url) listingThumbUrl.value = url;
-  },
-);
+watch([() => listing.value?.thumbnailAbs ?? "", thumbNonce], async ([abs]) => {
+  const prev = listingThumbUrl.value;
+  listingThumbUrl.value = "";
+  if (prev) URL.revokeObjectURL(prev);
+  if (!abs) return;
+  const url = await blobUrl(abs);
+  if (url) listingThumbUrl.value = url;
+});
 
 watch(
   () => listing.value?.previews,
@@ -438,7 +435,15 @@ function errMsg(e: unknown): string {
         @select="selectedId = $event"
       />
       <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <UTabs v-model="tab" :items="tabItems" :content="false" variant="pill" size="lg" class="shrink-0 px-3 pt-2" />
+        <UTabs
+          v-model="tab"
+          :items="tabItems"
+          :content="false"
+          color="secondary"
+          variant="pill"
+          size="md"
+          class="shrink-0 px-3 pt-2"
+        />
         <div class="min-h-0 flex-1 overflow-auto p-3">
           <UAlert v-if="error" color="error" variant="subtle" class="mb-3" :description="error" />
           <p v-if="isPending" class="text-sm text-muted">Loading listing…</p>
@@ -630,7 +635,7 @@ function errMsg(e: unknown): string {
                       :to="settingsModsTo"
                     />
                   </UFormField>
-                  <div class="flex flex-wrap items-center gap-2">
+                  <div class="flex justify-between">
                     <UButton
                       label="Redraft"
                       variant="outline"
@@ -641,6 +646,7 @@ function errMsg(e: unknown): string {
                     <UButton
                       label="Publish to Steam"
                       icon="i-lucide-upload"
+                      color="secondary"
                       :loading="publishing"
                       :disabled="!listing.name"
                       @click="publishMut()"

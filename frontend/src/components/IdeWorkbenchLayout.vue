@@ -9,7 +9,6 @@
  * Guide is a Nuxt column, not a monaco auxiliary bar.
  */
 import { onMounted, shallowRef, useTemplateRef, watch } from "vue";
-import { useIdeShellStore } from "../stores/ideShell";
 import { guideOpen, ideVisible, setGuideOpen } from "../composables/useGuidePrefs";
 import GuidePane from "./GuidePane.vue";
 
@@ -27,8 +26,6 @@ const GUIDE_MIN = 320;
 const SIDEBAR_DEFAULT = 300;
 const PANEL_DEFAULT = 200;
 const GUIDE_DEFAULT = 440;
-
-const ideShell = useIdeShellStore();
 
 const root = useTemplateRef<HTMLElement>("root");
 const activityBar = useTemplateRef<HTMLElement>("activityBar");
@@ -147,10 +144,7 @@ onMounted(async () => {
 <template>
   <div
     class="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-default"
-    :class="[
-      visible ? 'z-10' : 'z-0 pointer-events-none',
-      ideShell.mergeReview && 'ide-merge-review',
-    ]"
+    :class="visible ? 'z-10' : 'z-0 pointer-events-none'"
   >
     <slot name="toolbar" />
     <div
@@ -188,7 +182,7 @@ onMounted(async () => {
         </div>
       </div>
       <UButton
-        v-if="visible && !guideOpen && !ideShell.mergeReview"
+        v-if="visible && !guideOpen"
         class="ide-guide-tab"
         icon="i-lucide-book-open"
         label="Guide"
@@ -198,12 +192,12 @@ onMounted(async () => {
         @click="setGuideOpen(true)"
       />
       <div
-        v-show="guideOpen && !ideShell.mergeReview"
+        v-show="guideOpen"
         class="ide-sash ide-sash--guide w-1.5 shrink-0 cursor-col-resize"
         @pointerdown="startDrag('guide', $event)"
       />
       <aside
-        v-show="guideOpen && !ideShell.mergeReview"
+        v-show="guideOpen"
         class="ide-guide my-1.5 me-1 min-h-0 shrink-0 overflow-hidden rounded-xl"
         :style="{ width: `${guideWidth}px` }"
       >
@@ -237,16 +231,5 @@ onMounted(async () => {
 
 .ide-sash--guide:hover {
   background: color-mix(in oklab, var(--ui-border) 80%, transparent);
-}
-
-.ide-merge-review .ide-activity-bar,
-.ide-merge-review .ide-sidebar,
-.ide-merge-review .ide-panel,
-.ide-merge-review .ide-sash {
-  display: none !important;
-  width: 0 !important;
-  min-width: 0 !important;
-  height: 0 !important;
-  min-height: 0 !important;
 }
 </style>

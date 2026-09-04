@@ -8,16 +8,20 @@ import "strings"
 
 // strictProps virtually always hold a loc key.
 var strictProps = map[string]bool{
-	"title":            true,
-	"desc":             true,
-	"flavor":           true,
-	"custom_tooltip":   true,
-	"confirm_text":     true,
-	"confirm_title":    true,
-	"prompt":           true,
-	"failure_desc":     true,
-	"success_desc":     true,
-	"localization_key": true,
+	"title":             true,
+	"desc":              true,
+	"flavor":            true,
+	"custom_tooltip":    true,
+	"selection_tooltip": true,
+	"confirm_text":      true,
+	"confirm_title":     true,
+	"prompt":            true,
+	"failure_desc":      true,
+	"success_desc":      true,
+	"localization_key":  true,
+	"war_name":          true,
+	"cb_name":           true,
+	"notification_text": true,
 	// trigger_localization / effect_localization person+tense slots
 	"first": true, "third": true, "global": true, "none": true,
 	"first_not": true, "third_not": true, "global_not": true, "none_not": true,
@@ -31,7 +35,7 @@ var strictProps = map[string]bool{
 var broadProps = map[string]bool{
 	"name": true, "text": true, "tooltip": true, "first_valid": true,
 	"reason": true, "format": true, "header": true, "opinion_text": true,
-	"what": true, "who": true,
+	"what": true, "who": true, "notification": true,
 }
 
 // Property classifies a script property name as a loc-key holder.

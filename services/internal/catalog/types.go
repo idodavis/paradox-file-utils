@@ -6,7 +6,7 @@ package catalog
 import "strings"
 
 // CacheFormatVersion is the on-disk schema of VanillaCache.
-const CacheFormatVersion = 15
+const CacheFormatVersion = 16
 
 // LocFormatVersion is the on-disk schema of a vanilla loc sidecar.
 const LocFormatVersion = 3

@@ -25,11 +25,11 @@ func Hover(s *session.Session, path string, line, col int) *HoverResult {
 func hoverFrom(s *session.Session, sub subject) *HoverResult {
 	switch {
 	case sub.kind == "loc_value":
-		h := card(s, "loc value", "$"+sub.name+"$", "")
+		h := card(s, "loc_value", "$"+sub.name+"$", "")
 		h.Body = "format " + sub.locFilter
 		return h
 	case sub.kind == "script_param":
-		h := card(s, "script parameter", "$"+sub.name+"$", "")
+		h := card(s, "script_param", "$"+sub.name+"$", "")
 		owner := sub.owner
 		if owner == "" && sub.def != nil {
 			owner = sub.def.OwnerKey
@@ -46,13 +46,15 @@ func hoverFrom(s *session.Session, sub subject) *HoverResult {
 		return localAssignKeyHover(s, sub.path, sub.at)
 	case sub.fieldKey:
 		docs := s.FieldDoc(sub.name, sub.at.kind)
-		return vanillaSite(s, card(s, game.KindLabel(sub.at.kind)+" key", sub.name, docs))
+		h := card(s, sub.at.kind, sub.name, docs)
+		h.Kind += " key"
+		return vanillaSite(s, h)
 	case sub.def != nil && sub.def.Kind == "loc_key":
 		return locHover(s, sub.name)
 	case sub.def != nil:
 		return defCard(s, sub.name, sub.def)
 	case sub.kind != "":
-		h := card(s, game.KindLabel(sub.kind), sub.name, docsOnly(s, sub.name, sub.kind))
+		h := card(s, sub.kind, sub.name, docsOnly(s, sub.name, sub.kind))
 		h.Usage = s.TokenUsage(sub.name)
 		return vanillaSite(s, h)
 	default:
@@ -60,20 +62,20 @@ func hoverFrom(s *session.Session, sub subject) *HoverResult {
 	}
 }
 
-func card(s *session.Session, kind, key, docs string) *HoverResult {
-	h := &HoverResult{Kind: kind, Key: key, Docs: docs}
+func card(s *session.Session, rawKind, key, docs string) *HoverResult {
+	h := &HoverResult{Kind: game.KindLabel(rawKind), Key: key, Docs: docs}
 	if docs == "" {
 		gameID := ""
 		if s != nil {
 			gameID = s.GameID
 		}
-		h.Hint = game.KindHint(gameID, kind)
+		h.Hint = game.KindHint(gameID, rawKind)
 	}
 	return h
 }
 
 func defCard(s *session.Session, word string, d *catalog.Def) *HoverResult {
-	h := card(s, game.KindLabel(d.Kind), d.Key, docsOnly(s, word, d.Kind))
+	h := card(s, d.Kind, d.Key, docsOnly(s, word, d.Kind))
 	h.Usage = s.TokenUsage(word)
 	h.Body = conventionLocBody(s, d)
 	attachSite(h, s, d.Path, d.Line, d.Origin, d.Start)
@@ -192,7 +194,7 @@ func conventionLocBody(s *session.Session, d *catalog.Def) string {
 	if d == nil {
 		return ""
 	}
-	for _, key := range game.RequiredLocKeys(d.Kind, d.Key) {
+	for _, key := range game.ConventionLocKeys(d.Kind, d.Key) {
 		if text, ok := s.DefaultLoc(key); ok && text != "" {
 			return unescapeLocDisplay(text)
 		}
@@ -234,7 +236,7 @@ func ephemeralHover(s *session.Session, name, kind string, d *catalog.Def) *Hove
 	if kind == "saved_scope" {
 		key = "scope:" + name
 	}
-	h := card(s, game.KindLabel(kind), key, "")
+	h := card(s, kind, key, "")
 	h.Values, h.More = rankHoverValues(ephemeralCounts(s, name, kind))
 	if d != nil {
 		attachSite(h, s, d.Path, d.Line, d.Origin, d.Start)
@@ -340,7 +342,7 @@ func locHover(s *session.Session, key string) *HoverResult {
 	if text == "" && !ok {
 		return nil
 	}
-	h := card(s, "localization", key, "")
+	h := card(s, "loc_key", key, "")
 	h.Body = unescapeLocDisplay(text)
 	if ok {
 		attachSite(h, s, file, line, origin, 0)
@@ -386,7 +388,8 @@ func localAssignKeyHover(s *session.Session, path string, at atPos) *HoverResult
 	if docs == "" && !m.structKeys[a.Key.Text] && !m.structKeys[strings.ToLower(a.Key.Text)] {
 		return nil
 	}
-	h := card(s, game.KindLabel(at.kind)+" key", a.Key.Text, docs)
+	h := card(s, at.kind, a.Key.Text, docs)
+	h.Kind += " key"
 	origin, _, _ := s.Locate(path)
 	line := at.res.Lines().PositionAt(a.Key.Range.Start).Line
 	attachSite(h, s, path, line, origin, a.Key.Range.Start)

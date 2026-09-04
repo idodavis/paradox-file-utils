@@ -115,6 +115,9 @@ func TestDiagnose(t *testing.T) {
 			"", "unclosed-brace"},
 		{"missing descriptor", "vic3", "notes.txt", "foo = { }\n",
 			"missing-descriptor", ""},
+		{"ORDER interp is not loc", "ck3", "localization/english/a_l_english.yml",
+			"l_english:\n war:0 \"$ORDER$ fight\"\n",
+			"", "missing-required-loc"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -818,6 +821,17 @@ func TestSignatureHelpAndSchemaDiags(t *testing.T) {
 	}
 }
 
+func TestDecisionConventionLocIsNotRequired(t *testing.T) {
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/decisions/d.txt":               "foo = {\n\tselection_tooltip = foo_tooltip\n}\n",
+		"localization/english/a_l_english.yml": "\ufeffl_english:\n foo:0 \"F\"\n foo_tooltip:0 \"T\"\n",
+	}, nil, nil)
+	df := filepath.Join(root, "common", "decisions", "d.txt")
+	if hasDiag(Diagnose(s, df), "required-loc") {
+		t.Fatal("decision suffix loc must not be required-loc")
+	}
+}
+
 func labels(items []CompletionItem) []string {
 	out := make([]string, len(items))
 	for i, it := range items {
@@ -1030,6 +1044,68 @@ func TestScriptNamesNavigate(t *testing.T) {
 	})
 }
 
+func TestTypedPrefixNavigate(t *testing.T) {
+	body := `e.1 = {
+	immediate = {
+		culture = english
+		culture = culture:english
+		exists = scope:foo
+	}
+}
+`
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt":                  body,
+		"common/culture/cultures/c.txt": "english = { }\n",
+	}, nil, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	cultures := filepath.Join(root, "common", "culture", "cultures", "c.txt")
+
+	line, col := lineCol(body, "culture = english\n")
+	valCol := col + len("culture = ")
+	if locs := Definition(s, f, line, valCol); len(locs) != 1 ||
+		!session.SamePath(locs[0].URI, cultures) {
+		t.Fatalf("bare culture F12=%v want %s", locs, cultures)
+	}
+
+	line, col = lineCol(body, "culture:english")
+	if locs := Definition(s, f, line, col+len("culture:")); len(locs) != 1 ||
+		!session.SamePath(locs[0].URI, cultures) {
+		t.Fatalf("typed culture F12=%v want %s", locs, cultures)
+	}
+
+	line, col = lineCol(body, "scope:foo")
+	if locs := Definition(s, f, line, col+len("scope:")); len(locs) != 0 {
+		t.Fatalf("scope:foo must stay ephemeral, F12=%v", locs)
+	}
+}
+
+func TestTypedTitlePrefixNavigate(t *testing.T) {
+	body := "e.1 = { immediate = { exists = titles:c_x } }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt":                         body,
+		"common/landed_titles/t.txt":           "e_x = { k_x = { c_x = { } } }\n",
+		"localization/english/a_l_english.yml": "l_english:\n c_x:0 \"County X\"\n",
+	}, nil, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	titles := filepath.Join(root, "common", "landed_titles", "t.txt")
+	line, col := lineCol(body, "titles:c_x")
+	locs := Definition(s, f, line, col+len("titles:"))
+	found := false
+	for _, loc := range locs {
+		if session.SamePath(loc.URI, titles) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("titles:c_x F12=%v want %s", locs, titles)
+	}
+	h := Hover(s, f, line, col+len("titles:"))
+	if h == nil || h.Kind == "localization" || !strings.Contains(h.Hint, "titles:") {
+		t.Fatalf("title hint=%#v", h)
+	}
+}
+
 func TestKindMetaAndGameInfoOverride(t *testing.T) {
 	body := "test.1 = {\n\ttype = character_event\n}\n"
 	s, root := buildSession(t, "ck3", map[string]string{
@@ -1078,6 +1154,17 @@ func TestLocHoverUnescape(t *testing.T) {
 	}
 }
 
+func TestNamespaceHover(t *testing.T) {
+	body := "namespace = court_events\ncourt_events.1 = { type = character_event }\n"
+	s, f := ck3Sess(t, body)
+	line, col := lineCol(body, "court_events")
+	wantHover(t, s, f, line, col, "event namespace", "court_events")
+	if h := Hover(s, f, line, col); h == nil ||
+		!strings.Contains(h.Hint, "Shared across files") {
+		t.Fatalf("namespace hint=%#v", h)
+	}
+}
+
 func TestLocEngineValueHover(t *testing.T) {
 	body := "l_english:\n r:0 \"Cost: $VALUE|=+0$\"\n"
 	s, root := buildSession(t, "ck3", map[string]string{
@@ -1087,7 +1174,7 @@ func TestLocEngineValueHover(t *testing.T) {
 	line, col := lineCol(body, "VALUE")
 	h := Hover(s, f, line, col)
 	if h == nil || h.Kind != "loc value" ||
-		!strings.Contains(h.Hint, "Engine-supplied number") {
+		!strings.Contains(h.Hint, "Engine-supplied substitution") {
 		t.Fatalf("hover=%#v", h)
 	}
 	if locs := Definition(s, f, line, col); len(locs) != 0 {

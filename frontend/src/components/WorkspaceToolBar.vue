@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Shared toolbar for workspace tool routes (IDE, graph, conflicts, loc, patcher, release).
+ * Shared toolbar for workspace tool routes (IDE, graph, health, patcher, release).
  */
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";

@@ -34,7 +34,7 @@ type Uri = monaco.Uri;
 export type { IdeRoot };
 
 /** Role of a multi-root IDE folder (explorer color tags). */
-export type IdeRootKind = "game" | "mod" | "staging";
+export type IdeRootKind = "game" | "mod";
 
 type Disposable = { dispose(): void };
 

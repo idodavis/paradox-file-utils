@@ -567,60 +567,6 @@ func TestRefreshOfflineDoesNotSaveEmpty(t *testing.T) {
 	}
 }
 
-func TestTokenize(t *testing.T) {
-	t.Parallel()
-	html := `<ul><li>renamed ` + "`ai_war_chest`" + ` to ` + "`ai_war_gold`" + `</li>` +
-		`<li>added neighboring_top_overlords in common/on_action/foo.txt</li>` +
-		`<li>the word and is ignored</li></ul>`
-	toks := Tokenize(html)
-	var kinds []string
-	for _, tk := range toks {
-		kinds = append(kinds, tk.Kind+":"+tk.Value)
-	}
-	joined := strings.Join(kinds, " ")
-	if !strings.Contains(joined, "rename:ai_war_chest") {
-		t.Fatalf("rename missing: %s", joined)
-	}
-	if !strings.Contains(joined, "neighboring_top_overlords") {
-		t.Fatalf("snake missing: %s", joined)
-	}
-	if !strings.Contains(joined, "path:common/on_action/foo.txt") {
-		t.Fatalf("path missing: %s", joined)
-	}
-	for _, tk := range toks {
-		if tk.Value == "and" || tk.Value == "word" {
-			t.Fatalf("english substring leaked: %#v", toks)
-		}
-	}
-}
-
-func TestPatchRange(t *testing.T) {
-	useTempCache(t)
-	if err := savePatches(&Sidecar{
-		header: header{GameID: "ck3"},
-		Pages: []Page{
-			{Title: "Patch 1.15", HTML: "a", ModdingHTML: "old"},
-			{Title: "Patch 1.16", HTML: "b", ModdingHTML: "renamed x to y"},
-			{Title: "Patch 1.16.2", HTML: "c"},
-			{Title: "Patch 1.17", HTML: "d"},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	got := PatchRange("ck3", "1.15", "1.16.2")
-	var titles []string
-	for _, p := range got {
-		titles = append(titles, p.Title)
-	}
-	s := strings.Join(titles, ",")
-	if !strings.Contains(s, "Patch 1.16") || !strings.Contains(s, "Patch 1.16.2") {
-		t.Fatalf("range = %s", s)
-	}
-	if strings.Contains(s, "Patch 1.15") || strings.Contains(s, "Patch 1.17") {
-		t.Fatalf("bounds leaked: %s", s)
-	}
-}
-
 func TestLiveCK3Refresh(t *testing.T) {
 	if os.Getenv("PMT_LIVE_WIKI") == "" {
 		t.Skip("set PMT_LIVE_WIKI=1")

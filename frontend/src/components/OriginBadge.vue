@@ -12,17 +12,24 @@ export const PILL_UI = { base: `${PILL_DENSITY} font-normal` } as const;
 defineProps<{
   label: string;
   hex: string;
+  thumb?: string;
 }>();
 </script>
 
 <template>
   <span
-    :class="['inline-flex max-w-full items-center truncate border', PILL_DENSITY]"
+    :class="['inline-flex max-w-full items-center gap-1 truncate border', PILL_DENSITY]"
     :style="{
       backgroundColor: `${hex}33`,
       borderColor: hex,
     }"
   >
+    <img
+      v-if="thumb"
+      :src="thumb"
+      alt=""
+      class="size-3.5 shrink-0 rounded-sm object-cover"
+    />
     {{ label }}
   </span>
 </template>

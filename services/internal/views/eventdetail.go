@@ -77,6 +77,9 @@ func Detail(s *session.Session, id string) *EventDetail {
 		Line: lineOf(stmt.Key.Range.Start), Fields: fields,
 		RefGroups: refGroups(s, d.Path), Incoming: incomingEdges(s, id),
 	}
+	if kind == "event" {
+		detail.Namespace = eventNamespace(s, d, id)
+	}
 	if kind != "event" {
 		lines, targets, _ := inspectBlock(block, lineOf, nil)
 		detail.Title = locIfAny(s, id)

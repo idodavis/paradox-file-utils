@@ -26,17 +26,13 @@ import { isWorkbenchReady } from "./ide/workbenchHost";
 import IdeWorkbenchLayout from "./components/IdeWorkbenchLayout.vue";
 import IdeStatusStrip from "./components/IdeStatusStrip.vue";
 import { applyEditorFontSize, applyWorkbenchTheme } from "./ide/themeBridge";
-import { useIdeShellStore } from "./stores/ideShell";
 import DisplayPopover from "./components/DisplayPopover.vue";
-import { endMergeOverlay } from "./ide/commands";
 import { workspaceHomeRoute } from "./workspaceTools";
 
 const route = useRoute();
 const router = useRouter();
 const ws = useWorkspaceStore();
 const settings = useSettingsStore();
-const ideShell = useIdeShellStore();
-
 const colorMode = useColorMode();
 const currentFamily = shallowRef<PmtThemeFamily>("pmt");
 const appearance = computed(() =>
@@ -57,7 +53,7 @@ const currentDescription = computed(() => route.meta.description ?? "");
 const helpParagraphs = computed(() => route.meta.help ?? []);
 const isLibrary = computed(() => route.name === "library");
 const showWorkbench = computed(
-  () => route.name === "workspace-ide" || ideShell.mergeReview,
+  () => route.name === "workspace-ide",
 );
 
 const headerItems = computed(() => [
@@ -117,10 +113,6 @@ const workspaceDropdownItems = computed<DropdownMenuItem[][]>(() => {
     {
       label: "Library", icon: "i-lucide-library",
       onSelect: () => router.push({ name: "library" })
-    },
-    {
-      label: "Ad-hoc Merge", icon: "i-lucide-merge",
-      onSelect: () => router.push({ name: "tools-merge" })
     },
   ]);
   return items;
@@ -275,11 +267,6 @@ onMounted(async () => {
                   :key="String(route.params.id ?? '')"
                 />
               </router-view>
-            </div>
-            <div v-if="ideShell.mergeReview" class="flex shrink-0 items-center gap-2 border-b border-default px-2 py-1">
-              <UButton :label="ideShell.label" icon="i-lucide-arrow-left" size="sm" color="neutral"
-                variant="ghost" @click="endMergeOverlay()" />
-              <span class="text-xs text-muted">Reviewing merge</span>
             </div>
           </template>
         </IdeWorkbenchLayout>

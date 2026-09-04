@@ -1,24 +1,27 @@
 <script lang="ts">
 /**
- * Origin color picker shared by game, staging, and mod settings.
+ * Origin color picker shared by game and mod settings.
  */
 export const ORIGIN_COLOR_DESC =
-  "Used for IDE explorer roots, origin chips on Conflicts / Loc coverage / Event graph, origin filter menus, and hover origin labels. Empty uses the palette (game teal, staging amber, mods by load-order).";
+  "Used for IDE explorer roots, origin chips on Conflicts / Loc coverage / Event graph, origin filter menus, and hover origin labels. Empty uses the palette (game teal, mods by load-order).";
 </script>
 
 <script setup lang="ts">
 import { computed } from "vue";
 import { originHex } from "../ide/rootDecorations";
+import FieldHelpTip from "./FieldHelpTip.vue";
 
 const color = defineModel<string>({ required: true });
 
 const props = withDefaults(
   defineProps<{
-    kind: "game" | "staging" | "mod";
+    kind: "game" | "mod";
     wrapIndex?: number;
     label?: string;
+    /** Hide the paragraph; keep the same copy on an info tooltip. */
+    compact?: boolean;
   }>(),
-  { wrapIndex: 0, label: "Origin color" },
+  { wrapIndex: 0, label: "Origin color", compact: false },
 );
 
 /** Resolved #rrggbb for the swatch (palette when the stored color is empty). */
@@ -43,7 +46,11 @@ function reset(): void {
 </script>
 
 <template>
-  <UFormField :label="label" :description="ORIGIN_COLOR_DESC">
+  <UFormField :description="compact ? undefined : ORIGIN_COLOR_DESC">
+    <template #label>
+      <FieldHelpTip v-if="compact" :label="label" :text="ORIGIN_COLOR_DESC" />
+      <template v-else>{{ label }}</template>
+    </template>
     <div class="flex items-center gap-2">
       <span
         class="relative size-8 shrink-0 overflow-hidden rounded border border-default"

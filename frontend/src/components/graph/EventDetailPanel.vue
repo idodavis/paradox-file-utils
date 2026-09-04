@@ -125,6 +125,14 @@ function open(path?: string, line?: number): void {
         size="xs"
         :ui="PILL_UI"
       />
+      <UBadge
+        v-if="detail.namespace"
+        :label="detail.namespace"
+        color="neutral"
+        variant="subtle"
+        size="xs"
+        :ui="PILL_UI"
+      />
     </template>
     <UAccordion
       v-if="detail"

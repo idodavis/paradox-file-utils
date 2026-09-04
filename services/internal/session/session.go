@@ -934,6 +934,21 @@ func (s *Session) RefsInFile(path string) []catalog.Ref {
 	return cloneIf(s.refsByFile[CanonPath(path)])
 }
 
+// WorkspaceRefs returns harvested workspace refs (not vanilla cache refs).
+func (s *Session) WorkspaceRefs() []catalog.Ref {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for _, refs := range s.refsByKey {
+		n += len(refs)
+	}
+	out := make([]catalog.Ref, 0, n)
+	for _, refs := range s.refsByKey {
+		out = append(out, refs...)
+	}
+	return out
+}
+
 // DefaultLoc returns the workspace-default-language localization string for key.
 func (s *Session) DefaultLoc(key string) (string, bool) {
 	s.mu.RLock()

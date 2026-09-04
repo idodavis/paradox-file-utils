@@ -22,13 +22,6 @@ export function Guide(workspaceID: string, path: string): $CancellablePromise<wi
 }
 
 /**
- * ModAffected is the Impact Check heuristic against harvest + wiki Modding bullets.
- */
-export function ModAffected(workspaceID: string, modID: string, $from: string, to: string): $CancellablePromise<wiki$0.AffectedReport | null> {
-    return $Call.ByID(3135124153, workspaceID, modID, $from, to);
-}
-
-/**
  * PatchPage returns one patch notes body by title or version label.
  */
 export function PatchPage(gameID: string, version: string): $CancellablePromise<wiki$0.PatchPage | null> {

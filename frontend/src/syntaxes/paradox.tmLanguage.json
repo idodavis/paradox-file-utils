@@ -24,7 +24,8 @@
   "repository": {
     "comment": {
       "name": "comment.line.number-sign.paradox",
-      "match": "#.*$"
+      "begin": "#",
+      "end": "$"
     },
     "string": {
       "name": "string.quoted.double.paradox",

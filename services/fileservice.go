@@ -5,86 +5,14 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 )
 
-const utf8BOM = "\uFEFF"
-
-// FileService provides filesystem helpers for merge and the IDE workbench.
+// FileService provides filesystem helpers for the IDE workbench.
 type FileService struct{}
-
-// GetUserDownloadsDir returns the user's Downloads directory (e.g. ~/Downloads).
-func (f *FileService) GetUserDownloadsDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, "Downloads", "PMT-Merge"), nil
-}
-
-// writeWithBOM writes content to outputPath as UTF-8 with BOM.
-func (f *FileService) writeWithBOM(outputPath, content string) error {
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
-		return fmt.Errorf("creating output directory: %w", err)
-	}
-	if !strings.HasPrefix(content, utf8BOM) {
-		content = utf8BOM + content
-	}
-	return os.WriteFile(outputPath, []byte(content), 0o644)
-}
-
-// collectFilesFromPath collects files under inputPath. Returns relativePath -> fullPath.
-func (f *FileService) collectFilesFromPath(inputPath string, exts []string) (map[string]string, error) {
-	files := make(map[string]string)
-	walkErr := filepath.WalkDir(inputPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if len(exts) > 0 && !slices.Contains(exts, filepath.Ext(path)) {
-			return nil
-		}
-		rel, err := filepath.Rel(inputPath, path)
-		if err != nil {
-			return err
-		}
-		files[filepath.ToSlash(rel)] = path
-		return nil
-	})
-	if walkErr != nil && !errors.Is(walkErr, fs.SkipAll) {
-		return nil, fmt.Errorf("Tree walk error in %s: %w", inputPath, walkErr)
-	}
-	return files, nil
-}
-
-type pathMatch struct {
-	PathA string `json:"pathA"`
-	PathB string `json:"pathB"`
-}
-
-func (f *FileService) collectAndMatchPaths(pathA, pathB string, exts []string) (map[string]pathMatch, error) {
-	filesA, err := f.collectFilesFromPath(pathA, exts)
-	if err != nil {
-		return nil, err
-	}
-	filesB, err := f.collectFilesFromPath(pathB, exts)
-	if err != nil {
-		return nil, err
-	}
-	matches := make(map[string]pathMatch)
-	for keyA, pA := range filesA {
-		if pB, ok := filesB[keyA]; ok {
-			matches[keyA] = pathMatch{PathA: pA, PathB: pB}
-		}
-	}
-	return matches, nil
-}
 
 // DirEntry is one immediate child of a directory (for lazy file trees).
 type DirEntry struct {

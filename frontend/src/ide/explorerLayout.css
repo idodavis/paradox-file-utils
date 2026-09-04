@@ -140,6 +140,16 @@
   max-width: min(48rem, 92vw) !important;
 }
 
+/* Copy button is absolute; only grow the reserved gutter while the popup is hovered. */
+.monaco-hover .hover-row.hover-row-with-copy {
+  padding-right: 0 !important;
+}
+
+.monaco-hover:hover .hover-row.hover-row-with-copy,
+.monaco-hover:focus-within .hover-row.hover-row-with-copy {
+  padding-right: 20px !important;
+}
+
 .monaco-hover .monaco-hover-content,
 .monaco-hover .hover-contents,
 .monaco-hover .rendered-markdown {
@@ -158,6 +168,14 @@
   margin: 0 0 8px !important;
   border-bottom: 1px solid
     var(--vscode-widget-border, rgba(127, 127, 127, 0.35));
+}
+
+/* Two-span header: kind+key | Game Override (mod origin color on the span). */
+.monaco-hover .rendered-markdown > p:first-child:has(> span + span) {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
 }
 
 .monaco-hover .rendered-markdown > p:first-child code {

@@ -35,13 +35,35 @@ func TestMatchExtract(t *testing.T) {
 		{"ck3", "localization/english/foo_l_english.yml", "loc_key", ModeLocKey},
 		{"ck3", "descriptor.mod", "mod_descriptor", ModeTopLevelKey},
 		{"ck3", "my_mod.mod", "mod_descriptor", ModeTopLevelKey},
+		{"ck3", "common/religion/religion_types/00_islam.txt", "religion", ModeTopLevelKey},
 		{"eu5", "in_game/events/foo.txt", "event", ModeEventID},
-		{"eu5", "in_game/common/religions/x.txt", "religions", ModeTopLevelKey},
+		{"eu5", "in_game/common/religions/x.txt", "religion", ModeTopLevelKey},
 	}
 	for _, c := range cases {
 		r := MatchExtract(c.gameID, c.path)
 		if r.Kind != c.kind || r.Mode != c.mode {
 			t.Errorf("MatchExtract(%q, %q) = %+v want {%s %s}", c.gameID, c.path, r, c.kind, c.mode)
+		}
+	}
+}
+
+func TestCanonicalKind(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"scripted_effects", "scripted_effect"},
+		{"events", "event"},
+		{"event namespace", "namespace"},
+		{"landed_titles", "title"},
+		{"titles", "title"},
+		{"cultures", "culture"},
+		{"religions", "religion"},
+		{"religion_types", "religion"},
+		{"faiths", "faith"},
+		{"title", "title"},
+		{"culture", "culture"},
+	}
+	for _, c := range cases {
+		if got := CanonicalKind(c.in); got != c.want {
+			t.Errorf("CanonicalKind(%q) = %q want %q", c.in, got, c.want)
 		}
 	}
 }
@@ -145,6 +167,16 @@ func TestScriptNameAndRefFieldKind(t *testing.T) {
 			t.Fatal("ck3 must not map coa")
 		}
 	})
+	t.Run("namespace field", func(t *testing.T) {
+		if RefFieldKind("ck3", "namespace") != "namespace" {
+			t.Fatal("namespace field")
+		}
+	})
+	t.Run("title fields", func(t *testing.T) {
+		if RefFieldKind("ck3", "title") != "title" || RefFieldKind("ck3", "titles") != "title" {
+			t.Fatal("title/titles field")
+		}
+	})
 	t.Run("vic3 entry modes", func(t *testing.T) {
 		g := Get("vic3")
 		if g == nil || len(g.EntryModes) < 2 {
@@ -162,4 +194,23 @@ func TestScriptNameAndRefFieldKind(t *testing.T) {
 			t.Fatal("traits not ephemeral")
 		}
 	})
+}
+
+func TestRequiredLocKeysDecision(t *testing.T) {
+	id := "ai_mogyer_adopt_christianity"
+	if keys := RequiredLocKeys("decision", id); len(keys) != 0 {
+		t.Fatalf("RequiredLocKeys(decision) = %v", keys)
+	}
+	got := ConventionLocKeys("decision", id)
+	want := []string{
+		id, id + "_desc", id + "_tooltip", id + "_confirm", id + "_tt",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("ConventionLocKeys(decision) = %v", got)
+	}
+	for i, k := range want {
+		if got[i] != k {
+			t.Fatalf("ConventionLocKeys(decision) = %v", got)
+		}
+	}
 }

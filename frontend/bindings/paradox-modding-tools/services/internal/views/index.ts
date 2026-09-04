@@ -15,10 +15,10 @@ export type {
     EventScriptLine,
     EventSectionInfo,
     EventStepTarget,
-    LocCoverage,
-    LocIssueRow,
+    HealthLang,
+    HealthReport,
+    HealthRow,
     LocLookup,
-    OverrideRow,
     OverrideSite,
     RefKindGroup,
     SuggestionItem

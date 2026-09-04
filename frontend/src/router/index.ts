@@ -6,10 +6,8 @@ import LibraryPage from "../pages/LibraryPage.vue";
 import WizardPage from "../pages/WizardPage.vue";
 import WorkspaceIdePage from "../pages/WorkspaceIdePage.vue";
 import EventGraphPage from "../pages/EventGraphPage.vue";
-import ConflictPage from "../pages/ConflictPage.vue";
-import LocCoveragePage from "../pages/LocCoveragePage.vue";
+import HealthPage from "../pages/HealthPage.vue";
 import PatcherPage from "../pages/PatcherPage.vue";
-import ToolsMergePage from "../pages/ToolsMergePage.vue";
 import ReleasePage from "../pages/ReleasePage.vue";
 import WorkspaceSettingsPage from "../pages/WorkspaceSettingsPage.vue";
 import { PAGE_CATALOG } from "../workspaceTools";
@@ -45,16 +43,10 @@ const routes = [
     meta: PAGE_CATALOG["event-graph"],
   },
   {
-    path: "/workspace/:id/conflicts",
-    name: "conflicts",
-    component: ConflictPage,
-    meta: PAGE_CATALOG.conflicts,
-  },
-  {
-    path: "/workspace/:id/loc",
-    name: "loc-coverage",
-    component: LocCoveragePage,
-    meta: PAGE_CATALOG["loc-coverage"],
+    path: "/workspace/:id/health",
+    name: "health",
+    component: HealthPage,
+    meta: PAGE_CATALOG.health,
   },
   {
     path: "/workspace/:id/patcher",
@@ -73,12 +65,6 @@ const routes = [
     name: "workspace-settings",
     component: WorkspaceSettingsPage,
     meta: PAGE_CATALOG["workspace-settings"],
-  },
-  {
-    path: "/tools/merge",
-    name: "tools-merge",
-    component: ToolsMergePage,
-    meta: PAGE_CATALOG["tools-merge"],
   },
   {
     path: "/settings",

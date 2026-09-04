@@ -11,7 +11,7 @@ import (
 func TestOwnedByPMT(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	inside := filepath.Join(root, "workspaces", "ws1", "staging")
+	inside := filepath.Join(root, "workspaces", "ws1")
 	if !ownedByPMT(root, inside) {
 		t.Fatal("want subdirectory owned")
 	}
@@ -34,11 +34,11 @@ func TestOwnedByPMT(t *testing.T) {
 func TestRemoveOwnedDirs(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	staging := filepath.Join(root, "workspaces", "ws1", "staging")
-	if err := os.MkdirAll(staging, 0o755); err != nil {
+	owned := filepath.Join(root, "workspaces", "ws1")
+	if err := os.MkdirAll(owned, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	marker := filepath.Join(staging, "x.txt")
+	marker := filepath.Join(owned, "x.txt")
 	if err := os.WriteFile(marker, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -47,9 +47,9 @@ func TestRemoveOwnedDirs(t *testing.T) {
 	if err := os.WriteFile(keep, []byte("k"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	removeOwnedDirs(root, []string{staging, outside, "", staging})
-	if _, err := os.Stat(staging); !os.IsNotExist(err) {
-		t.Fatalf("staging still present: %v", err)
+	removeOwnedDirs(root, []string{owned, outside, "", owned})
+	if _, err := os.Stat(owned); !os.IsNotExist(err) {
+		t.Fatalf("owned dir still present: %v", err)
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("outside file was deleted: %v", err)

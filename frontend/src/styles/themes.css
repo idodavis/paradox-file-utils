@@ -154,4 +154,45 @@
   html, body, #app { min-height: 100%; }
   body { @apply bg-default text-default antialiased; }
   button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+
+  /* Soft-pill scrollbars: primary thumb, fade until the scroller is hovered. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  *:hover {
+    scrollbar-color: color-mix(in oklab, var(--ui-primary) 70%, transparent)
+      transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: transparent;
+  }
+  *:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--ui-primary) 70%, transparent);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ui-primary);
+  }
+  .monaco-workbench,
+  .monaco-workbench * {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+  .monaco-workbench ::-webkit-scrollbar {
+    width: unset;
+    height: unset;
+  }
 }

@@ -24,11 +24,9 @@ func main() {
 	}
 
 	fileSvc := &services.FileService{}
-	mergeSvc := &services.MergeService{FileService: fileSvc}
 	sessSvc := &services.SessionService{Store: store}
 	settingsSvc := &services.SettingsService{Store: store, Session: sessSvc, Version: version}
 	workspaceSvc := &services.WorkspaceService{Store: store, Session: sessSvc}
-	patcherSvc := &services.PatcherService{Store: store, FileService: fileSvc, MergeService: mergeSvc}
 	ideSvc := &services.IdeService{Session: sessSvc}
 	viewsSvc := &services.ViewsService{Session: sessSvc}
 	wikiSvc := &services.WikiService{Session: sessSvc}
@@ -45,8 +43,6 @@ func main() {
 			application.NewService(sessSvc),
 			application.NewService(ideSvc),
 			application.NewService(viewsSvc),
-			application.NewService(patcherSvc),
-			application.NewService(mergeSvc),
 			application.NewService(wikiSvc),
 			application.NewService(searchSvc),
 			application.NewService(releaseSvc),

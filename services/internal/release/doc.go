@@ -1,2 +1,2 @@
-// Package release implements Workshop extras, Steam staging copy, and Markdown/BBCode convert.
+// Package release implements Workshop extras, Steam upload temp copy, and Markdown/BBCode convert.
 package release

@@ -8,7 +8,6 @@ import { useQuery } from "@pinia/colada";
 import { Guide } from "@services/wikiservice";
 import type { GuidePage } from "@services/internal/wiki/models";
 import { useWorkspaceStore } from "../stores/workspace";
-import { useIdeShellStore } from "../stores/ideShell";
 import { useIdeActiveFile } from "../composables/useIdeActiveFile";
 import {
   guideOpen,
@@ -21,7 +20,6 @@ import WikiToc from "./WikiToc.vue";
 import { firstSectionHit } from "../wikiArticle";
 
 const ws = useWorkspaceStore();
-const ideShell = useIdeShellStore();
 const path = useIdeActiveFile();
 const { toastAllowed } = useGuidePrefs();
 const toast = useToast();
@@ -42,7 +40,7 @@ const { data: guide, error, isPending } = useQuery({
       : ["guide", "toast", workspaceId.value],
   query: () => Guide(workspaceId.value, path.value),
   enabled: () => {
-    if (!workspaceId.value || !path.value || ideShell.mergeReview) return false;
+    if (!workspaceId.value || !path.value) return false;
     if (!ideVisible.value) return false;
     if (guideOpen.value) return true;
     return toastAllowed() && !toastFetched.value;

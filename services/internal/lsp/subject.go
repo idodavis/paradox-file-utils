@@ -137,6 +137,13 @@ func subjectAt(s *session.Session, path string, line, col int) (subject, bool) {
 			return ephemeralSub(s, path, at, p.Name, kind)
 		}
 	}
+	if kind, id, ok := game.ParseTyped(s.GameID, at.word); ok {
+		d := resolveOfKind(s, id, kind)
+		if d == nil {
+			d = resolveNonLoc(s, id)
+		}
+		return subject{path: path, at: at, name: id, kind: kind, def: d}, true
+	}
 	if at.slotKey != "" {
 		if k := game.RefFieldKind(s.GameID, at.slotKey); k != "" {
 			if game.IsEphemeral(k) {

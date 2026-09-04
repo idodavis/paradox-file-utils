@@ -104,6 +104,15 @@ func TestContests(t *testing.T) {
 			nil, []string{"a", "b"}, 0, false, "", 0,
 		},
 		{
+			"skip shared namespace", "",
+			[]Def{
+				{Kind: "namespace", Key: "ns", Origin: "a", Path: "a.txt"},
+				{Kind: "namespace", Key: "ns", Origin: "b", Path: "b.txt"},
+			},
+			[]Def{{Kind: "namespace", Key: "ns", Origin: "", Path: "v.txt"}},
+			[]string{"a", "b"}, 0, false, "", 0,
+		},
+		{
 			"vic3 event FIOS", "vic3",
 			[]Def{
 				{Kind: "event", Key: "e.1", Origin: "a", Path: "a.txt", Line: 1},
