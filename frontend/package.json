@@ -59,18 +59,16 @@
     "@types/node": "^26.4.1",
     "@types/sortablejs": "^1.15.9",
     "@vitejs/plugin-vue": "^6.0.8",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vue-tsc": "^3.3.11"
   },
   "overrides": {
-    "@codingame/monaco-vscode-api": "36.2.7",
-    "@tiptap/core": "3.31.0",
-    "@tiptap/pm": "3.31.0",
-    "esbuild": "0.28.1"
+    "esbuild": "^0.28.2"
   },
   "allowScripts": {
     "vue-demi@0.14.10": true,
-    "esbuild@0.28.1": true
+    "esbuild@0.28.2": true
   }
 }

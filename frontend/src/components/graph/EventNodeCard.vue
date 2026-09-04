@@ -3,13 +3,19 @@
  * Compact Vue Flow card: shared rectangle, kind header strip, origin hex badge.
  */
 import { computed } from "vue";
-import { Handle, Position, type NodeProps } from "@vue-flow/core";
+import { Handle, Position } from "@vue-flow/core";
 import type { EventGraphNode } from "@services/internal/views/models";
 import { nodeBox } from "../../composables/useGraphLayout";
 import { originHexByOriginId } from "../../ide/rootDecorations";
 import OriginBadge from "../OriginBadge.vue";
 
-const props = defineProps<NodeProps<EventGraphNode>>();
+const props = defineProps<{
+  id: string;
+  data: EventGraphNode;
+  selected?: boolean;
+  sourcePosition?: Position;
+  targetPosition?: Position;
+}>();
 
 const box = computed(() => nodeBox(props.data ?? {}));
 const isRoot = computed(() => props.data?.role === "root");
