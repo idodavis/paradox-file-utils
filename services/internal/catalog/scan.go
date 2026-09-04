@@ -94,6 +94,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		Defs:             dropEphemeralDefs(acc.defs),
 		Edges:            acc.edges,
 		LocRefs:          append(locKindRefs(acc.refs), locKindRefs(locFileRefs)...),
+		CallRefs:         callKindRefs(acc.refs),
 		FieldValueKinds:  kinds,
 		FieldEnumsByKind: VoteFieldEnums(acc.fieldRHSByKind, kinds),
 		FieldInfo:        fieldInfo,
@@ -315,6 +316,8 @@ func collectExtracts(
 		acc.merge(ingestFile(gameID, f, bodies))
 		return nil
 	})
+	kinds := CallKindSet(acc.defs, cache)
+	acc.refs = append(acc.refs, ApplyCallRefs(acc.cands, kinds)...)
 	acc.edges = append(acc.edges, ApplyCallEdges(acc.cands, EffectSet(acc.defs, cache))...)
 	return acc, err
 }

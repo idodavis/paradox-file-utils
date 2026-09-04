@@ -26,6 +26,33 @@ type subject struct {
 	spanEnd   int
 }
 
+func callKindSub(s *session.Session, path string, at atPos) (subject, bool) {
+	kind, name, a, ok := callKindDefAt(at.res, at.off)
+	if !ok || name == "" {
+		return subject{}, false
+	}
+	d := resolveOfKind(s, name, kind)
+	if d != nil {
+		for _, cand := range s.ModDefsOf(name) {
+			if game.CanonicalKind(cand.Kind) == game.CanonicalKind(kind) &&
+				session.SamePath(cand.Path, path) {
+				c := cand
+				d = &c
+				break
+			}
+		}
+	}
+	if d == nil && a != nil {
+		origin, _, _ := s.Locate(path)
+		d = &catalog.Def{
+			Kind: kind, Key: name, Path: path, Origin: origin,
+			Start: a.Key.Range.Start, End: a.Key.Range.End,
+			Line: at.res.Lines().PositionAt(a.Key.Range.Start).Line,
+		}
+	}
+	return subject{path: path, at: at, name: name, kind: kind, def: d}, true
+}
+
 func ephemeralSub(s *session.Session, path string, at atPos, name, kind string) (subject, bool) {
 	if name == "" || kind == "" {
 		return subject{}, false
@@ -51,16 +78,29 @@ func subjectAt(s *session.Session, path string, line, col int) (subject, bool) {
 	if at.saveOK {
 		return ephemeralSub(s, path, at, at.saveName, "saved_scope")
 	}
+	if name, pStart, pEnd, ok := game.ScriptParamSpan(at.src, at.off); ok {
+		d := resolveOfKindOwner(s, name, "script_param", at.paramOwner)
+		if d == nil {
+			origin, _, _ := s.Locate(path)
+			d = &catalog.Def{
+				Kind: "script_param", Key: name, Path: path, Origin: origin,
+				Start: pStart, End: pEnd, OwnerKey: at.paramOwner,
+				Line: at.res.Lines().PositionAt(pStart).Line,
+			}
+		}
+		return subject{
+			path: path, at: at, name: name, kind: "script_param",
+			def: d, owner: at.paramOwner,
+		}, true
+	}
 	if d := resolveOfKindOwner(s, at.word, "script_param", at.paramOwner); d != nil {
 		return subject{
 			path: path, at: at, name: at.word, kind: "script_param",
 			def: d, owner: at.paramOwner,
 		}, true
 	}
-	if kind, name, ok := callKindDefAt(at.res, at.off); ok {
-		if d := resolveOfKind(s, name, kind); d != nil {
-			return subject{path: path, at: at, name: name, kind: kind, def: d}, true
-		}
+	if sub, ok := callKindSub(s, path, at); ok {
+		return sub, true
 	}
 	if a := at.assign; a != nil {
 		if p, ok := game.ParsePrefixed(a.Key.Text); ok && game.IsSavedScopePrefix(p) {
@@ -202,58 +242,4 @@ func scopeRefAt(src string, off int) (name string, ok bool) {
 		return p.Name, true
 	}
 	return "", false
-}
-
-type kindInfo struct {
-	label, hint string
-}
-
-var kindMeta = map[string]kindInfo{
-	"loc_key":                 {"localization", "English text for this key"},
-	"localization":            {"localization", "English text for this key"},
-	"loc_value":               {"loc value", "Engine-supplied number, not a localization key"},
-	"script_param":            {"script parameter", "Substituted at the call site"},
-	"script_parameter":        {"script parameter", "Substituted at the call site"},
-	"saved_scope":             {"saved scope", "Scope saved earlier in this chain"},
-	"character_flag":          {"character flag", "Set on a character until an effect clears it"},
-	"variable":                {"variable", "Last written value at this site"},
-	"global_variable":         {"global variable", "Last written value at this site"},
-	"local_variable":          {"local variable", "Last written value at this site"},
-	"dead_character_variable": {"dead character variable", "Last written value at this site"},
-	"script_value":            {"script value", "Named number referenced by CBs, decisions, and effects"},
-	"game_rule":               {"game rule", "Game Rule to configure game settings"},
-	"game_rule_setting":       {"game rule setting", "Option for a game rule"},
-	"message":                 {"message", "Interface message"},
-	"message_filter_types":    {"message filter", "Message filter type"},
-	"message_filter":          {"message filter", "Message filter"},
-	"scripted_trigger":        {"scripted trigger", "Macro for a trigger called elsewhere"},
-	"scripted_effect":         {"scripted effect", "Macro for an effect called elsewhere"},
-	"scripted_modifier":       {"scripted modifier", "Macro for a modifier called elsewhere"},
-	"coat_of_arms":            {"coat of arms", "Coat Of Arms definition"},
-	"data_function":           {"data function", "GUI data function "},
-	"field":                   {"field", "Script field"},
-	"on_action":               {"on action", "Fired when this game pulse runs"},
-	"event":                   {"event", "Event definition"},
-	"decision":                {"decision", "Decision definition"},
-	"gui_type":                {"gui type", ""},
-	"flag_definition":         {"flag definition", ""},
-}
-
-func kindLabel(t string) string {
-	k := strings.ReplaceAll(game.CanonicalKind(t), " ", "_")
-	if info, ok := kindMeta[k]; ok {
-		return info.label
-	}
-	return strings.ReplaceAll(t, "_", " ")
-}
-
-func kindHint(kind string) string {
-	k := strings.ReplaceAll(game.CanonicalKind(kind), " ", "_")
-	if info, ok := kindMeta[k]; ok {
-		return info.hint
-	}
-	if strings.HasSuffix(k, "_key") {
-		return "Field on this " + strings.ReplaceAll(strings.TrimSuffix(k, "_key"), "_", " ")
-	}
-	return ""
 }

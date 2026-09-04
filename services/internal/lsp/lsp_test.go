@@ -80,7 +80,10 @@ func wantHover(t *testing.T, s *session.Session, f string, line, col int, subs .
 	if h == nil {
 		t.Fatalf("hover nil at %d:%d want %v", line, col, subs)
 	}
-	blob := h.Kind + "\n" + h.Key + "\n" + h.Hint + "\n" + h.Docs + "\n" + h.Body + "\n" + h.Usage
+	blob := h.Kind + "\n" + h.Key + "\n" + h.Hint + "\n" + h.Docs + "\n" + h.Body + "\n" + h.Usage + "\n" + h.Owner
+	for _, v := range h.Values {
+		blob += "\n" + v.Text
+	}
 	for _, sub := range subs {
 		if !strings.Contains(blob, sub) {
 			t.Fatalf("hover kind=%#v key=%#v hint=%#v docs=%#v body=%#v usage=%#v missing %q",
@@ -351,6 +354,18 @@ func TestHoverVanillaOverlay(t *testing.T) {
 	}
 }
 
+func hasHoverValue(h *HoverResult, text string) bool {
+	if h == nil {
+		return false
+	}
+	for _, v := range h.Values {
+		if v.Text == text {
+			return true
+		}
+	}
+	return false
+}
+
 func hasLocURI(locs []Location, path string) bool {
 	for _, l := range locs {
 		if session.SamePath(l.URI, path) {
@@ -387,6 +402,10 @@ func TestDefinitionCallKindName(t *testing.T) {
 	}
 	if !session.SamePath(locs[0].URI, tf) {
 		t.Fatalf("F12 from call=%v want %s", locs, tf)
+	}
+	refs := References(s, tf, 0, strings.Index(trig, "my_name"))
+	if !hasLocURI(refs, ef) {
+		t.Fatalf("refs=%v want call site %s", refs, ef)
 	}
 
 	inline := "scripted_trigger inline_trig = { always = yes }\nns.1 = { inline_trig = yes }\n"
@@ -973,8 +992,8 @@ func TestScriptNamesNavigate(t *testing.T) {
 		line, col := lineCol(b, "has_variable = foo")
 		valCol := col + len("has_variable = ")
 		wantHover(t, s, fb, line, valCol, "variable", "3")
-		if h := Hover(s, fb, line, valCol); h == nil || h.Body != "3" {
-			t.Fatalf("variable Body=%#v", h)
+		if h := Hover(s, fb, line, valCol); h == nil || !hasHoverValue(h, "3") {
+			t.Fatalf("variable Values=%#v", h)
 		}
 		line, col = lineCol(b, "var:foo")
 		wantHover(t, s, fb, line, col+len("var:"), "variable")
@@ -1011,6 +1030,36 @@ func TestScriptNamesNavigate(t *testing.T) {
 	})
 }
 
+func TestKindMetaAndGameInfoOverride(t *testing.T) {
+	body := "test.1 = {\n\ttype = character_event\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt": body,
+	}, &catalog.VanillaCache{
+		FieldInfoByKind: map[string]map[string]string{
+			"event": {"type": "presentation from info"},
+		},
+	}, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(body, "type =")
+	h := Hover(s, f, line, col)
+	if h == nil || h.Docs != "presentation from info" {
+		t.Fatalf("docs=%#v", h)
+	}
+	if h.Hint != "" {
+		t.Fatalf("game info should hide kind hint, got %q", h.Hint)
+	}
+
+	tfBody := "brave = { category = personality }\n"
+	s, root = buildSession(t, "ck3", map[string]string{
+		"common/traits/00.txt": tfBody,
+	}, nil, nil)
+	tf := filepath.Join(root, "common", "traits", "00.txt")
+	h = Hover(s, tf, 0, 1)
+	if h == nil || !strings.Contains(h.Hint, "trait_") {
+		t.Fatalf("trait hint=%#v", h)
+	}
+}
+
 func TestLocHoverUnescape(t *testing.T) {
 	locFile := "l_english:\n k.t:0 \"\\n\\nHello\"\n"
 	body := "test.1 = { title = k.t }\n"
@@ -1024,7 +1073,7 @@ func TestLocHoverUnescape(t *testing.T) {
 	if h == nil || h.Body != "Hello" {
 		t.Fatalf("Body=%#v", h)
 	}
-	if h.Hint != "English text for this key" {
+	if h.Hint != "Default loc text for this key" {
 		t.Fatalf("hint=%q", h.Hint)
 	}
 }
@@ -1059,7 +1108,7 @@ func TestScriptParamF12(t *testing.T) {
 		t.Fatalf("def F12=%v", locs)
 	}
 	h := Hover(s, tf, line, col+1)
-	if h == nil || !strings.Contains(h.Hint, "Substituted at the call site of my_trig") {
+	if h == nil || h.Owner != "my_trig" || !hasHoverValue(h, "title:k_france.holder") {
 		t.Fatalf("param hover=%#v", h)
 	}
 	ef := filepath.Join(root, "events", "e.txt")
@@ -1088,6 +1137,66 @@ func TestScriptParamOwnerScoped(t *testing.T) {
 	}
 }
 
+func TestScriptParamMultiValue(t *testing.T) {
+	trig := "my_trig = { exists = $TARGET$ }\n"
+	call := "ev.1 = {\n\tmy_trig = { TARGET = title:c_rouen }\n" +
+		"\tmy_trig = { TARGET = scope:adventurer_target }\n" +
+		"\tmy_trig = { TARGET = scope:adventurer_target }\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_triggers/t.txt": trig,
+		"events/e.txt":                   call,
+	}, nil, nil)
+	tf := filepath.Join(root, "common", "scripted_triggers", "t.txt")
+	line, col := lineCol(trig, "$TARGET$")
+	h := Hover(s, tf, line, col+1)
+	if h == nil || h.Owner != "my_trig" ||
+		!hasHoverValue(h, "title:c_rouen") ||
+		!hasHoverValue(h, "scope:adventurer_target") {
+		t.Fatalf("param values=%#v", h)
+	}
+	var rouen, adv int
+	for _, v := range h.Values {
+		if v.Text == "title:c_rouen" {
+			rouen = v.Count
+		}
+		if v.Text == "scope:adventurer_target" {
+			adv = v.Count
+		}
+	}
+	if rouen != 1 || adv != 2 {
+		t.Fatalf("counts rouen=%d adv=%d values=%#v", rouen, adv, h.Values)
+	}
+}
+
+func TestSavedScopeIteratorValue(t *testing.T) {
+	src := "ev.1 = {\n" +
+		"\ttitle:c_rouen = { save_scope_as = adventurer_target }\n" +
+		"\trandom_in_list = {\n\t\tlist = western_scandi_targets_list\n" +
+		"\t\tsave_scope_as = adventurer_target\n\t}\n" +
+		"\trandom_in_list = {\n\t\tlist = western_scandi_targets_list\n" +
+		"\t\tsave_scope_as = adventurer_target\n\t}\n" +
+		"\texists = scope:adventurer_target\n}\n"
+	s, f := ck3Sess(t, src)
+	line, col := lineCol(src, "scope:adventurer_target")
+	h := Hover(s, f, line, col+len("scope:"))
+	if h == nil || !hasHoverValue(h, "title:c_rouen") ||
+		!hasHoverValue(h, "random_in_list list=western_scandi_targets_list") {
+		t.Fatalf("scope values=%#v", h)
+	}
+}
+
+func TestDottedScriptParamF12(t *testing.T) {
+	trig := "my_trig = {\n\t$TARGET$.holder = { is_ai = yes }\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_triggers/t.txt": trig,
+	}, nil, nil)
+	tf := filepath.Join(root, "common", "scripted_triggers", "t.txt")
+	line, col := lineCol(trig, "$TARGET$")
+	if locs := Definition(s, tf, line, col+1); len(locs) == 0 {
+		t.Fatalf("dotted $TARGET$ F12 empty")
+	}
+}
+
 func TestGameRuleSettingHover(t *testing.T) {
 	rules := "secret_unbeliever_found_rule = {\n\tdefault = a\n\tsuf_quieter = { }\n}\n"
 	loc := "l_english:\n setting_suf_quieter:0 \"Quieter\"\n"
@@ -1110,6 +1219,101 @@ func TestGameRuleSettingHover(t *testing.T) {
 	if locs := Definition(s, ef, line, col); len(locs) != 1 {
 		t.Fatalf("F12=%v", locs)
 	}
+}
+
+func ck3VanillaSess(t *testing.T, install string, cache *catalog.VanillaCache) *session.Session {
+	t.Helper()
+	if cache == nil {
+		cache = &catalog.VanillaCache{}
+	}
+	cache.InstallPath = install
+	if cache.GameID == "" {
+		cache.GameID = "ck3"
+	}
+	mod := t.TempDir()
+	write(t, mod, "descriptor.mod", "name = \"t\"\n")
+	return session.NewWithLoc("ws", "ck3", "english", cache, nil, []catalog.ModInput{
+		{Origin: "mod", Root: mod, Order: 0},
+	})
+}
+
+func TestVanillaScriptParamIgnoresFieldDoc(t *testing.T) {
+	trig := "can_fight = {\n\tsubject = $ARMY_OWNER$\n}\n"
+	call := "ev.1 = {\n\tcan_fight = { ARMY_OWNER = scope:potential }\n}\n"
+	trigRel := "game/common/scripted_triggers/00_religious_triggers.txt"
+	callRel := "game/events/dlc/mpo/mpo_events_ariana.txt"
+	install := t.TempDir()
+	tf := write(t, install, trigRel, trig)
+	ef := write(t, install, callRel, call)
+	s := ck3VanillaSess(t, install, &catalog.VanillaCache{
+		Defs: []catalog.Def{{
+			Kind: "scripted_trigger", Key: "can_fight", Path: tf,
+			Start: 0, End: len("can_fight"),
+		}},
+		FieldInfo: map[string]string{
+			"ARMY_OWNER": "Get owner of scoped army",
+		},
+	})
+	s.DidOpen(tf, trig)
+	s.DidOpen(ef, call)
+	line, col := lineCol(trig, "$ARMY_OWNER$")
+	h := Hover(s, tf, line, col+1)
+	if h == nil || h.Kind != "script parameter" ||
+		!hasHoverValue(h, "scope:potential") {
+		t.Fatalf("hover=%#v", h)
+	}
+}
+
+func TestVanillaTriggerCallRefs(t *testing.T) {
+	trig := "is_wrong_gender_in_faith_trigger = { always = yes }\n"
+	call := "mpo_events_ariana.0100 = {\n\ttrigger = {\n" +
+		"\t\tis_wrong_gender_in_faith_trigger = { FAITH = root.faith }\n\t}\n}\n"
+	trigRel := "game/common/scripted_triggers/00_religious_triggers.txt"
+	callRel := "game/events/dlc/mpo/mpo_events_ariana.txt"
+	key := "is_wrong_gender_in_faith_trigger"
+	t.Run("live open", func(t *testing.T) {
+		install := t.TempDir()
+		tf := write(t, install, trigRel, trig)
+		ef := write(t, install, callRel, call)
+		s := ck3VanillaSess(t, install, &catalog.VanillaCache{
+			Defs: []catalog.Def{{
+				Kind: "scripted_trigger", Key: key, Path: tf,
+				Start: 0, End: len(key),
+			}},
+		})
+		s.DidOpen(tf, trig)
+		s.DidOpen(ef, call)
+		line, col := lineCol(trig, key)
+		if refs := References(s, tf, line, col); !hasLocURI(refs, ef) {
+			t.Fatalf("refs=%v want %s", refs, ef)
+		}
+		line, col = lineCol(call, key)
+		if locs := Definition(s, ef, line, col); !hasLocURI(locs, tf) {
+			t.Fatalf("F12=%v want %s", locs, tf)
+		}
+	})
+	t.Run("persisted call refs", func(t *testing.T) {
+		install := t.TempDir()
+		tf := write(t, install, trigRel, trig)
+		ef := write(t, install, callRel, call)
+		i := strings.Index(call, key)
+		s := ck3VanillaSess(t, install, &catalog.VanillaCache{
+			Defs: []catalog.Def{{
+				Kind: "scripted_trigger", Key: key, Path: tf,
+				Start: 0, End: len(key),
+			}},
+			CallRefs: []catalog.Ref{{
+				Key: key, Kind: "scripted_trigger", Path: ef,
+				Line:  strings.Count(call[:i], "\n"),
+				Start: i, End: i + len(key),
+			}},
+		})
+		s.DidOpen(tf, trig)
+		line, col := lineCol(trig, key)
+		if refs := References(s, tf, line, col); !hasLocURI(refs, ef) {
+			t.Fatalf("refs=%v want persisted %s", refs, ef)
+		}
+	})
 }
 
 func TestScriptValueRef(t *testing.T) {

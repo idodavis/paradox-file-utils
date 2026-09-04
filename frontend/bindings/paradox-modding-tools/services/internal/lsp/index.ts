@@ -7,6 +7,7 @@ export type {
     Diagnostic,
     FoldingRange,
     HoverResult,
+    HoverValue,
     Location,
     Position,
     Range,

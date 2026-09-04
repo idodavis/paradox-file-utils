@@ -57,6 +57,7 @@ const deploy = shallowRef<DeployTarget>("steam");
 const publishResult = ref<PublishResult | null>(null);
 const copied = shallowRef<"" | "md" | "bb">("");
 const listingThumbUrl = shallowRef("");
+const thumbNonce = shallowRef(0);
 const previewUrls = ref<Record<string, string>>({});
 const imgPopupOpen = shallowRef(false);
 const imgPopupUrl = shallowRef("");
@@ -137,8 +138,8 @@ const mediaSlides = computed((): MediaSlide[] =>
 );
 
 watch(
-  () => listing.value?.thumbnailAbs ?? "",
-  async (abs) => {
+  [() => listing.value?.thumbnailAbs ?? "", thumbNonce],
+  async ([abs]) => {
     const prev = listingThumbUrl.value;
     listingThumbUrl.value = "";
     if (prev) URL.revokeObjectURL(prev);
@@ -222,6 +223,7 @@ const { mutateAsync: thumbMut } = useMutation({
   mutation: (src: string) => CopyThumbnail(workspaceId.value, selectedId.value, src),
   onSuccess: () => {
     toast.add({ title: "Thumbnail copied", color: "success" });
+    thumbNonce.value++;
     void refetch();
   },
 });
@@ -493,6 +495,7 @@ function errMsg(e: unknown): string {
                       <div class="flex items-center gap-3">
                         <img
                           v-if="listingThumbUrl"
+                          :key="listingThumbUrl"
                           :src="listingThumbUrl"
                           alt=""
                           class="size-24 shrink-0 rounded-sm object-cover"

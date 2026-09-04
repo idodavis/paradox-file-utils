@@ -2,6 +2,7 @@
 /**
  * Compact install/cache/index health strip; state lives in useLanguageHealth.
  */
+import { computed } from "vue";
 import { useLanguageHealth } from "../composables/useLanguageHealth";
 
 const props = defineProps<{
@@ -14,8 +15,13 @@ const {
   scanPct,
   scanMsg,
   lastScanned,
+  scanLabel,
   rescan,
 } = useLanguageHealth(() => props.workspaceId);
+
+const scanColor = computed(() =>
+  health.value?.cacheStale || !health.value?.scannedAt ? "warning" : "primary",
+);
 </script>
 
 <template>
@@ -23,6 +29,14 @@ const {
     v-if="health"
     class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted"
   >
+    <UButton
+      :label="scanLabel"
+      icon="i-lucide-refresh-cw"
+      size="sm"
+      :color="scanColor"
+      :loading="scanning"
+      @click.stop="rescan"
+    />
     <span :class="health.installOk ? 'text-success' : 'text-error'">
       {{ health.installOk ? "Install OK" : "Install missing" }}
     </span>
@@ -37,14 +51,6 @@ const {
     }}</span>
     <span v-if="health.indexReady">{{ health.defCount }} defs</span>
     <span v-else>index pending</span>
-    <UButton
-      label="Rescan"
-      size="xs"
-      color="neutral"
-      variant="ghost"
-      :loading="scanning"
-      @click.stop="rescan"
-    />
     <span v-if="!scanning && lastScanned">Scanned {{ lastScanned }}</span>
     <div
       v-if="scanning"

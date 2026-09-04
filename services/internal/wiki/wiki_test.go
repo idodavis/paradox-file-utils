@@ -129,6 +129,43 @@ func TestNeededMissingPatches(t *testing.T) {
 	}
 }
 
+func TestForgetAllForcesNeeded(t *testing.T) {
+	useTempCache(t)
+	h := header{GameID: "ck3", FetchedVersion: "1.19.6", FetchedMajor: 1, FetchedMinor: 19}
+	if err := saveGuides(&Sidecar{
+		header: h,
+		Pages:  []Page{{Title: "Event modding", HTML: "<p>x</p>", Revid: 1}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := savePatches(&Sidecar{header: h}); err != nil {
+		t.Fatal(err)
+	}
+	if !HasSidecar("ck3") {
+		t.Fatal("want sidecar after save")
+	}
+	if Needed("ck3", "1.19.6") {
+		t.Fatal("same version should not recache")
+	}
+	dir, err := cacheDirFn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if !HasSidecar("ck3") {
+		t.Fatal("RAM should still report sidecar before ForgetAll")
+	}
+	ForgetAll()
+	if HasSidecar("ck3") {
+		t.Fatal("want no sidecar after ForgetAll")
+	}
+	if !Needed("ck3", "1.19.6") {
+		t.Fatal("reset must force wiki fetch")
+	}
+}
+
 func TestSanitizeStripsJunk(t *testing.T) {
 	t.Parallel()
 	raw := `<div class="mw-parser-output">

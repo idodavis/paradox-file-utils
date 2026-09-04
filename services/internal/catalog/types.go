@@ -6,7 +6,7 @@ package catalog
 import "strings"
 
 // CacheFormatVersion is the on-disk schema of VanillaCache.
-const CacheFormatVersion = 14
+const CacheFormatVersion = 15
 
 // LocFormatVersion is the on-disk schema of a vanilla loc sidecar.
 const LocFormatVersion = 3
@@ -93,6 +93,7 @@ type VanillaCache struct {
 	MetaKeys         []string                       `json:"metaKeys"`
 	Edges            []Edge                         `json:"edges,omitempty"`
 	LocRefs          []Ref                          `json:"locRefs,omitempty"`
+	CallRefs         []Ref                          `json:"callRefs,omitempty"` // scripted_* call sites
 	FieldValueKinds  map[string]string              `json:"fieldValueKinds,omitempty"`
 	FieldEnumsByKind map[string]map[string][]string `json:"fieldEnumsByKind,omitempty"`
 	TokenUsage       map[string]string              `json:"tokenUsage,omitempty"`

@@ -37,10 +37,11 @@ var stoplist = map[string]bool{
 // EdgeKindCall marks a scripted-effect invocation (not drawn on the canvas).
 const EdgeKindCall = "call"
 
-// CallCandidate is a possible scripted-effect call; ApplyCallEdges filters it.
+// CallCandidate is a possible scripted_* invocation; ApplyCallEdges keeps
+// effects for the graph, ApplyCallRefs keeps trigger/effect/modifier refs.
 type CallCandidate struct {
-	From, To, Path string
-	Line           int
+	From, To, Path   string
+	Line, Start, End int
 }
 
 // FileExtract is one parsed file's catalog harvest.
@@ -182,7 +183,7 @@ func extractEvents(root *jomini.Root, li *jomini.LineIndex, gameID, path, origin
 		for _, st := range stmts {
 			if vs, ok := st.(*jomini.ValueStmt); ok {
 				if sc, ok := vs.Value.(*jomini.Scalar); ok && !sc.Quoted {
-					if sc.Text == "scripted_trigger" || sc.Text == "scripted_effect" {
+					if game.IsCallKind(sc.Text) {
 						marker = sc.Text
 					} else {
 						marker = ""
@@ -414,6 +415,7 @@ func extractRefsAndEdges(
 					} else if from != "" && from != key {
 						cands = append(cands, CallCandidate{
 							From: from, To: key, Path: path, Line: line,
+							Start: a.Key.Range.Start, End: a.Key.Range.End,
 						})
 					}
 				}
@@ -638,11 +640,22 @@ func cloneFieldEnums(
 	return out
 }
 
-// dropEphemeralDefs keeps persist/scan defs free of flags, variables, scopes, and $NAME$.
+// locKindRefs keeps loc / loc-broad uses for the vanilla sidecar.
 func locKindRefs(refs []Ref) []Ref {
 	var out []Ref
 	for _, r := range refs {
 		if r.Kind == "loc" || r.Kind == "loc-broad" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// callKindRefs keeps scripted_trigger/effect/modifier invocations for the cache.
+func callKindRefs(refs []Ref) []Ref {
+	var out []Ref
+	for _, r := range refs {
+		if game.IsCallKind(r.Kind) {
 			out = append(out, r)
 		}
 	}
@@ -757,26 +770,53 @@ func isDigitKey(s string) bool {
 	return err == nil
 }
 
-// EffectSet is every scripted_effect key in defs plus cache.
-func EffectSet(defs []Def, cache *VanillaCache) map[string]bool {
-	out := map[string]bool{}
-	addEffectDefs(out, defs)
+// CallKindSet maps scripted_trigger/effect/modifier keys to CanonicalKind.
+// Only harvested defs (never script_docs vocab).
+func CallKindSet(defs []Def, cache *VanillaCache) map[string]string {
+	out := map[string]string{}
+	add := func(ds []Def) {
+		for _, d := range ds {
+			k := game.CanonicalKind(d.Kind)
+			if game.IsCallKind(k) {
+				out[d.Key] = k
+			}
+		}
+	}
+	add(defs)
 	if cache != nil {
-		addEffectDefs(out, cache.Defs)
+		add(cache.Defs)
 	}
 	return out
 }
 
-func addEffectDefs(set map[string]bool, defs []Def) {
-	for _, d := range defs {
-		if isScriptedEffect(d.Kind) {
-			set[d.Key] = true
+// EffectSet is every scripted_effect key in defs plus cache.
+func EffectSet(defs []Def, cache *VanillaCache) map[string]bool {
+	out := map[string]bool{}
+	for key, kind := range CallKindSet(defs, cache) {
+		if kind == "scripted_effect" {
+			out[key] = true
 		}
 	}
+	return out
 }
 
-func isScriptedEffect(t string) bool {
-	return game.CanonicalKind(t) == "scripted_effect"
+// ApplyCallRefs turns candidates whose To is a call-kind def into refs.
+func ApplyCallRefs(cands []CallCandidate, kinds map[string]string) []Ref {
+	if len(cands) == 0 || len(kinds) == 0 {
+		return nil
+	}
+	var out []Ref
+	for _, c := range cands {
+		kind, ok := kinds[c.To]
+		if !ok || c.From == c.To || c.Start >= c.End {
+			continue
+		}
+		out = append(out, Ref{
+			Key: c.To, Kind: kind, Path: c.Path, Line: c.Line,
+			Start: c.Start, End: c.End,
+		})
+	}
+	return out
 }
 
 // ApplyCallEdges turns candidates into call edges using a complete effectSet.

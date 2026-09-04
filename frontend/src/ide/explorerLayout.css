@@ -135,8 +135,7 @@
   display: none !important;
 }
 
-/* Hover markdown strips inline style. Hover widgets sit on the overlay,
- * not always under .monaco-workbench — keep these selectors unscoped. */
+/* Hover widgets sit on the overlay, not always under .monaco-workbench. */
 .monaco-hover {
   max-width: min(48rem, 92vw) !important;
 }
@@ -154,23 +153,45 @@
   word-break: normal;
 }
 
-.monaco-hover p {
-  line-height: 1.25;
+.monaco-hover .rendered-markdown > p:first-child {
+  padding-bottom: 8px;
+  margin: 0 0 8px !important;
+  border-bottom: 1px solid
+    var(--vscode-widget-border, rgba(127, 127, 127, 0.35));
 }
 
-.monaco-hover .pmt-hover-kind {
+.monaco-hover .rendered-markdown > p:first-child code {
   color: var(--vscode-descriptionForeground, var(--vscode-foreground));
   opacity: 0.72;
+  font-weight: 400;
   font-size: 0.85em;
 }
 
-.monaco-hover blockquote {
-  margin: 4px 0 0;
-  padding: 6px 8px;
+.monaco-hover .rendered-markdown > p,
+.monaco-hover .rendered-markdown > blockquote,
+.monaco-hover .rendered-markdown > pre {
+  margin: 6px 0 0 !important;
+  line-height: 1.25;
+}
+
+.monaco-hover .rendered-markdown > p + blockquote,
+.monaco-hover .rendered-markdown > p + pre {
+  margin-top: 4px !important;
+}
+
+.monaco-hover blockquote p {
+  margin: 0 !important;
   line-height: 1.35;
-  white-space: pre-wrap !important;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.monaco-hover .rendered-markdown > hr {
+  margin: 14px 0 8px !important;
+}
+
+.monaco-hover blockquote {
+  padding: 4px 8px;
   max-width: min(30rem, 76vw) !important;
   border-left: 3px solid
     var(--vscode-textBlockQuote-border, var(--vscode-focusBorder));
@@ -181,9 +202,7 @@
 }
 
 .monaco-hover pre {
-  margin: 4px 0 0;
   padding: 6px 8px;
-  line-height: 1.25;
   white-space: pre-wrap !important;
   overflow-wrap: anywhere;
   word-break: break-word;

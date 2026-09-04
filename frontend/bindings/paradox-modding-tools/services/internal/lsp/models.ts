@@ -50,7 +50,10 @@ export interface FoldingRange {
 /**
  * HoverResult is a structured hover card. The frontend templates Kind/Key/Hint/Docs.
  * Origin/rel/path/line describe the winning def site. Vanilla* is the install
- * site this winner overlays. Body is loc text or a harvested RHS. Usage is TokenUsage.
+ * site this winner overlays. Body is loc text. Values are unique ephemeral
+ * RHS/save-site expressions (frontend formats counts). More is unique names
+ * omitted after the cap. Owner is the enclosing scripted_* key for a param.
+ * Usage is TokenUsage.
  */
 export interface HoverResult {
     "kind"?: string;
@@ -58,6 +61,9 @@ export interface HoverResult {
     "hint"?: string;
     "docs"?: string;
     "body"?: string;
+    "values"?: HoverValue[] | null;
+    "more"?: number;
+    "owner"?: string;
     "usage"?: string;
     "origin"?: string;
     "originName"?: string;
@@ -70,6 +76,14 @@ export interface HoverResult {
     "vanillaPath"?: string;
     "vanillaLine"?: number;
     "vanillaCol"?: number;
+}
+
+/**
+ * HoverValue is one unique harvested RHS or save-site expression.
+ */
+export interface HoverValue {
+    "text": string;
+    "count": number;
 }
 
 /**

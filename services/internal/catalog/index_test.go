@@ -206,6 +206,13 @@ real_effect = {
 		if !call || fake || !fire {
 			t.Fatalf("call=%v fake=%v fire=%v edges=%v", call, fake, fire, edges)
 		}
+		refs := ApplyCallRefs(ex.Cands, CallKindSet(ex.Defs, nil))
+		if !hasRef(refs, "scripted_effect", "real_effect") {
+			t.Fatalf("call refs=%v want real_effect", refs)
+		}
+		if hasRef(refs, "scripted_effect", "not_an_effect") {
+			t.Fatalf("engine-like key must not be a call ref: %v", refs)
+		}
 		for _, e := range ex.Edges {
 			if e.Kind == EdgeKindCall {
 				t.Fatalf("nil effectSet should omit calls: %v", ex.Edges)

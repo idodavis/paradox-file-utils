@@ -179,8 +179,8 @@ func harvestDollarParams(
 				continue
 			}
 			if !a.Key.Quoted {
-				if name, _, _, ok := dollarParamKey(a.Key.Text); ok {
-					record(name, a.Key.Range.Start, a.Key.Range.End)
+				for _, span := range dollarParamsIn(a.Key.Text, a.Key.Range.Start) {
+					record(span.name, span.start, span.end)
 				}
 				if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted {
 					for _, span := range dollarParamsIn(sc.Text, sc.Range.Start) {
@@ -226,22 +226,6 @@ func dollarParamsIn(text string, base int) []dollarSpan {
 		i = j + 1
 	}
 	return out
-}
-
-func dollarParamKey(key string) (name string, start, end int, ok bool) {
-	if len(key) < 3 || key[0] != '$' || key[len(key)-1] != '$' {
-		return "", 0, 0, false
-	}
-	name = key[1 : len(key)-1]
-	if name == "" || !isParamByte(name[0], true) {
-		return "", 0, 0, false
-	}
-	for i := 1; i < len(name); i++ {
-		if !isParamByte(name[i], false) {
-			return "", 0, 0, false
-		}
-	}
-	return name, 0, len(key), true
 }
 
 func isParamByte(c byte, first bool) bool {
@@ -397,10 +381,13 @@ func conventionLocRefs(
 	return out
 }
 
+// dropEphemeralDefs drops flags/variables/scopes from the install cache.
+// script_param stays so $NAME$ in vanilla scripted_* files can resolve.
 func dropEphemeralDefs(defs []Def) []Def {
 	out := make([]Def, 0, len(defs))
 	for _, d := range defs {
-		if game.IsEphemeral(d.Kind) {
+		k := game.CanonicalKind(d.Kind)
+		if game.IsEphemeral(k) && k != "script_param" {
 			continue
 		}
 		out = append(out, d)

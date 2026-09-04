@@ -37,6 +37,15 @@ func forget(gameID string) {
 	delete(memPatches, gameID)
 }
 
+// ForgetAll drops every in-memory wiki sidecar. Disk files are not touched.
+// Call after wiping catalog.CacheDir so Needed/HasSidecar do not reuse RAM.
+func ForgetAll() {
+	memMu.Lock()
+	defer memMu.Unlock()
+	memGuides = map[string]*Sidecar{}
+	memPatches = map[string]*Sidecar{}
+}
+
 func remember(mem map[string]*Sidecar, gameID string, f *Sidecar) {
 	memMu.Lock()
 	defer memMu.Unlock()

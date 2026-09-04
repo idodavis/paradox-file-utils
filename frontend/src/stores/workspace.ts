@@ -213,10 +213,17 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   }
 
   watch(
-    workspaceMods,
-    async (mods) => {
+    [workspaces, workspaceMods],
+    async ([list, active]) => {
       const prev = thumbUrls.value;
       const next: Record<string, string> = {};
+      const seen = new Set<string>();
+      const mods: WorkspaceMod[] = [];
+      for (const m of [...active, ...list.flatMap((w) => w.mods ?? [])]) {
+        if (seen.has(m.id)) continue;
+        seen.add(m.id);
+        mods.push(m);
+      }
       for (const m of mods) {
         if (!m.thumbnail) continue;
         try {

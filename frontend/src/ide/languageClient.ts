@@ -22,7 +22,11 @@ import {
   FoldingRanges,
   CodeActions,
 } from "@services/ideservice";
-import type { WorkspaceEdit as LspWorkspaceEdit, Location as LspLocation, HoverResult } from "@services/internal/lsp/models";
+import type {
+  WorkspaceEdit as LspWorkspaceEdit,
+  Location as LspLocation,
+  HoverResult,
+} from "@services/internal/lsp/models";
 import { originHexByOriginId } from "./rootDecorations";
 
 const LANGS = ["paradox", "paradox-gui", "paradox-loc", "paradox-info", "paradox-mod"];
@@ -34,10 +38,7 @@ function pathOf(doc: vscode.TextDocument): string {
 }
 
 /** Map editor position to UTF-8 byte column for the Go LSP bridge. */
-function positionUtf8(
-  doc: vscode.TextDocument,
-  pos: vscode.Position,
-): { line: number; character: number } {
+function positionUtf8(doc: vscode.TextDocument, pos: vscode.Position): { line: number; character: number } {
   const lineText = doc.lineAt(pos.line).text;
   let utf16 = 0;
   let byteCol = 0;
@@ -97,26 +98,39 @@ function withDoc(text: string): vscode.MarkdownString {
   return md;
 }
 
-/** Kind (muted) and key (bold) on one line, then hint and docs. */
+/** One Markdown card: header, hint/docs, values/body, usage. */
 function hoverCardMarkdown(h: HoverResult): string {
-  const kind = h.kind ? `<span class="pmt-hover-kind">${escHtml(h.kind)}</span>` : "";
-  const key = h.key ? ` **\`${escHtml(h.key)}\`**` : "";
+  const kind = h.kind ? `**${h.kind}**` : "";
+  const key = h.key ? ` \`${h.key}\`` : "";
   const parts = [`${kind}${key}`.trim()];
-  if (h.hint) parts.push(escHtml(h.hint));
-  if (h.docs) parts.push(escHtml(h.docs));
+  if (h.hint) parts.push(h.owner ? `${h.hint} of ${h.owner}` : h.hint);
+  if (h.docs) parts.push(h.docs);
+  const quote = hoverValuesText(h) || h.body;
+  if (quote) {
+    parts.push(
+      quote
+        .trim()
+        .split("\n")
+        .map((l) => `> ${l}`)
+        .join("\n"),
+    );
+  }
+  if (h.usage) parts.push("```\n" + h.usage.trim() + "\n```");
   return parts.join("\n\n");
+}
+
+/** Unique harvested values: `text ×count`, then leftover unique names. */
+function hoverValuesText(h: HoverResult): string {
+  const rows = h.values ?? [];
+  if (rows.length === 0) return "";
+  const lines = rows.map((v) => `${v.text} ×${v.count}`);
+  if (h.more) lines.push(`+${h.more} more`);
+  return lines.join("\n");
 }
 
 /** Location line from Go origin + rel (1-based line). */
 function hoverSiteMarkdown(h: HoverResult): string {
-  const primary = hoverSiteLine(
-    h.origin || "",
-    h.originName || "",
-    h.rel ?? "",
-    h.path ?? "",
-    h.line,
-    h.col,
-  );
+  const primary = hoverSiteLine(h.origin || "", h.originName || "", h.rel ?? "", h.path ?? "", h.line, h.col);
   const vanilla = h.vanillaPath
     ? hoverSiteLine(
         "vanilla",
@@ -153,9 +167,7 @@ function hoverSiteLine(
   const key = origin || "vanilla";
   const raw = originHexByOriginId(key);
   const hex = /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : "#5B9A8B";
-  const icon = key === "vanilla" || key === "staging"
-    ? "$(root-folder)"
-    : "$(package)";
+  const icon = key === "vanilla" || key === "staging" ? "$(root-folder)" : "$(package)";
   const name = label || escHtml(key === "vanilla" ? "Game" : key);
   const site = `<span style="color:${hex};">${icon} ${name}</span>`;
   const pathBit = hoverOpenLink(rel, path, line, col);
@@ -163,23 +175,21 @@ function hoverSiteLine(
 }
 
 /** Markdown command link that opens the def file. */
-function hoverOpenLink(
-  rel: string,
-  path: string,
-  line?: number,
-  col?: number,
-): string {
+function hoverOpenLink(rel: string, path: string, line?: number, col?: number): string {
   const text = escHtml(rel || path);
   if (!text) return "";
   if (!path) return text;
   const target = vscode.Uri.file(path).toString();
   const args: unknown[] = col
-    ? [target, {
-        selection: {
-          startLineNumber: (line ?? 0) + 1,
-          startColumn: (col ?? 0) + 1,
+    ? [
+        target,
+        {
+          selection: {
+            startLineNumber: (line ?? 0) + 1,
+            startColumn: (col ?? 0) + 1,
+          },
         },
-      }]
+      ]
     : [target];
   return `[${rel || text}](command:vscode.open?${encodeURIComponent(JSON.stringify(args))})`;
 }
@@ -188,24 +198,7 @@ function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Loc/body as a quote; usage as a codeblock. Styles live in explorerLayout.css
- *  — monaco hover sanitizes inline style, so <pre style=…> never wraps. */
-function appendHoverQuote(md: vscode.MarkdownString, text: string) {
-  const t = text.replace(/^\n+/, "").replace(/\n+$/, "");
-  if (!t) return;
-  md.appendMarkdown(`<blockquote>${escHtml(t)}</blockquote>\n`);
-}
-
-function appendHoverCode(md: vscode.MarkdownString, text: string) {
-  const t = text.replace(/^\n+/, "").replace(/\n+$/, "");
-  if (!t) return;
-  md.appendMarkdown(`<pre>${escHtml(t)}</pre>\n`);
-}
-
-function applyWorkspaceEdit(
-  doc: vscode.TextDocument | undefined,
-  edit: LspWorkspaceEdit,
-): vscode.WorkspaceEdit {
+function applyWorkspaceEdit(doc: vscode.TextDocument | undefined, edit: LspWorkspaceEdit): vscode.WorkspaceEdit {
   const we = new vscode.WorkspaceEdit();
   for (const uri of edit.create ?? []) {
     we.createFile(uriToVsCode(uri), { ignoreIfExists: true });
@@ -216,12 +209,7 @@ function applyWorkspaceEdit(
     for (const e of edits ?? []) {
       const range = sameDoc
         ? rangeToVsCode(sameDoc, e.range)
-        : new vscode.Range(
-            e.range.start.line,
-            e.range.start.character,
-            e.range.end.line,
-            e.range.end.character,
-          );
+        : new vscode.Range(e.range.start.line, e.range.start.character, e.range.end.line, e.range.end.character);
       we.replace(vsUri, range, e.newText);
     }
   }
@@ -235,49 +223,34 @@ function goRangeToVsCode(
   same?: boolean,
 ): vscode.Range {
   if (same && fallback) return rangeToVsCode(fallback, r);
-  return new vscode.Range(
-    r.start.line,
-    r.start.character,
-    r.end.line,
-    r.end.character,
-  );
+  return new vscode.Range(r.start.line, r.start.character, r.end.line, r.end.character);
 }
 
 /** Map Go locations onto VS Code Locations (references / symbols). */
-function locationsFromGo(
-  locs: LspLocation[],
-  fallback?: vscode.TextDocument,
-): vscode.Location[] {
+function locationsFromGo(locs: LspLocation[], fallback?: vscode.TextDocument): vscode.Location[] {
   const out: vscode.Location[] = [];
   for (const l of locs) {
     const uri = uriToVsCode(l.uri);
     const same =
       fallback &&
-      uri.fsPath.replace(/\\/g, "/").toLowerCase() ===
-        fallback.uri.fsPath.replace(/\\/g, "/").toLowerCase();
+      uri.fsPath.replace(/\\/g, "/").toLowerCase() === fallback.uri.fsPath.replace(/\\/g, "/").toLowerCase();
     out.push(new vscode.Location(uri, goRangeToVsCode(l.range, fallback, same)));
   }
   return out;
 }
 
 /** Map Go locations onto LocationLinks so Peek can show the assignment block. */
-function locationLinksFromGo(
-  locs: LspLocation[],
-  fallback?: vscode.TextDocument,
-): vscode.LocationLink[] {
+function locationLinksFromGo(locs: LspLocation[], fallback?: vscode.TextDocument): vscode.LocationLink[] {
   const out: vscode.LocationLink[] = [];
   for (const l of locs) {
     const uri = uriToVsCode(l.uri);
     const same =
       fallback &&
-      uri.fsPath.replace(/\\/g, "/").toLowerCase() ===
-        fallback.uri.fsPath.replace(/\\/g, "/").toLowerCase();
+      uri.fsPath.replace(/\\/g, "/").toLowerCase() === fallback.uri.fsPath.replace(/\\/g, "/").toLowerCase();
     const sel = goRangeToVsCode(l.range, fallback, same);
     out.push({
       targetUri: uri,
-      targetRange: l.targetRange
-        ? goRangeToVsCode(l.targetRange, fallback, same)
-        : sel,
+      targetRange: l.targetRange ? goRangeToVsCode(l.targetRange, fallback, same) : sel,
       targetSelectionRange: sel,
     });
   }
@@ -285,17 +258,12 @@ function locationLinksFromGo(
 }
 
 /** Register the same provider factory for every PMT language id. */
-function registerLangProviders(
-  subs: vscode.Disposable[],
-  factory: (lang: string) => vscode.Disposable,
-): void {
+function registerLangProviders(subs: vscode.Disposable[], factory: (lang: string) => vscode.Disposable): void {
   for (const lang of LANGS) subs.push(factory(lang));
 }
 
 /** Attach PMT language intelligence to the workbench (idempotent). */
-export function registerLanguageClient(
-  getWorkspaceId: () => string,
-): vscode.Disposable {
+export function registerLanguageClient(getWorkspaceId: () => string): vscode.Disposable {
   const subs: vscode.Disposable[] = [];
   const diag = vscode.languages.createDiagnosticCollection("pmt");
   subs.push(diag);
@@ -324,10 +292,7 @@ export function registerLanguageClient(
       diag.set(
         doc.uri,
         list.map((d) => {
-          const sev =
-            d.severity === 1
-              ? vscode.DiagnosticSeverity.Error
-              : vscode.DiagnosticSeverity.Warning;
+          const sev = d.severity === 1 ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning;
           return new vscode.Diagnostic(rangeToVsCode(doc, d.range), d.message, sev);
         }),
       );
@@ -356,8 +321,6 @@ export function registerLanguageClient(
         md.supportThemeIcons = true;
         md.isTrusted = { enabledCommands: ["vscode.open"] };
         md.appendMarkdown(hoverCardMarkdown(h));
-        if (h.body) appendHoverQuote(md, h.body);
-        if (h.usage) appendHoverCode(md, h.usage);
         const site = hoverSiteMarkdown(h);
         if (site) md.appendMarkdown(`\n\n---\n\n${site}`);
         return new vscode.Hover(md);
@@ -375,14 +338,10 @@ export function registerLanguageClient(
           await DidChange(id, pathOf(doc), doc.getText());
           if (token?.isCancellationRequested) return undefined;
           const p = positionUtf8(doc, pos);
-          const items =
-            (await Complete(id, pathOf(doc), p.line, p.character)) ?? [];
+          const items = (await Complete(id, pathOf(doc), p.line, p.character)) ?? [];
           if (token?.isCancellationRequested) return undefined;
           return items.map((it, i) => {
-            const kind =
-              it.kind === "property"
-                ? vscode.CompletionItemKind.Property
-                : vscode.CompletionItemKind.Value;
+            const kind = it.kind === "property" ? vscode.CompletionItemKind.Property : vscode.CompletionItemKind.Value;
             const c = new vscode.CompletionItem(it.label, kind);
             c.detail = it.detail;
             c.sortText = String(i).padStart(4, "0");
@@ -390,9 +349,7 @@ export function registerLanguageClient(
               c.documentation = withDoc(it.documentation);
             }
             if (it.insertText) {
-              c.insertText = it.insertText.includes("$")
-                ? new vscode.SnippetString(it.insertText)
-                : it.insertText;
+              c.insertText = it.insertText.includes("$") ? new vscode.SnippetString(it.insertText) : it.insertText;
             }
             if (it.range) {
               c.range = rangeToVsCode(doc, it.range);
@@ -439,8 +396,7 @@ export function registerLanguageClient(
         const id = getWorkspaceId();
         if (!id) return [];
         const p = positionUtf8(doc, pos);
-        const locs =
-          (await Definition(id, pathOf(doc), p.line, p.character)) ?? [];
+        const locs = (await Definition(id, pathOf(doc), p.line, p.character)) ?? [];
         return locationLinksFromGo(locs, doc);
       },
     }),
@@ -451,8 +407,7 @@ export function registerLanguageClient(
         const id = getWorkspaceId();
         if (!id) return [];
         const p = positionUtf8(doc, pos);
-        const locs =
-          (await References(id, pathOf(doc), p.line, p.character)) ?? [];
+        const locs = (await References(id, pathOf(doc), p.line, p.character)) ?? [];
         return locationsFromGo(locs, doc);
       },
     }),
@@ -469,10 +424,7 @@ export function registerLanguageClient(
               s.name,
               vscode.SymbolKind.Object,
               s.containerName ?? "",
-              new vscode.Location(
-                uriToVsCode(s.location.uri),
-                rangeToVsCode(doc, s.location.range),
-              ),
+              new vscode.Location(uriToVsCode(s.location.uri), rangeToVsCode(doc, s.location.range)),
             ),
         );
       },
@@ -484,13 +436,7 @@ export function registerLanguageClient(
         const id = getWorkspaceId();
         if (!id) return null;
         const p = positionUtf8(doc, pos);
-        const edit = await Rename(
-          id,
-          pathOf(doc),
-          p.line,
-          p.character,
-          newName,
-        );
+        const edit = await Rename(id, pathOf(doc), p.line, p.character, newName);
         if (!edit?.changes) return null;
         return applyWorkspaceEdit(doc, edit);
       },
@@ -502,9 +448,7 @@ export function registerLanguageClient(
         const id = getWorkspaceId();
         if (!id) return [];
         const edits = (await FormatDocument(id, pathOf(doc))) ?? [];
-        return edits.map(
-          (e) => new vscode.TextEdit(rangeToVsCode(doc, e.range), e.newText),
-        );
+        return edits.map((e) => new vscode.TextEdit(rangeToVsCode(doc, e.range), e.newText));
       },
     }),
   );
@@ -514,14 +458,7 @@ export function registerLanguageClient(
         const id = getWorkspaceId();
         if (!id) return [];
         const ranges = (await FoldingRanges(id, pathOf(doc))) ?? [];
-        return ranges.map(
-          (r) =>
-            new vscode.FoldingRange(
-              r.startLine,
-              r.endLine,
-              vscode.FoldingRangeKind.Region,
-            ),
-        );
+        return ranges.map((r) => new vscode.FoldingRange(r.startLine, r.endLine, vscode.FoldingRangeKind.Region));
       },
     }),
   );
@@ -532,10 +469,7 @@ export function registerLanguageClient(
         if (!id) return [];
         const actions = (await CodeActions(id, pathOf(doc))) ?? [];
         return actions.map((a) => {
-          const ca = new vscode.CodeAction(
-            a.title,
-            vscode.CodeActionKind.QuickFix,
-          );
+          const ca = new vscode.CodeAction(a.title, vscode.CodeActionKind.QuickFix);
           if (a.edit) ca.edit = applyWorkspaceEdit(doc, a.edit);
           return ca;
         });
@@ -559,12 +493,7 @@ export function registerLanguageClient(
               s.containerName ?? "",
               new vscode.Location(
                 uriToVsCode(s.location.uri),
-                new vscode.Range(
-                  r.start.line,
-                  r.start.character,
-                  r.end.line,
-                  r.end.character,
-                ),
+                new vscode.Range(r.start.line, r.start.character, r.end.line, r.end.character),
               ),
             ),
           );
@@ -580,9 +509,7 @@ export function registerLanguageClient(
       void refreshDiags(d);
     }),
   );
-  subs.push(
-    vscode.workspace.onDidChangeTextDocument((e) => onChange(e.document)),
-  );
+  subs.push(vscode.workspace.onDidChangeTextDocument((e) => onChange(e.document)));
   subs.push(
     vscode.workspace.onDidSaveTextDocument((d) => {
       const id = getWorkspaceId();

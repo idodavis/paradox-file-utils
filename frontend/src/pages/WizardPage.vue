@@ -30,7 +30,7 @@ const ctx = useWorkspaceStore();
 const wantsNewMod = computed(() => String(route.query.newMod ?? "") === "1");
 const creatingMod = ref(false);
 
-const step = ref(1);
+const step = ref(0);
 const selectedGame = ref(ctx.currentGameId);
 const selectedInstallId = ref<string | undefined>(undefined);
 const newInstallPath = ref("");
@@ -49,13 +49,13 @@ useSortable(wizardModsEl, modEntries, {
   watchElement: true,
 });
 
-/** Wizard steps; `value` matches the 1-based `step` ref. */
+/** Wizard steps; numeric `value` is the 0-based index UStepper uses. */
 const stepItems: StepperItem[] = [
-  { title: "Game", icon: "i-lucide-gamepad-2", value: 1 },
-  { title: "Install", icon: "i-lucide-folder", value: 2 },
-  { title: "Mods", icon: "i-lucide-package", value: 3 },
-  { title: "Details", icon: "i-lucide-file-text", value: 4 },
-  { title: "Staging", icon: "i-lucide-folder-output", value: 5 },
+  { title: "Game", icon: "i-lucide-gamepad-2", value: 0 },
+  { title: "Install", icon: "i-lucide-folder", value: 1 },
+  { title: "Mods", icon: "i-lucide-package", value: 2 },
+  { title: "Details", icon: "i-lucide-file-text", value: 3 },
+  { title: "Staging", icon: "i-lucide-folder-output", value: 4 },
 ];
 
 /** Install options for the radio group. */
@@ -77,15 +77,15 @@ const supportedVersion = computed(() => {
 
 const canContinue = computed(() => {
   switch (step.value) {
-    case 1:
+    case 0:
       return !!selectedGame.value;
-    case 2:
+    case 1:
       return !!selectedInstallId.value;
-    case 3:
+    case 2:
       return wantsNewMod.value ? modEntries.value.length > 0 : true;
-    case 4:
+    case 3:
       return !!workspaceName.value.trim();
-    case 5:
+    case 4:
       return !!selectedInstallId.value;
     default:
       return false;
@@ -110,7 +110,7 @@ const {
       detected: detected ?? [],
     };
   },
-  enabled: () => step.value >= 2,
+  enabled: () => step.value >= 1,
 });
 
 const installs = computed(() => installPack.value?.installs ?? []);
@@ -198,8 +198,8 @@ function removeModPath(index: number): void {
 /** Move the stepper; later steps stay locked until an install is selected. */
 function onStep(v: number | string | undefined): void {
   if (typeof v !== "number") return;
-  if (v > 2 && !selectedInstallId.value) {
-    step.value = 2;
+  if (v > 1 && !selectedInstallId.value) {
+    step.value = 1;
     return;
   }
   step.value = v;
@@ -222,7 +222,7 @@ const {
       throw new Error("Workspace name is required.");
     }
     if (!selectedInstallId.value) {
-      step.value = 2;
+      step.value = 1;
       throw new Error("Select or add a game install before creating.");
     }
     const ws = await CreateWorkspace(selectedGame.value, workspaceName.value.trim(), selectedInstallId.value);
@@ -259,20 +259,20 @@ const error = computed(
 <template>
   <div class="h-full w-full min-h-0 overflow-y-auto">
     <div class="flex min-h-full w-full items-center justify-center p-4">
-      <div class="w-full" :class="step === 2 ? 'max-w-4xl' : 'max-w-2xl'">
+      <div class="w-full" :class="step === 1 ? 'max-w-4xl' : 'max-w-2xl'">
         <h1 class="mb-6 text-center text-xl font-bold">Create Workspace</h1>
         <UAlert v-if="error" color="error" variant="subtle" :description="error" class="mb-4" />
         <UStepper :model-value="step" :items="stepItems" class="mb-6" @update:model-value="onStep" />
 
         <UCard>
-          <template v-if="step === 1">
+          <template v-if="step === 0">
             <div class="space-y-4">
               <h2 class="font-semibold">Select Game</h2>
               <URadioGroup v-model="selectedGame" :items="ctx.gameOptions" variant="card" />
             </div>
           </template>
 
-          <template v-else-if="step === 2">
+          <template v-else-if="step === 1">
             <div class="space-y-4">
               <h2 class="font-semibold">Game Install</h2>
               <p class="text-sm text-muted">Pick a saved install, or draft one on the right and click Add install.</p>
@@ -337,7 +337,7 @@ const error = computed(
             </div>
           </template>
 
-          <template v-else-if="step === 3">
+          <template v-else-if="step === 2">
             <div class="space-y-4">
               <h2 class="font-semibold">Mod Folders</h2>
               <UAlert
@@ -416,7 +416,7 @@ const error = computed(
             </div>
           </template>
 
-          <template v-else-if="step === 4">
+          <template v-else-if="step === 3">
             <div class="space-y-4">
               <h2 class="font-semibold">Workspace Details</h2>
               <UFormField label="Workspace name" required>
@@ -428,7 +428,7 @@ const error = computed(
             </div>
           </template>
 
-          <template v-else-if="step === 5">
+          <template v-else-if="step === 4">
             <div class="space-y-4">
               <h2 class="font-semibold">Staging Directory</h2>
               <UAlert
@@ -449,9 +449,9 @@ const error = computed(
 
           <template #footer>
             <div class="flex justify-between">
-              <UButton v-if="step > 1" label="Back" variant="outline" @click="prevStep" />
+              <UButton v-if="step > 0" label="Back" variant="outline" @click="prevStep" />
               <div v-else />
-              <UButton v-if="step < 5" label="Continue" :disabled="!canContinue" @click="nextStep" />
+              <UButton v-if="step < 4" label="Continue" :disabled="!canContinue" @click="nextStep" />
               <UButton
                 v-else
                 label="Create Workspace"

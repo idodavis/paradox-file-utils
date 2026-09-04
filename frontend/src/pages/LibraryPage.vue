@@ -6,7 +6,7 @@ import { computed, onActivated, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useMutation } from "@pinia/colada";
 import { useWorkspaceStore } from "../stores/workspace";
-import { Workspace } from "@services/models";
+import { Workspace, WorkspaceMod } from "@services/models";
 import { AddWorkspaceMod, DeleteWorkspace } from "@services/workspaceservice";
 import CreateModForm from "../components/CreateModForm.vue";
 import { ResetData } from "@services/settingsservice";
@@ -15,6 +15,7 @@ import LanguageHealthStrip from "../components/LanguageHealthStrip.vue";
 import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
 import { workspaceHomeRoute } from "../workspaceTools";
 import { useSettingsStore } from "../stores/settings";
+import { originHex } from "../ide/rootDecorations";
 
 defineOptions({ name: "LibraryPage" });
 
@@ -122,6 +123,16 @@ const { mutateAsync: resetData, isLoading: resetting } = useMutation({
 onActivated(() => {
   void ctx.refresh();
 });
+
+/** Accent hex for a library-card mod avatar (payload color, else palette). */
+function modHex(mod: WorkspaceMod, index: number): string {
+  return originHex({
+    kind: "mod",
+    path: mod.path,
+    color: mod.color,
+    wrapIndex: index,
+  });
+}
 </script>
 
 <template>
@@ -189,6 +200,20 @@ onActivated(() => {
           </template>
           <div class="text-sm text-muted">
             <p>{{ ctx.workspaceMods.length }} mod(s) attached</p>
+            <UAvatarGroup
+              v-if="ctx.workspaceMods.length"
+              :max="5"
+              size="sm"
+              class="mt-2"
+            >
+              <UAvatar
+                v-for="(mod, i) in ctx.workspaceMods"
+                :key="mod.id"
+                :src="ctx.thumbUrls[mod.id]"
+                :alt="mod.name"
+                :style="{ boxShadow: `0 0 0 2px ${modHex(mod, i)}` }"
+              />
+            </UAvatarGroup>
             <LanguageHealthStrip class="mt-2" :workspace-id="ctx.activeWorkspace.id" />
           </div>
         </UCard>
@@ -230,9 +255,18 @@ onActivated(() => {
                   </div>
                 </div>
               </template>
-              <div class="space-y-1 text-xs text-muted">
+              <div class="space-y-2 text-xs text-muted">
                 <p v-if="ws.installId">Install configured</p>
                 <p v-else class="text-warning">No install set</p>
+                <UAvatarGroup v-if="ws.mods?.length" :max="5" size="sm">
+                  <UAvatar
+                    v-for="(mod, i) in ws.mods"
+                    :key="mod.id"
+                    :src="ctx.thumbUrls[mod.id]"
+                    :alt="mod.name"
+                    :style="{ boxShadow: `0 0 0 2px ${modHex(mod, i)}` }"
+                  />
+                </UAvatarGroup>
               </div>
             </UCard>
           </div>
@@ -243,7 +277,8 @@ onActivated(() => {
     <div v-if="!ctx.loading" class="mt-auto space-y-2 border-t border-default pt-4">
       <p class="text-sm font-medium">Reset all PMT data</p>
       <p class="text-sm text-muted">
-        Workspaces, install records, and caches. Does not delete mods or game files on disk.
+        Workspaces, install records, PMT staging folders, and caches. Does not
+        delete mods or game files on disk.
       </p>
       <UButton label="Reset all data" color="error" variant="outline" size="sm" @click="resetOpen = true" />
     </div>
@@ -287,6 +322,7 @@ onActivated(() => {
           <li>Every workspace is removed from PMT.</li>
           <li>You must re-add game installs.</li>
           <li>The language cache is wiped; the next open rescans vanilla.</li>
+          <li>PMT staging folders are deleted.</li>
           <li>Patch history is gone.</li>
           <li>Theme, UI scale, and editor font are kept.</li>
           <li>Mod folders and Steam/game installs on disk are not deleted.</li>

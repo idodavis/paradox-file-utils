@@ -6,9 +6,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/wiki"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -66,8 +68,32 @@ func (s *SettingsService) SaveSettings(settings map[string]string) error {
 	})
 }
 
-// ResetData wipes workspaces, mods, installs, patch runs, and the semantic cache.
+// ResetData wipes workspaces, mods, installs, patch runs, PMT staging dirs,
+// the semantic cache, and in-memory wiki sidecars. Mod and game folders stay.
 func (s *SettingsService) ResetData() error {
+	root, rootErr := pmtDataRoot()
+	var wipe []string
+	s.Store.Read(func(c *Config) {
+		for _, ws := range c.Workspaces {
+			if ws.StagingDir != "" {
+				wipe = append(wipe, ws.StagingDir)
+			}
+			if rootErr == nil && ws.ID != "" {
+				wipe = append(wipe, filepath.Join(root, "workspaces", ws.ID))
+			}
+		}
+		for _, run := range c.PatchRuns {
+			if run.StagingDir != "" {
+				wipe = append(wipe, run.StagingDir)
+			}
+			if rootErr == nil && run.ID != "" {
+				wipe = append(wipe, filepath.Join(root, "patch_runs", run.ID))
+			}
+		}
+	})
+	if rootErr == nil {
+		removeOwnedDirs(root, wipe)
+	}
 	if err := s.Store.Mutate(func(c *Config) error {
 		c.Installs, c.Workspaces, c.PatchRuns = nil, nil, nil
 		return nil
@@ -81,8 +107,61 @@ func (s *SettingsService) ResetData() error {
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("wipe cache: %w", err)
 	}
+	wiki.ForgetAll()
 	if s.Session != nil {
 		s.Session.pool().DropAll()
 	}
 	return nil
+}
+
+func pmtDataRoot() (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, appConfigDirName), nil
+}
+
+// ownedByPMT reports whether path is a subdirectory of root (not root itself).
+func ownedByPMT(root, path string) bool {
+	if root == "" || path == "" {
+		return false
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(absRoot, absPath)
+	if err != nil || rel == "." || rel == ".." {
+		return false
+	}
+	return !strings.HasPrefix(rel, "..")
+}
+
+func resetLog(msg string, args ...any) {
+	if app := application.Get(); app != nil {
+		app.Logger.Warn(msg, args...)
+	}
+}
+
+// removeOwnedDirs deletes PMT-owned dirs. Paths outside root are skipped.
+func removeOwnedDirs(root string, dirs []string) {
+	seen := map[string]bool{}
+	for _, dir := range dirs {
+		if dir == "" || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		if !ownedByPMT(root, dir) {
+			resetLog("reset-data: skip non-PMT path", "path", dir)
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			resetLog("reset-data: wipe failed", "path", dir, "error", err)
+		}
+	}
 }

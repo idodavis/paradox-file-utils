@@ -45,6 +45,7 @@ test.1 = {
 		add_gold = 10
 		trigger_event = test.2
 		save_scope_as = duel_target
+		my_trig = { TARGET = root }
 	}
 	option = { name = test.1.a }
 }
@@ -193,10 +194,24 @@ func TestScanCorpusFixture(t *testing.T) {
 	if c.FormatVersion != CacheFormatVersion {
 		t.Errorf("formatVersion = %d, want %d", c.FormatVersion, CacheFormatVersion)
 	}
+	gotParam, gotCall := false, false
 	for _, d := range c.Defs {
-		if game.IsEphemeral(d.Kind) {
+		k := game.CanonicalKind(d.Kind)
+		if game.IsEphemeral(k) && k != "script_param" {
 			t.Errorf("scan persisted ephemeral %s %s", d.Kind, d.Key)
 		}
+		if k == "script_param" && d.Key == "TARGET" {
+			gotParam = true
+		}
+	}
+	for _, r := range c.CallRefs {
+		if r.Key == "my_trig" && game.CanonicalKind(r.Kind) == "scripted_trigger" {
+			gotCall = true
+		}
+	}
+	if !gotParam || !gotCall {
+		t.Errorf("vanilla $NAME$/call persist param=%v call=%v refs=%v",
+			gotParam, gotCall, c.CallRefs)
 	}
 
 	for _, tt := range []struct {

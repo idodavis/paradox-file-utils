@@ -106,9 +106,9 @@ func locInterpAt(src string, off int) (locInterp, bool) {
 }
 
 // callKindDefAt reports scripted_trigger NAME = (and effect/modifier) at off.
-func callKindDefAt(res jomini.Result, off int) (kind, name string, ok bool) {
+func callKindDefAt(res jomini.Result, off int) (kind, name string, assign *jomini.Assignment, ok bool) {
 	if res.Root == nil {
-		return "", "", false
+		return "", "", nil, false
 	}
 	var walk func([]jomini.Statement) bool
 	walk = func(stmts []jomini.Statement) bool {
@@ -136,7 +136,7 @@ func callKindDefAt(res jomini.Result, off int) (kind, name string, ok bool) {
 				onMark := off >= markStart && off < markEnd
 				onName := off >= a.Key.Range.Start && off < a.Key.Range.End
 				if onMark || onName {
-					kind, name, ok = marker, a.Key.Text, true
+					kind, name, assign, ok = marker, a.Key.Text, a, true
 					return true
 				}
 			}
@@ -148,7 +148,7 @@ func callKindDefAt(res jomini.Result, off int) (kind, name string, ok bool) {
 		return false
 	}
 	ok = walk(res.Root.Statements)
-	return kind, name, ok
+	return kind, name, assign, ok
 }
 
 // definitionSites lists every def of key, FIOS/Resolve winner first.

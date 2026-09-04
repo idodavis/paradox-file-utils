@@ -48,6 +48,7 @@ type Session struct {
 	cacheEdgesByTo   map[string][]catalog.Edge
 	cacheEdgesByFrom map[string][]catalog.Edge
 	effectSet        map[string]bool
+	callKindSet      map[string]string
 	fieldValueKinds  map[string]string
 	modFieldKinds    map[string]string
 	modFieldEnums    map[string]map[string][]string
@@ -104,7 +105,7 @@ func NewWithLoc(
 	s.modFieldEnums = idx.FieldEnumsByKind
 	s.rebuildCacheIndexLocked()
 	s.rebuildFieldKindsLocked()
-	s.rebuildEffectSetLocked()
+	s.rebuildCallSetsLocked()
 	s.viaDirty = true
 	return s
 }
@@ -118,7 +119,7 @@ func (s *Session) ReplaceCache(c *catalog.VanillaCache) {
 	s.cache = c
 	s.rebuildCacheIndexLocked()
 	s.rebuildFieldKindsLocked()
-	s.rebuildEffectSetLocked()
+	s.rebuildCallSetsLocked()
 	s.viaDirty = true
 	s.mu.Unlock()
 }
@@ -246,21 +247,24 @@ func (s *Session) reindexLocked(path, rel, text string, parsed jomini.Result) {
 		rel = locatedRel
 	}
 	s.dropPathLocked(path)
-	// Install files stay buffered for IDE, but never merge into workspace harvest.
-	if origin == game.OriginVanilla {
-		s.lastIndexed[path] = text
-		return
-	}
 	var ex catalog.FileExtract
 	if parsed.Root != nil {
 		ex = catalog.ExtractParsed(s.GameID, path, rel, origin, parsed, false)
 	} else {
 		ex = catalog.ExtractFile(s.GameID, path, rel, origin, text, false)
 	}
+	// Install files stay out of workspace harvest, but live call/$NAME$
+	// sites must be queryable (peek/hover) without waiting on a rescan.
+	if origin == game.OriginVanilla {
+		s.indexVanillaLiveLocked(ex)
+		s.lastIndexed[path] = text
+		return
+	}
 	s.addDefsLocked(ex.Defs)
 	s.addRefsLocked(ex.Refs)
 	s.addEdgesLocked(ex.Edges)
-	s.addEffectsLocked(ex.Defs)
+	s.addCallKindsLocked(ex.Defs)
+	s.addRefsLocked(catalog.ApplyCallRefs(ex.Cands, s.callKindSet))
 	s.addEdgesLocked(catalog.ApplyCallEdges(ex.Cands, s.effectSet))
 	s.locByLang = catalog.MergeLoc(s.locByLang, ex.Loc)
 	s.lastIndexed[path] = text
@@ -384,7 +388,10 @@ func (s *Session) VanillaDefs(key string) []catalog.Def {
 	var out []catalog.Def
 	seen := map[string]bool{}
 	add := func(d catalog.Def) {
-		if d.Key != key || game.IsEphemeral(d.Kind) {
+		if d.Key != key {
+			return
+		}
+		if game.IsEphemeral(d.Kind) && game.CanonicalKind(d.Kind) != "script_param" {
 			return
 		}
 		id := d.Kind + "\x00" + CanonPath(d.Path) + "\x00" + strconv.Itoa(d.Line)
@@ -587,12 +594,12 @@ func (s *Session) rebuildCacheIndexLocked() {
 		return
 	}
 	for _, d := range s.cache.Defs {
-		if game.IsEphemeral(d.Kind) {
-			continue
-		}
 		s.cacheByKey[d.Key] = append(s.cacheByKey[d.Key], d)
 	}
 	for _, r := range s.cache.LocRefs {
+		s.cacheRefsByKey[r.Key] = append(s.cacheRefsByKey[r.Key], r)
+	}
+	for _, r := range s.cache.CallRefs {
 		s.cacheRefsByKey[r.Key] = append(s.cacheRefsByKey[r.Key], r)
 	}
 	for _, e := range s.cache.Edges {
@@ -642,9 +649,33 @@ func (s *Session) addEdgesLocked(edges []catalog.Edge) {
 	}
 }
 
-func (s *Session) addEffectsLocked(defs []catalog.Def) {
+// indexVanillaLiveLocked records call-kind and $NAME$ refs from an open
+// install file without merging defs/edges into workspace harvest.
+func (s *Session) indexVanillaLiveLocked(ex catalog.FileExtract) {
+	s.addRefsLocked(catalog.ApplyCallRefs(ex.Cands, s.callKindSet))
+	var prefs []catalog.Ref
+	for _, r := range ex.Refs {
+		if r.Kind == "script_param" {
+			prefs = append(prefs, r)
+		}
+	}
+	s.addRefsLocked(prefs)
+}
+
+func (s *Session) addCallKindsLocked(defs []catalog.Def) {
+	if s.callKindSet == nil {
+		s.callKindSet = map[string]string{}
+	}
+	if s.effectSet == nil {
+		s.effectSet = map[string]bool{}
+	}
 	for _, d := range defs {
-		if game.CanonicalKind(d.Kind) == "scripted_effect" {
+		k := game.CanonicalKind(d.Kind)
+		if !game.IsCallKind(k) {
+			continue
+		}
+		s.callKindSet[d.Key] = k
+		if k == "scripted_effect" {
 			s.effectSet[d.Key] = true
 		}
 	}
@@ -1218,21 +1249,20 @@ func (s *Session) EdgesTo(id string) []catalog.Edge {
 	return out
 }
 
-func (s *Session) rebuildEffectSetLocked() {
+func (s *Session) rebuildCallSetsLocked() {
 	s.effectSet = map[string]bool{}
+	s.callKindSet = map[string]string{}
 	s.eachDef(true, func(d catalog.Def) bool {
-		if game.CanonicalKind(d.Kind) == "scripted_effect" {
+		k := game.CanonicalKind(d.Kind)
+		if !game.IsCallKind(k) {
+			return true
+		}
+		s.callKindSet[d.Key] = k
+		if k == "scripted_effect" {
 			s.effectSet[d.Key] = true
 		}
 		return true
 	})
-	if s.cache == nil {
-		return
-	}
-	_, effects, _ := s.cache.MemberSets("")
-	for k := range effects {
-		s.effectSet[k] = true
-	}
 }
 
 func (s *Session) ensureViaLocked() {

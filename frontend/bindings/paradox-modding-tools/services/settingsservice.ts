@@ -32,7 +32,8 @@ export function GetVersion(): $CancellablePromise<string> {
 }
 
 /**
- * ResetData wipes workspaces, mods, installs, patch runs, and the semantic cache.
+ * ResetData wipes workspaces, mods, installs, patch runs, PMT staging dirs,
+ * the semantic cache, and in-memory wiki sidecars. Mod and game folders stay.
  */
 export function ResetData(): $CancellablePromise<void> {
     return $Call.ByID(2171932109);

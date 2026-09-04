@@ -69,6 +69,11 @@ export interface VanillaCache {
     "metaKeys": string[] | null;
     "edges"?: Edge[] | null;
     "locRefs"?: Ref[] | null;
+
+    /**
+     * scripted_* call sites
+     */
+    "callRefs"?: Ref[] | null;
     "fieldValueKinds"?: { [_ in string]?: string } | null;
     "fieldEnumsByKind"?: { [_ in string]?: { [_ in string]?: string[] | null } | null } | null;
     "tokenUsage"?: { [_ in string]?: string } | null;

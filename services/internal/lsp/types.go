@@ -32,27 +32,39 @@ type Diagnostic struct {
 	Code     string `json:"code,omitempty"`
 }
 
+// HoverValue is one unique harvested RHS or save-site expression.
+type HoverValue struct {
+	Text  string `json:"text"`
+	Count int    `json:"count"`
+}
+
 // HoverResult is a structured hover card. The frontend templates Kind/Key/Hint/Docs.
 // Origin/rel/path/line describe the winning def site. Vanilla* is the install
-// site this winner overlays. Body is loc text or a harvested RHS. Usage is TokenUsage.
+// site this winner overlays. Body is loc text. Values are unique ephemeral
+// RHS/save-site expressions (frontend formats counts). More is unique names
+// omitted after the cap. Owner is the enclosing scripted_* key for a param.
+// Usage is TokenUsage.
 type HoverResult struct {
-	Kind              string `json:"kind,omitempty"`
-	Key               string `json:"key,omitempty"`
-	Hint              string `json:"hint,omitempty"`
-	Docs              string `json:"docs,omitempty"`
-	Body              string `json:"body,omitempty"`
-	Usage             string `json:"usage,omitempty"`
-	Origin            string `json:"origin,omitempty"`
-	OriginName        string `json:"originName,omitempty"`
-	Rel               string `json:"rel,omitempty"`
-	Path              string `json:"path,omitempty"`
-	Line              int    `json:"line,omitempty"`
-	Col               int    `json:"col,omitempty"`
-	VanillaOriginName string `json:"vanillaOriginName,omitempty"`
-	VanillaRel        string `json:"vanillaRel,omitempty"`
-	VanillaPath       string `json:"vanillaPath,omitempty"`
-	VanillaLine       int    `json:"vanillaLine,omitempty"`
-	VanillaCol        int    `json:"vanillaCol,omitempty"`
+	Kind              string       `json:"kind,omitempty"`
+	Key               string       `json:"key,omitempty"`
+	Hint              string       `json:"hint,omitempty"`
+	Docs              string       `json:"docs,omitempty"`
+	Body              string       `json:"body,omitempty"`
+	Values            []HoverValue `json:"values,omitempty"`
+	More              int          `json:"more,omitempty"`
+	Owner             string       `json:"owner,omitempty"`
+	Usage             string       `json:"usage,omitempty"`
+	Origin            string       `json:"origin,omitempty"`
+	OriginName        string       `json:"originName,omitempty"`
+	Rel               string       `json:"rel,omitempty"`
+	Path              string       `json:"path,omitempty"`
+	Line              int          `json:"line,omitempty"`
+	Col               int          `json:"col,omitempty"`
+	VanillaOriginName string       `json:"vanillaOriginName,omitempty"`
+	VanillaRel        string       `json:"vanillaRel,omitempty"`
+	VanillaPath       string       `json:"vanillaPath,omitempty"`
+	VanillaLine       int          `json:"vanillaLine,omitempty"`
+	VanillaCol        int          `json:"vanillaCol,omitempty"`
 }
 
 // CompletionItem is one completion suggestion.

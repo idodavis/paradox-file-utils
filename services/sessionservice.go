@@ -14,6 +14,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/session"
 	"paradox-modding-tools/services/internal/wiki"
 )
@@ -207,10 +208,20 @@ func (s *SessionService) RebuildInstallSemantics(installID string) (_ *catalog.V
 	if err := catalog.SaveVanillaLoc(inst.ID, ver, "english", vloc); err != nil {
 		return nil, err
 	}
+	detected := game.ReadGameVersion(inst.Path)
+	_ = s.Store.Mutate(func(cfg *Config) error {
+		if found := findInstall(cfg, installID); found != nil {
+			found.VersionDetected = detected
+		}
+		return nil
+	})
 
 	wikiVer := inst.Version
 	if wikiVer == "" || strings.EqualFold(wikiVer, "latest") {
-		wikiVer = inst.VersionDetected
+		wikiVer = detected
+		if wikiVer == "" {
+			wikiVer = inst.VersionDetected
+		}
 	}
 	if wiki.Needed(inst.GameID, wikiVer) {
 		if !wiki.HasSidecar(inst.GameID) {
@@ -290,9 +301,11 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 	if !found {
 		return nil, fmt.Errorf("workspace not found")
 	}
+	var liveDetected string
 	if inst != nil {
 		h.InstallID = inst.ID
 		h.GameVersion = inst.Version
+		liveDetected = game.ReadGameVersion(inst.Path)
 		if fi, e := os.Stat(inst.Path); e == nil && fi.IsDir() {
 			h.InstallOk = true
 		}
@@ -321,6 +334,10 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 			}
 			if live == nil {
 				h.CacheStale = c.GameVersion != h.GameVersion && h.GameVersion != ""
+			}
+			if liveDetected != "" && inst.VersionDetected != "" &&
+				liveDetected != inst.VersionDetected {
+				h.CacheStale = true
 			}
 		}
 	}

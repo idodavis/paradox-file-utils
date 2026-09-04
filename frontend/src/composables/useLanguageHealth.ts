@@ -1,7 +1,7 @@
 /**
  * Shared language-health query: one fetch per workspace, not per mounted strip.
  */
-import { computed, reactive, toValue, type MaybeRefOrGetter } from "vue";
+import { computed, reactive, toValue, watch, type MaybeRefOrGetter } from "vue";
 import { useQuery, useQueryCache } from "@pinia/colada";
 import { useEventListener } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
@@ -19,6 +19,8 @@ type ScanState = {
 };
 
 const scanByInstall = new Map<string, ScanState>();
+/** Installs already toasted for CacheStale this process (no per-navigation spam). */
+const staleToasted = new Set<string>();
 let scanListening = false;
 let sessionQueryCache: ReturnType<typeof useQueryCache> | null = null;
 
@@ -110,6 +112,8 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     return new Date(ms).toLocaleString();
   });
 
+  const scanLabel = computed(() => (health.value?.scannedAt ? "Rescan" : "Scan"));
+
   /** Auto-rescan install semantics then reindex; bust session queries. */
   async function rescan(): Promise<void> {
     const wsId = id.value;
@@ -120,6 +124,7 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     scan.value.msg = "starting";
     try {
       await RebuildInstallSemantics(installId);
+      staleToasted.delete(installId);
       await EnsureSession(wsId);
       await bustSessionQueries(queryCache);
     } finally {
@@ -129,12 +134,46 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     }
   }
 
+  watch(
+    () => ({
+      stale: health.value?.cacheStale,
+      installId: health.value?.installId,
+      scannedAt: health.value?.scannedAt,
+      scanning: scan.value.scanning,
+    }),
+    (s) => {
+      if (!s.stale || !s.installId || !s.scannedAt || s.scanning) return;
+      if (staleToasted.has(s.installId)) return;
+      staleToasted.add(s.installId);
+      useToast().add({
+        title: "Game updated",
+        description:
+          "The installed version changed since the last scan. Rescan so the semantic cache matches.",
+        color: "warning",
+        icon: "i-lucide-refresh-cw",
+        duration: 0,
+        actions: [
+          {
+            label: scanLabel.value,
+            color: "warning",
+            onClick: (e?: Event) => {
+              e?.stopPropagation();
+              void rescan();
+            },
+          },
+        ],
+      });
+    },
+    { immediate: true },
+  );
+
   return {
     health,
     scanning: computed(() => scan.value.scanning),
     scanPct: computed(() => scan.value.pct),
     scanMsg: computed(() => scan.value.msg),
     lastScanned,
+    scanLabel,
     rescan,
   };
 }
