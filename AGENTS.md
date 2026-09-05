@@ -1,3 +1,7 @@
+# Agent notes
+
+Humans: the user guide is **https://idodavis.github.io/paradox-modding-tools/** (source `docs/`). Do not treat this file as the manual.
+
 ## Learned User Preferences
 
 - Prefer the smallest clear implementation: cut duplication, dead-end helpers, and over-engineering; do not add code for backwards compatibility.
@@ -16,11 +20,25 @@
 - When cleaning code, keep useful comments and user-facing behavior; reduce complexity without expanding scope.
 - Do not re-wrap, pack, or densify code to move a line-count gate. A reduction counts only when a representation, pass, helper, or file is deleted. `wc` is a consequence metric, never a reason to change formatting.
 
-## Learned Workspace Facts
+## Product / stack
 
 - Terminology: [GLOSSARY.md](GLOSSARY.md).
-- Paradox Modding Tools is a Wails v3 desktop app (Go backend, Vue 3 + Nuxt UI + Pinia frontend) for Paradox modders, licensed under GPL-3.0-or-later. Product is workspace-centric: library, IDE, event graph, health (FIOS/LIOS + depends/dangling + loc coverage), patch notes, release. CK3, Vic3, and EU5 (partial). GUI preview is a future **views** feature; `.gui` is the same Jomini CST as `.txt`, not a third parser.
-- Local develop/build flows use Taskfile (`task dev`, `task build`) with the Wails v3 CLI (`wails3@v3.0.0-beta.14`).
+- Paradox Modding Tools is a Wails **v3.0.0-beta.16** desktop app (Go **1.26.5** backend, Vue 3 + Nuxt UI + Pinia + Colada frontend) for Paradox modders, licensed under GPL-3.0-or-later.
+- **Supported OS:** Windows and Linux (traditional desktop distros, GTK4 + WebKitGTK 6). **macOS is not supported** — do not add Mac downloads, Mac user docs, or a macOS issue-template option. Leave the Wails `darwin` Taskfile in the tree; do not advertise it.
+- Product is workspace-centric: Library, IDE, Event Graph, **Workspace Health** (FIOS/LIOS + depends/dangling + loc coverage), Patch Center (wiki notes **only**), Publish (Steam + Paradox Mods copy). CK3, Vic3, EU5 (partial). No Compare, Merge, Inventory, or Patcher/Impact services.
+- GUI preview is a future **views** feature; `.gui` is the same Jomini CST as `.txt`, not a third parser.
+- Releases: per-platform **zips** on GitHub (`paradox-modding-tools-{windows-amd64,windows-arm64,linux-amd64}.zip` + sibling `SHA256SUMS`). In-app updater is `github.New` (`ChecksumAsset: "SHA256SUMS"`) — do not set `Prerelease: true`. Steam helper is `go:embed` (`pmt-steamugc` + `steam_api*`), extracted to user-config `bin/`.
+- Local develop/build: Taskfile (`task dev`, `task build`) with `wails3@v3.0.0-beta.16`. Windows `CGO_ENABLED=0`. Linux `CGO_ENABLED=1` (WebKit). `go test -race ./services/internal/parser/...` should work on Windows.
+
+## Commands
+
+- `task dev` / `WAILS_VITE_PORT=9246 task dev` — `wails3 dev` + `common:build:steamugc`.
+- `task build VERSION=…` — platform Taskfile → `bin/`.
+- `task common:generate:bindings` after Go DTO/service changes. Never hand-edit `frontend/bindings/**`.
+- Docs-only `docs/**` pushes deploy Pages (Hugo in `docs/`, `.github/workflows/pages.yml`). Preview: `hugo server` in `docs/` (plain Hugo, not Extended). Non-docs `master` pushes cut a full release (`.github/workflows/release.yml`); first floor **v0.4.0**, then patch bumps.
+
+## Learned Workspace Facts
+
 - Workspace IDE embeds monaco-vscode-api workbench (Monaco + VS Code services); product chrome stays Nuxt. UTF-16 exists only at `languageClient.ts` (Monaco). Everywhere else is UTF-8 byte offsets.
 - **Thin language engine:** no `go:embed` of game knowledge. Game-specific extract overrides live only in `game/rules.go` + `game/registry.go`. Wrong or missing `formatVersion` discards the file (no migrations).
 - **Ownership / import DAG (one-way):** `parser/jomini` (leaf CST) ← `parser/loc` (Decode only). `game` is a leaf (titles, MatchExtract, FIOS, KeyIdentity, ParsePrefixed, ScriptName/IsEphemeral). `catalog` imports jomini, loc, game — persist VanillaCache + loc sidecar; harvest mods into RAM (`BuildIndex` → `Harvest`). `session` is the only type that holds VanillaCache + harvest maps. `lsp` and `views` are siblings (never import each other); they use the session query API and must not persist. `release` is a leaf (Workshop extras, upload-temp copy/ignore, Markdown↔BBCode); `ReleaseService` delegates to it. Parent `parser/` is a folder, not a Go package. There is no `lang/` package, no `parser/gui`, no GraphIndex, no persisted mod Index, no public `Cache()` getter.
@@ -34,8 +52,8 @@
 - Workspaces: first-launch/retriggerable wizard, dropdown switching, user-specified mod paths, multiple installs per game, broken-path marking, default loc language, install version pin/`latest`, DeleteGameInstall (refuses while in use). No DeleteWorkspace RPC.
 - Scan hot-swap: `RebuildInstallSemantics(installId)` ReplaceCache/ReplaceVanillaLoc on every live session on that install, emit `lang:cache-updated`; languageClient re-Diagnoses open LANGS docs (no app reload).
 - Event-graph layout is frontend `dagre` layered + Vue Flow nested `parentNode` (origin groups). Go returns nodes/edges with no coordinates. Via-effect edges stay. Vue templates the payload (no regroup of gates/effects/locRows).
-- **Frontend husk:** appearance + interaction only. `SEEDS` in `frontend/src/ide/colorThemes.ts` is the only palette; `applySeedCss` injects onto `:root`. Families: pmt, catppuccin, one, monokai, github. `themes.css` is the structural `@theme` / `--ui-*` bridge. Syntax tokens from `@codingame/monaco-vscode-theme-defaults-default-extension` (dark_plus / light_plus); all `@codingame/monaco-vscode-*` packages pin the same version via npm overrides. Table filters live in UTable column state; fetch state in Pinia Colada `useQuery`/`useMutation`. No path-stripping helpers; payloads carry `rel`/`origin`/`originName`. Kept as presentation: dagre (`useGraphLayout`) and Vue Flow origin parents.
+- **Frontend husk:** appearance + interaction only. `SEEDS` in `frontend/src/ide/colorThemes.ts` is the only palette; `applySeedCss` injects onto `:root`. Families: pmt, ck3, eu5, vic3, catppuccin, one, github, horizon. `themes.css` is the structural `@theme` / `--ui-*` bridge. Syntax tokens from `@codingame/monaco-vscode-theme-defaults-default-extension` (dark_plus / light_plus); all `@codingame/monaco-vscode-*` packages pin the same version via npm overrides. Table filters live in UTable column state; fetch state in Pinia Colada `useQuery`/`useMutation`. No path-stripping helpers; payloads carry `rel`/`origin`/`originName`. Kept as presentation: dagre (`useGraphLayout`) and Vue Flow origin parents.
 - Monaco language providers use `registerLanguageClient(() => workspaceId)` — no `useWorkspaceStore()` inside provider callbacks.
-- Tool pages use `useWorkspaceStore().ensureReady()` — success means a **live** session (`GetModelStatus().live`), not merely `defCount > 0`.
-- On Windows, the parser is pure Go (`CGO_ENABLED=0`). Linux/darwin stay `CGO_ENABLED=1` for Wails WebKit. `go test -race ./services/internal/parser/...` should work on Windows.
+- Tool pages use `useLiveEnabled` / `useWorkspaceStore().ensureReady()` — success means a **live** session (`LanguageHealth.indexReady` from `EnsureSession`), not merely `defCount > 0`.
+- On Windows, the parser is pure Go (`CGO_ENABLED=0`). Linux stays `CGO_ENABLED=1` for Wails WebKit. `go test -race ./services/internal/parser/...` should work on Windows.
 - **Measure sprawl** (repo root, bash): `find services -name '*.go' ! -name '*_test.go' | xargs wc -l | tail -1`, same for `*_test.go`, and `find frontend/src -name '*.vue' -o -name '*.ts' -o -name '*.css' | xargs wc -l | tail -1`. Success of a de-sprawl pass is fewer files and lines, not extra layers.

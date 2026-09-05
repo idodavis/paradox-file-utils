@@ -2,101 +2,113 @@
 
 # Paradox Modding Tools
 
-Cross-platform desktop utilities for **Paradox Interactive** game modders. The app is built with **[Wails v3](https://v3.wails.io/)** (**Go** backend, **Vue** frontend) and licensed under **GPL-3.0-or-later**. **Crusader Kings III**, **Europa Universalis V** (partial), and **Victoria 3** are supported today; the direction is to grow coverage and workflows across Paradox titles.
+![Paradox Modding Tools — Alpha · CK3 · Vic3 · EU5](docs/static/assets/banner.png)
 
-## Download / Use The Tool! (testing)
+Desktop workspace for **Crusader Kings III**, **Victoria 3**, and **Europa Universalis V** (partial) modders. One workspace is one game install plus the mods you are editing: script-aware IDE, event graph, compatibility and loc health, wiki patch notes, and Steam Workshop / Paradox Mods publish.
 
-Builds are published under [GitHub Releases](https://github.com/idodavis/paradox-modding-tools/releases) for manual download while the modding community tries them out. An in-app updater is planned so testers do not need to fetch every build from Releases; until that ships, **Releases remain the source of binaries**. Release packaging is manual for now; **GitHub Actions** automation for builds and uploads is planned.
+**Alpha.** Expect bugs. **Windows and Linux** (traditional desktop distros). **macOS is not supported.**
+
+[Download](https://github.com/idodavis/paradox-modding-tools/releases) · [Docs](https://idodavis.github.io/paradox-modding-tools/) · [License](LICENSE)
+
+Unofficial. Not affiliated with Paradox Interactive. Licensed **GPL-3.0-or-later**.
 
 ## What's in the app
 
-- **Workspace Library** — Manage modding workspaces tied to specific game installs and mod folders. Create, switch, and organize your modding projects.
-- **Workspace IDE** — File browser across game and mod roots with integrated editor/diff viewer. Compare files, switch themes, and navigate to patching tools.
-- **Patch Center** — Browse wiki patch notes for each game version and import game error.log files for analysis.
-- **Mod Patcher** — Update mods between game versions. Preview changes, accept/skip files, resolve conflicts with the merge editor.
-- **Event Graph** — Explore definitions and event flows harvested into the live workspace session (maps rebuilt on open; no persisted mod index).
-- **Ad-hoc Merge** — Merge two files or directories without a workspace using the script merger.
-- **Settings** — App configuration in a JSON config store (`config.json`; a format-version mismatch wipes).
+| Page | What it does |
+|------|----------------|
+| **Library** | Workspaces by game; open / edit / delete the PMT record; New Workspace / New Mod; Reset all data |
+| **Create Workspace** | Game → install (detect/add, version pin / `latest`) → mods + load order → name |
+| **Workspace IDE** | monaco-vscode workbench; PMT-owned roots; game files read-only; Guide wiki pane |
+| **Event Graph** | Live-session harvest; origin groups; Open from IDE hover |
+| **Workspace Health** | FIOS/LIOS contests, overlays, depends, dangling refs, loc missing/orphan/untranslated |
+| **Patch Center** | Cached wiki patch notes |
+| **Publish** | Descriptor + Markdown/BBCode, Steam Workshop (embedded helper), Paradox Mods copy-paste |
+| **Workspace Settings** | Name, loc language, remember tabs, default tool, install, mods, Workshop ignore |
+| **Display** | Header popover: theme family, scale, fonts, visible tools |
 
-### Paradox script parser (Go)
+## Supported games
 
-A hand-written **Go CST** parses typical Paradox `.txt` / `.gui` script for compare/merge, the workspace IDE, and related features. Implementation lives under `services/internal/parser/jomini` (`.txt` and `.gui` share the CST) and `services/internal/parser/loc`. The live workspace session (`services/internal/session`) holds VanillaCache plus RAM harvest maps rebuilt when a workspace opens.
+| Game | Coverage |
+|------|----------|
+| Crusader Kings III | Script, loc, events, health, Guide, publish |
+| Victoria 3 | Same |
+| Europa Universalis V | **Partial** — stage roots and `INJECT:` / `REPLACE:` |
 
-## Prerequisites (from source)
+## Supported OS
 
-- **[Go](https://go.dev/dl/)** (see `go.mod` for the required version)
-- **[Node.js](https://nodejs.org/)** and **npm** (for the Vue frontend)
+| OS | Notes |
+|----|--------|
+| **Windows** 10 / 11 | amd64 zip; ARM64 zip (Steam helper is still amd64 under emulation). Needs WebView2. |
+| **Linux** amd64 | Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE, Gentoo — GTK4 + WebKitGTK 6. |
+| **macOS** | **Not supported.** |
+
+Steam Deck, Flatpak, and AppImage are unsupported. See [limitations](https://idodavis.github.io/paradox-modding-tools/limitations/).
+
+## Download
+
+[GitHub Releases](https://github.com/idodavis/paradox-modding-tools/releases) publish zips:
+
+- `paradox-modding-tools-windows-amd64.zip`
+- `paradox-modding-tools-windows-arm64.zip`
+- `paradox-modding-tools-linux-amd64.zip`
+
+plus a `SHA256SUMS` sidecar. Extract and run. Steam Workshop support is **embedded** and extracted at runtime.
+
+In the app, the **footer version button** checks for updates against those zips. Steam client must be running to publish to Workshop.
+
+Windows zips are **unsigned** (SmartScreen will warn).
+
+## Develop locally
+
+**Windows and Linux only.** Details and distro packages: [docs/content/develop.md](docs/content/develop.md) (same content on [Pages](https://idodavis.github.io/paradox-modding-tools/develop/)).
+
+### Prerequisites
+
+- **[Go](https://go.dev/dl/) 1.26.5** (`go.mod`)
+- **[Node.js](https://nodejs.org/)** + npm
 - **[Task](https://taskfile.dev/installation/)** (Taskfile v3)
-- **[Wails v3 CLI](https://v3.wails.io/)** (`wails3`), aligned with the `github.com/wailsapp/wails/v3` version in `go.mod`
+- **Wails v3 CLI** pinned to the module:
 
-Install the Wails CLI following the official v3 docs so `wails3` is on your `PATH`.
+```bash
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
+```
 
-## Develop (hot reload)
+Windows builds use `CGO_ENABLED=0`. Linux needs GTK4 + WebKitGTK 6 **dev** packages (e.g. Debian/Ubuntu: `build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev`).
 
-From the repository root:
+Workshop in `task dev` needs the Steamworks redistributable (`STEAMWORKS_GPG_PASSPHRASE` or a local SDK zip — see `scripts/fetch-steamapi.sh`).
+
+### Commands
 
 ```bash
 task dev
+WAILS_VITE_PORT=9246 task dev   # if 9245 is taken
+task build                      # bin/paradox-modding-tools[.exe]
+task common:generate:bindings   # after Go DTO / service changes — never hand-edit frontend/bindings/**
+go test ./...
 ```
 
-This runs `wails3 dev` with `./build/config.yml` (frontend build, binding generation, and the app in development mode). Override the Vite port if needed, for example:
-
-```bash
-WAILS_VITE_PORT=9246 task dev
-```
-
-## Build a production binary
-
-OS-specific tasks are selected automatically (`windows`, `darwin`, `linux`):
-
-```bash
-task build
-```
-
-The executable is written under `bin/` (e.g. `bin/paradox-modding-tools.exe` on Windows, `bin/paradox-modding-tools` on macOS/Linux).
-
-## Run the built binary
-
-After a successful `task build`:
-
-```bash
-task run
-```
-
-## Package installers (optional)
-
-```bash
-task package
-```
-
-Uses the platform's configured format (e.g. NSIS on Windows). You need the extra tooling each format expects (see `build/windows/Taskfile.yml` and sibling platform Taskfiles).
-
-## Other useful tasks
-
-| Task | Purpose |
-|------|--------|
-| `task setup:docker` | Docker image for cross-compilation / CGO workflows |
-| `task build:server` / `task run:server` | Server-style build without the desktop shell (see Taskfiles) |
-
-## Project layout (high level)
+## Project layout
 
 | Path | Role |
 |------|------|
-| `main.go` | Wails app entry, services, embedded `frontend/dist` |
-| `services/` | Go services exposed to the UI |
-| `frontend/` | Vue + Vite UI |
-| `build/` | Wails build config, icons, platform Taskfiles |
+| `main.go` | Wails entry, updater, single window |
+| `services/` | Go services + parser / catalog / session / lsp / views |
+| `frontend/` | Vue 3 + Nuxt UI + Pinia + monaco-vscode-api |
+| `docs/` | User guide (GitHub Pages) |
+| `build/` | Wails Taskfiles and icons |
+
+Agent-facing architecture: [AGENTS.md](AGENTS.md). Terms: [GLOSSARY.md](GLOSSARY.md).
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0 or later** (GPL-3.0-or-later). See the [LICENSE](LICENSE) file for details.
+[GNU GPL v3.0 or later](LICENSE).
 
 ---
 
 ## Other Paradox projects
 
-### CK3 Quieter Events Mod
+### CK3 Quieter Events
 
 Successor to **Less Event Spam**: turns several full-screen or intrusive vanilla events into smaller toasts or messages.
 
-Find it [here](https://github.com/idodavis/ck3-quieter-events).
+[idodavis/ck3-quieter-events](https://github.com/idodavis/ck3-quieter-events)

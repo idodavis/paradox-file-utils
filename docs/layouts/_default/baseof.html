@@ -1,0 +1,44 @@
+{{/* Hugo chrome: mint sidebar + main column. */}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} · {{ .Site.Title }}{{ end }}</title>
+  {{ with .Description }}<meta name="description" content="{{ . }}">{{ end }}
+  <link rel="icon" href="{{ "assets/PMT-SquareIcon-Mint.png" | relURL }}">
+  <link rel="stylesheet" href="{{ "css/pmt.css" | relURL }}">
+</head>
+<body>
+  <div class="frame">
+    {{ partial "sidebar.html" . }}
+    <div class="main">
+      <header class="top">
+        <button class="menu-btn" type="button" id="menu-toggle" aria-label="Open menu">Menu</button>
+        <nav class="aux">
+          <a href="{{ .Site.Params.releases }}">Download</a>
+          <a href="{{ .Site.Params.github }}">GitHub</a>
+        </nav>
+      </header>
+      <article class="prose">
+        {{ block "main" . }}{{ end }}
+        <p class="edit">
+          <a href="{{ .Site.Params.editBase }}/{{ .File.Path | replaceRE "\\\\" "/" }}">Edit this page</a>
+        </p>
+        <footer class="foot">
+          Paradox Modding Tools is unofficial and not affiliated with Paradox Interactive.
+          Licensed under
+          <a href="{{ .Site.Params.github }}/blob/master/LICENSE">GPL-3.0-or-later</a>.
+        </footer>
+      </article>
+    </div>
+  </div>
+  <script src="{{ "js/site.js" | relURL }}"></script>
+  {{ if .Store.Get "hasMermaid" }}
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "dark" });
+  </script>
+  {{ end }}
+</body>
+</html>

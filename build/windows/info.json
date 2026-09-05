@@ -6,10 +6,10 @@
 		"0000": {
 			"ProductVersion": "0.1.0",
 			"CompanyName": "idavis.io",
-			"FileDescription": "A paradox-modding-tools application",
+			"FileDescription": "Desktop workspace for Crusader Kings III, Victoria 3, and Europa Universalis V modders.",
 			"LegalCopyright": "© 2026, idavis.io",
 			"ProductName": "Paradox Modding Tools",
-			"Comments": "This is a comment"
+			"Comments": "Unofficial. Not affiliated with Paradox Interactive."
 		}
 	}
 }

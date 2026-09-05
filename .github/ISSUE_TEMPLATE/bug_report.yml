@@ -1,24 +1,32 @@
 name: Bug report
-description: Report a problem with Paradox Modding Tools so it can be fixed quickly
+description: Something in Paradox Modding Tools is broken
 title: "[Bug] "
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve Paradox Modding Tools. Please fill out this form as completely as you can so we can reproduce and fix the issue faster.
+        Thanks for the report. Fill this in so we can reproduce it.
+        User guide: https://idodavis.github.io/paradox-modding-tools/
 
   - type: dropdown
     id: area
     attributes:
       label: Which part of the app was affected?
-      description: Select the area where the issue occurred.
       options:
-        - Compare tool
-        - Merge tool
-        - Inventory
-        - Modding docs
-        - Settings
+        - Library
+        - Wizard
+        - IDE
+        - Guide
+        - Event Graph
+        - Health
+        - Patch Center
+        - Release / Steam Workshop
+        - Workspace Settings
+        - Display / themes
+        - Language / scan / cache
+        - Docs site
+        - Build / updater
         - Other
     validations:
       required: true
@@ -26,16 +34,63 @@ body:
   - type: input
     id: area-other
     attributes:
-      label: If you selected Other, please specify
-      placeholder: e.g. Startup, updater, UI layout
+      label: If you selected Other, specify
+      placeholder: e.g. startup crash, file watcher
+
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - Crusader Kings III
+        - Victoria 3
+        - Europa Universalis V
+        - None / not game-specific
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: macOS is not supported. On Linux, name the distro below.
+      options:
+        - Windows 10
+        - Windows 11
+        - Linux (name the distro)
+    validations:
+      required: true
+
+  - type: input
+    id: linux-distro
+    attributes:
+      label: Linux distro (if Linux)
+      placeholder: e.g. Ubuntu 24.04, Fedora 41, Arch
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Shown in the app header.
+      placeholder: e.g. 0.4.0
+
+  - type: dropdown
+    id: build-source
+    attributes:
+      label: Build source
+      options:
+        - GitHub Release zip
+        - task dev
+        - Local task build
+    validations:
+      required: true
 
   - type: textarea
     id: what-happened
     attributes:
       label: What happened?
-      description: Describe the bug clearly. What did you expect to happen, and what actually happened?
-      placeholder: Describe the issue in detail.
-      render: text
+      description: What did you expect, and what actually happened?
+      placeholder: Describe the issue.
     validations:
       required: true
 
@@ -43,70 +98,16 @@ body:
     id: steps
     attributes:
       label: Steps to reproduce
-      description: List the exact steps to reproduce the issue.
       placeholder: |
         1. Open the app
-        2. Go to ...
-        3. Click ...
-        4. See the problem
-      render: text
+        2. Open a CK3 workspace
+        3. …
     validations:
       required: true
-
-  - type: input
-    id: os
-    attributes:
-      label: Operating system
-      placeholder: e.g. Windows 11, macOS 14, Ubuntu 22.04
-    validations:
-      required: true
-
-  - type: input
-    id: app-version
-    attributes:
-      label: App version
-      description: If known, include the version shown in the app footer.
-      placeholder: e.g. 0.8.1
-
-  - type: dropdown
-    id: build-source
-    attributes:
-      label: Build source
-      options:
-        - Official release
-        - Local build
-    validations:
-      required: true
-
-  - type: checkboxes
-    id: games
-    attributes:
-      label: Games affected
-      description: Select all that apply.
-      options:
-        - label: Crusader Kings III
-          required: false
-        - label: Europa Universalis V
-          required: false
-        - label: Other
-          required: false
-
-  - type: upload
-    id: files
-    attributes:
-      label: Files or data involved
-      description: If relevant, share file paths, sample files, or folders involved in the issue.
-
-  - type: upload
-    id: screenshots
-    attributes:
-      label: Screenshots or recordings
-      description: Attach screenshots or paste links if available.
 
   - type: textarea
     id: additional-context
     attributes:
       label: Additional context
-      description: Add any other context that may help us reproduce or fix the issue.
-      placeholder: Anything else we should know?
-      render: text
+      description: Paths (relative is fine), logs, and anything else. Do not paste secrets.
+      placeholder: Workspace game, install pin, whether the session was live…
