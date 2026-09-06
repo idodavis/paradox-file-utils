@@ -6,18 +6,29 @@ import (
 	"testing"
 
 	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
 
 func TestHealthDanglingHygieneAndGroup(t *testing.T) {
 	t.Parallel()
-	van := catalog.ExtractFile("ck3",
+	// CK3 faiths have no folder of their own; they exist only nested under a
+	// religion_type, and are harvested only because the game declares `faith`
+	// as a scope type. A cache with no Schema harvests no nested databases.
+	schema := &catalog.Schema{
+		Scopes: map[string]catalog.ScopeType{"faith": {}, "culture": {}},
+		Links: map[string]catalog.ScopeLink{
+			"faith": {Out: "faith", Global: true, Data: true},
+		},
+	}
+	van := catalog.ExtractParsed("ck3",
 		"common/religion/religion_types/r.txt",
 		"common/religion/religion_types/r.txt",
 		"",
-		"christianity_religion = { faiths = { catholic = { color = { 1 1 1 } } } }\n",
-		false)
-	s := twoModTreesWithCache(t, &catalog.VanillaCache{Defs: van.Defs},
+		jomini.Parse("christianity_religion = { faiths = { catholic = { color = { 1 1 1 } exists = faith:catholic } } }\n"),
+		false,
+		&catalog.VanillaCache{Schema: schema})
+	s := twoModTreesWithCache(t, &catalog.VanillaCache{Defs: van.Defs, Schema: schema},
 		map[string]string{
 			"common/culture/cultures/c.txt": "english = { }\n",
 			"common/script_values/v.txt":    "named_sv = { value = 1 }\n",
@@ -34,6 +45,7 @@ t.1 = {
 		value = tier
 		titles = target_titles
 		coat_of_arms = $COA$
+		trigger_event = t.2
 		trigger_event = t.ghost
 		trigger_event = t.ghost
 	}

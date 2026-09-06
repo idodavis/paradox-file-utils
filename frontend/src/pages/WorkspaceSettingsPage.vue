@@ -34,11 +34,13 @@ import WorkspaceToolBar from "../components/WorkspaceToolBar.vue";
 import CreateModForm from "../components/CreateModForm.vue";
 import RemoveWorkspaceModal from "../components/RemoveWorkspaceModal.vue";
 import AddInstallCard from "../components/AddInstallCard.vue";
+import ScriptDocsGuide from "../components/ScriptDocsGuide.vue";
+import { useLanguageHealth } from "../composables/useLanguageHealth";
 import OriginColorField, { ORIGIN_COLOR_DESC } from "../components/OriginColorField.vue";
 import WorkspaceModCard, { MOD_HELP, type ModPatch } from "../components/WorkspaceModCard.vue";
 import { LOC_LANG_ITEMS, useWorkspaceStore } from "../stores/workspace";
 import { WORKSPACE_TOOLS } from "../workspaceTools";
-import { refreshIdeRootDecorations } from "../ide/workbenchHost";
+import { applyExplorerVisibility, refreshIdeRootDecorations } from "../ide/workbenchHost";
 
 defineOptions({ name: "WorkspaceSettingsPage" });
 
@@ -50,10 +52,28 @@ const id = computed(() => String(route.params.id ?? ""));
 const creatingMod = ref(false);
 const removeOpen = ref(false);
 
+// Shared with the health strip, so the Game tab and the IDE agree on whether a
+// type system is loaded.
+const { health: langHealth } = useLanguageHealth(id);
+const schemaHealth = computed(() => langHealth.value?.schema ?? null);
+const scriptDocsOpen = ref(false);
+const schemaBadge = computed(() => {
+  const s = schemaHealth.value;
+  if (!s || s.source === "missing") return { color: "warning" as const, label: "Not generated" };
+  if (s.stale) return { color: "warning" as const, label: "Older than the install" };
+  if (s.source === "archive") return { color: "info" as const, label: "From PMT's archive" };
+  return { color: "success" as const, label: "Loaded" };
+});
+
 const name = ref("");
 const locLang = ref("english");
 const rememberOpen = ref(true);
+const hideBinaries = ref(true);
 const defaultTool = ref("workspace-ide");
+const explorerItems: RadioGroupItem[] = [
+  { label: "Hide binaries", value: "hide" },
+  { label: "Show all files", value: "all" },
+];
 const gameColor = ref("");
 const installId = ref("");
 const mods = ref<WorkspaceMod[]>([]);
@@ -109,10 +129,9 @@ function applyWorkspace(): void {
   name.value = w.name;
   locLang.value = w.defaultLocLang || "english";
   rememberOpen.value = !w.resetIdeOnOpen;
+  hideBinaries.value = w.hideExplorerBinaries !== false;
   const tool = w.defaultTool || "workspace-ide";
-  defaultTool.value = pageItems.some((i) => i.value === tool)
-    ? tool
-    : "workspace-ide";
+  defaultTool.value = pageItems.some((i) => i.value === tool) ? tool : "workspace-ide";
   gameColor.value = w.gameColor ?? "";
   installId.value = w.installId;
   mods.value = p.mods.map((m) => ({ ...m }));
@@ -197,6 +216,10 @@ function onInstallPick(v: unknown): void {
   if (typeof v === "string" && v) void changeInstall(v);
 }
 
+function onExplorerPick(v: unknown): void {
+  hideBinaries.value = v === "hide";
+}
+
 function toastOk(title: string): void {
   toast.add({ title, color: "success" });
 }
@@ -210,7 +233,8 @@ const { mutateAsync: saveOverview, isLoading: savingOverview } = useMutation({
     if (locLang.value !== (w.defaultLocLang || "english")) {
       await SetWorkspaceLocLang(wsId, locLang.value);
     }
-    await UpdateWorkspacePrefs(wsId, !rememberOpen.value, defaultTool.value, gameColor.value);
+    await UpdateWorkspacePrefs(wsId, !rememberOpen.value, defaultTool.value, gameColor.value, hideBinaries.value);
+    applyExplorerVisibility(hideBinaries.value);
     await wsStore.refresh();
   },
   onSuccess: () => {
@@ -330,7 +354,7 @@ async function removeMod(mod: WorkspaceMod): Promise<void> {
 }
 
 const persistColors = useDebounceFn(async () => {
-  await UpdateWorkspacePrefs(id.value, !rememberOpen.value, defaultTool.value, gameColor.value);
+  await UpdateWorkspacePrefs(id.value, !rememberOpen.value, defaultTool.value, gameColor.value, hideBinaries.value);
   await wsStore.refresh();
   const rec = await GetIdeRoots(id.value);
   refreshIdeRootDecorations(rec?.roots ?? []);
@@ -342,6 +366,7 @@ const COPY = {
   loc: "Language used for localization coverage, hover text, and new-mod localization files.",
   remember: "Maintain IDE tabs status across workspace switches and app closes.",
   defaultPage: "Page opened when you enter this workspace.",
+  explorer: "Hide dll/exe/pdb and similar binaries. Images, audio, meshes, and .metadata stay listed.",
   gameColor: ORIGIN_COLOR_DESC,
   installList: "Which scanned game install this workspace reads. Shared installs warn before you switch.",
   versionPin: "Version of the game that this install is. Your pin wins over auto-detection.",
@@ -373,6 +398,8 @@ const showOverview = computed(() =>
     COPY.remember,
     "Default page",
     COPY.defaultPage,
+    "Explorer files",
+    COPY.explorer,
   ),
 );
 const showGame = computed(() =>
@@ -569,6 +596,13 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
             <UFormField label="Remember open files" :description="COPY.remember">
               <USwitch v-model="rememberOpen" label="Enabled" />
             </UFormField>
+            <UFormField label="Explorer files" :description="COPY.explorer">
+              <URadioGroup
+                :model-value="hideBinaries ? 'hide' : 'all'"
+                :items="explorerItems"
+                @update:model-value="onExplorerPick"
+              />
+            </UFormField>
           </div>
 
           <div v-else-if="section === 'game'" class="space-y-5">
@@ -645,6 +679,33 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
                 @add="addInstall()"
               />
             </div>
+            <UCard
+              v-if="schemaHealth"
+              title="Scripting documentation"
+              description="The game prints its own type system. PMT reads it rather than guessing, and keeps its own copy so you only do this once per game version."
+            >
+              <div class="space-y-3">
+                <div class="flex flex-wrap items-center gap-2 text-sm">
+                  <UBadge :color="schemaBadge.color" variant="subtle" :label="schemaBadge.label" />
+                  <span v-if="schemaHealth.source !== 'missing'" class="text-muted">
+                    {{ schemaHealth.effects.toLocaleString() }} effects ·
+                    {{ schemaHealth.triggers.toLocaleString() }} triggers · {{ schemaHealth.scopeTypes }} scope types ·
+                    {{ schemaHealth.prefixes }} prefixes
+                  </span>
+                </div>
+                <p v-if="schemaHealth.folder" class="break-all text-xs text-muted">
+                  {{ schemaHealth.folder }}
+                </p>
+                <UButton
+                  label="How to generate it"
+                  icon="i-lucide-book-open"
+                  size="xs"
+                  variant="outline"
+                  @click="scriptDocsOpen = true"
+                />
+              </div>
+            </UCard>
+            <ScriptDocsGuide v-if="schemaHealth" v-model:open="scriptDocsOpen" :schema="schemaHealth" />
           </div>
 
           <div v-else-if="section === 'mods'" class="space-y-3">
@@ -701,11 +762,7 @@ async function importIgnore(mod: WorkspaceMod): Promise<void> {
         </div>
         <div v-if="showFooter" class="flex justify-end gap-2 border-t border-default px-6 py-3">
           <UButton label="Cancel" color="neutral" variant="outline" @click="applyWorkspace" />
-          <UButton
-            label="Save"
-            :loading="savingOverview"
-            @click="saveSection"
-          />
+          <UButton label="Save" :loading="savingOverview" @click="saveSection" />
         </div>
       </div>
     </div>

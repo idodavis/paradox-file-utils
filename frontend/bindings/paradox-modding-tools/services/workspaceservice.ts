@@ -201,8 +201,8 @@ export function UpdateWorkspaceMod(workspaceID: string, modID: string, name: str
 }
 
 /**
- * UpdateWorkspacePrefs sets IDE persist, default landing page, and game origin color.
+ * UpdateWorkspacePrefs sets IDE persist, default landing page, explorer hide, and game origin color.
  */
-export function UpdateWorkspacePrefs(workspaceID: string, resetIdeOnOpen: boolean, defaultTool: string, gameColor: string): $CancellablePromise<void> {
-    return $Call.ByID(3501301930, workspaceID, resetIdeOnOpen, defaultTool, gameColor);
+export function UpdateWorkspacePrefs(workspaceID: string, resetIdeOnOpen: boolean, defaultTool: string, gameColor: string, hideExplorerBinaries: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3501301930, workspaceID, resetIdeOnOpen, defaultTool, gameColor, hideExplorerBinaries);
 }

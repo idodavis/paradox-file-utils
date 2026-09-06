@@ -1,0 +1,472 @@
+// hover_test.go covers the hover card: what it names, and where it sources
+// each line from.
+
+package lsp
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"paradox-modding-tools/services/internal/catalog"
+	"paradox-modding-tools/services/internal/session"
+)
+
+func TestHover(t *testing.T) {
+	vfile := write(t, t.TempDir(), "localization/english/inventory_l_english.yml",
+		"l_english:\n type:0 \"Type\"\n")
+	body := `# event should not hover
+test.1 = {
+	type = character_event
+	title = test.1.t
+	title = type
+	immediate = {
+		add_gold = 1
+		my_trig = yes
+		save_scope_as = duel_target
+		exists = scope:duel_target
+	}
+}
+t.1 = { title = k.t }
+t.2 = { title = k.t }
+`
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt":                    body,
+		"localization/english/events.yml": "l_english:\n test.1.t:0 \"Hello\"\n",
+		"common/scripted_triggers/t.txt":  "my_trig = { always = yes }\n",
+		"common/traits/00.txt":            "brave = { category = personality }\n",
+	}, &catalog.VanillaCache{
+		FieldInfo: map[string]string{
+			"type": "Invite", "add_gold": "Gives gold.",
+		},
+		FieldInfoByKind: map[string]map[string]string{
+			"event": {"type": "presentation", "title": "Dynamic"},
+		},
+		Structures: map[string][]string{"event": {"immediate"}},
+		Schema: &catalog.Schema{
+			Effects: map[string]catalog.EngineToken{"add_gold": {}},
+		},
+		Defs: []catalog.Def{{Kind: "loc_key", Key: "type", Path: vfile, Line: 1}},
+	}, &catalog.VanillaLoc{
+		Sites: map[string]catalog.LocEntry{"type": {Path: vfile, Line: 1, Value: "Type"}},
+	})
+	f := filepath.Join(root, "events", "x.txt")
+	col := strings.Index(body, "event")
+	if Hover(s, f, 0, col) != nil || len(Definition(s, f, 0, col)) != 0 {
+		t.Fatal("comment token must not hover or define")
+	}
+	line, col := lineCol(body, "type = character_event")
+	wantHover(t, s, f, line, col, "presentation")
+	line, col = lineCol(body, "title = test.1.t")
+	wantHover(t, s, f, line, col, "Dynamic")
+	line, col = lineCol(body, "test.1.t")
+	wantHover(t, s, f, line, col, "loc key", "Hello")
+	line, col = lineCol(body, "title = type")
+	valCol := col + len("title = ")
+	wantHover(t, s, f, line, valCol, "loc key")
+	if locs := Definition(s, f, line, valCol); len(locs) != 1 || locs[0].URI != vfile {
+		t.Fatalf("F12=%v want %s", locs, vfile)
+	}
+	line, col = lineCol(body, "immediate")
+	wantHover(t, s, f, line, col, "event key", "immediate")
+	if h := Hover(s, f, line, col); h == nil || h.OriginName != "Crusader Kings III" {
+		t.Fatalf("immediate originName=%#v", h)
+	}
+	line, col = lineCol(body, "add_gold")
+	wantHover(t, s, f, line, col, "effect", "add_gold", "Gives gold")
+	line, col = lineCol(body, "my_trig")
+	wantHover(t, s, f, line, col, "scripted trigger", "my_trig")
+	line, col = lineCol(body, "scope:duel_target")
+	wantHover(t, s, f, line, col+len("scope:"), "saved scope")
+	line, col = lineCol(body, "save_scope_as = duel_target")
+	wantHover(t, s, f, line, col+len("save_scope_as = "), "saved scope")
+	line, col = lineCol(body, "scope:duel_target")
+	if locs := Definition(s, f, line, col+len("scope:")); len(locs) != 1 {
+		t.Fatalf("saved scope F12=%v", locs)
+	}
+	if refs := References(s, f, line, col+len("scope:")); len(refs) < 2 {
+		t.Fatalf("saved scope refs=%v want def+use", refs)
+	}
+	line, col = lineCol(body, "test.1.t")
+	if h := Hover(s, f, line, col); h == nil || h.Body != "Hello" {
+		t.Fatalf("loc Body=%#v", h)
+	}
+	line, col = lineCol(body, "k.t")
+	if locs := References(s, f, line, col); len(locs) != 2 {
+		t.Fatalf("refs=%v", locs)
+	}
+	line, col = lineCol(body, "\nt.1 =")
+	if Rename(s, f, line, col+1, "t.9") == nil {
+		t.Fatal("rename nil")
+	}
+	tf := filepath.Join(root, "common", "traits", "00.txt")
+	if locs := Definition(s, tf, 0, 1); len(locs) != 1 || !session.SamePath(locs[0].URI, tf) {
+		t.Fatalf("mod F12=%v want %s", locs, tf)
+	}
+}
+
+func TestHoverDescriptorOrigin(t *testing.T) {
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	descA := "name = \"Alpha\"\npicture = \"thumb.png\"\n"
+	descB := "name = \"Beta\"\npicture = \"other.png\"\n"
+	fA := write(t, rootA, "descriptor.mod", descA)
+	fB := write(t, rootB, "descriptor.mod", descB)
+	s := session.NewWithLoc("ws", "ck3", "english", &catalog.VanillaCache{
+		FieldInfoByKind: map[string]map[string]string{
+			"mod_descriptor": {"picture": "A picture for the mod."},
+		},
+	}, nil, []catalog.ModInput{
+		{Origin: "alpha", Root: rootA, Order: 0, Name: "Alpha Mod"},
+		{Origin: "beta", Root: rootB, Order: 1, Name: "Beta Mod"},
+	})
+	s.DidOpen(fA, descA)
+	s.DidOpen(fB, descB)
+	line, col := lineCol(descA, "picture")
+	h := Hover(s, fA, line, col)
+	if h == nil {
+		t.Fatal("hover nil")
+	}
+	if h.Origin != "alpha" || h.OriginName != "Alpha Mod" {
+		t.Fatalf("origin=%q originName=%q", h.Origin, h.OriginName)
+	}
+	if !strings.Contains(h.Rel, "descriptor.mod") {
+		t.Fatalf("rel=%q", h.Rel)
+	}
+	locs := Definition(s, fA, line, col)
+	if len(locs) != 1 || locs[0].URI != fA {
+		t.Fatalf("definition=%v want %s", locs, fA)
+	}
+	if w := s.Resolve("picture"); w != nil {
+		t.Fatalf("descriptor scalar must not be a workspace object: %v", w)
+	}
+	if h.VanillaPath != "" {
+		t.Fatalf("descriptor must not report a vanilla overlay: %#v", h)
+	}
+}
+
+func TestHoverVanillaOverlay(t *testing.T) {
+	vbody := "overlay.1 = {\n\ttype = character_event\n}\n"
+	vroot := t.TempDir()
+	vpath := write(t, vroot, "events/vanilla.txt", vbody)
+	body := "overlay.1 = {\n\ttype = character_event\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body},
+		&catalog.VanillaCache{
+			Defs: []catalog.Def{{
+				Kind: "event", Key: "overlay.1", Path: vpath, Line: 0, Start: 0, End: 9,
+			}},
+		}, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(body, "overlay.1")
+	h := Hover(s, f, line, col)
+	if h == nil {
+		t.Fatal("hover nil")
+	}
+	if h.Origin != "mod" {
+		t.Fatalf("origin=%q", h.Origin)
+	}
+	if h.VanillaPath == "" {
+		t.Fatalf("want vanilla overlay path, got %#v", h)
+	}
+	if !session.SamePath(h.VanillaPath, vpath) {
+		t.Fatalf("vanillaPath=%q want %s", h.VanillaPath, vpath)
+	}
+	if h.VanillaOriginName != "Crusader Kings III" {
+		t.Fatalf("vanillaOriginName=%q", h.VanillaOriginName)
+	}
+	locs := Definition(s, f, line, col)
+	if !hasLocURI(locs, f) || !hasLocURI(locs, vpath) {
+		t.Fatalf("definition=%v want mod %s and vanilla %s", locs, f, vpath)
+	}
+	refs := References(s, f, line, col)
+	if !hasLocURI(refs, vpath) {
+		t.Fatalf("references=%v want vanilla %s", refs, vpath)
+	}
+}
+
+func hasHoverValue(h *HoverResult, text string) bool {
+	if h == nil {
+		return false
+	}
+	for _, v := range h.Values {
+		if v.Text == text {
+			return true
+		}
+	}
+	return false
+}
+
+func hasLocURI(locs []Location, path string) bool {
+	for _, l := range locs {
+		if session.SamePath(l.URI, path) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestHoverMacroAndPortrait(t *testing.T) {
+	trig := "scripted_trigger my_name = { always = yes }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_triggers/x.txt": trig,
+		"events/p.txt":                   "ns.1 = {\n\tright_portrait = none\n}\n",
+	}, &catalog.VanillaCache{
+		FieldInfo: map[string]string{"left_portrait": "Left side portrait."},
+	}, nil)
+	tf := filepath.Join(root, "common", "scripted_triggers", "x.txt")
+	line, col := lineCol(trig, "scripted_trigger")
+	wantHover(t, s, tf, line, col, "scripted trigger", "my_name")
+	ev := filepath.Join(root, "events", "p.txt")
+	src := "ns.1 = {\n\tright_portrait = none\n}\n"
+	line, col = lineCol(src, "right_portrait")
+	wantHover(t, s, ev, line, col, "Left side portrait.")
+}
+
+func TestKindMetaAndGameInfoOverride(t *testing.T) {
+	body := "test.1 = {\n\ttype = character_event\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt": body,
+	}, &catalog.VanillaCache{
+		FieldInfoByKind: map[string]map[string]string{
+			"event": {"type": "presentation from info"},
+		},
+	}, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(body, "type =")
+	h := Hover(s, f, line, col)
+	if h == nil || h.Docs != "presentation from info" {
+		t.Fatalf("docs=%#v", h)
+	}
+	if h.Hint != "" {
+		t.Fatalf("game info should hide kind hint, got %q", h.Hint)
+	}
+
+	tfBody := "brave = { category = personality }\n"
+	s, root = buildSession(t, "ck3", map[string]string{
+		"common/traits/00.txt": tfBody,
+	}, nil, nil)
+	tf := filepath.Join(root, "common", "traits", "00.txt")
+	h = Hover(s, tf, 0, 1)
+	if h == nil || h.Kind != "traits" {
+		t.Fatalf("trait hover=%#v", h)
+	}
+}
+
+func TestLocHoverUnescape(t *testing.T) {
+	locFile := "l_english:\n k.t:0 \"\\n\\nHello\"\n"
+	body := "test.1 = { title = k.t }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"localization/english/a_l_english.yml": locFile,
+		"events/x.txt":                         body,
+	}, nil, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(body, "k.t")
+	h := Hover(s, f, line, col)
+	if h == nil || h.Body != "Hello" {
+		t.Fatalf("Body=%#v", h)
+	}
+	if h.Hint != "" {
+		t.Fatalf("loc hint should be empty, got %q", h.Hint)
+	}
+}
+
+func TestNamespaceHover(t *testing.T) {
+	body := "namespace = court_events\ncourt_events.1 = { type = character_event }\n"
+	s, f := ck3Sess(t, body)
+	line, col := lineCol(body, "court_events")
+	wantHover(t, s, f, line, col, "namespace", "court_events")
+}
+
+func TestLocEngineValueHover(t *testing.T) {
+	body := "l_english:\n r:0 \"Cost: $VALUE|=+0$\"\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"localization/english/a_l_english.yml": body,
+	}, nil, nil)
+	f := filepath.Join(root, "localization", "english", "a_l_english.yml")
+	line, col := lineCol(body, "VALUE")
+	h := Hover(s, f, line, col)
+	if h == nil || h.Kind != "loc value" {
+		t.Fatalf("hover=%#v", h)
+	}
+	if locs := Definition(s, f, line, col); len(locs) != 0 {
+		t.Fatalf("engine VALUE F12=%v", locs)
+	}
+}
+
+// This is the specification for Phase 11b, kept rather than deleted because the
+// need is real: modders hover and F12 game-rule options constantly.
+//
+// It passed only because the fixture invents `exists = game_rule_setting:suf_quieter`.
+// Nothing in vanilla CK3 or in any real mod writes that prefix — options are
+// referenced as `has_game_rule = suf_quieter`, a field RHS. The nested-database
+// pass is driven by `prefix:id` citations, so it is structurally blind to this
+// reference form, and on a real mod PMT harvests 7 rules and 0 options.
+//
+// Making it pass needs three things to line up: harvest options as defs, resolve
+// `has_game_rule` through field-value kinds, and teach LocConventions the
+// prefixed `setting_<id>` / `setting_<id>_desc` form CK3 actually uses.
+func TestGameRuleSettingHover(t *testing.T) {
+	t.Skip("Phase 11b: game-rule options are not indexed; see GAME-SYNTAX.md §5")
+	rules := "secret_unbeliever_found_rule = {\n\tdefault = a\n\tsuf_quieter = { }\n" +
+		"\texists = game_rule_setting:suf_quieter\n}\n"
+	loc := "l_english:\n game_rule_setting_suf_quieter:0 \"Quieter\"\n"
+	use := "ev.1 = { limit = { has_game_rule = suf_quieter } }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/game_rules/x.txt":              rules,
+		"localization/english/a_l_english.yml": loc,
+		"events/e.txt":                         use,
+	}, &catalog.VanillaCache{
+		LocConventions: map[string]string{"game_rule_setting": "kind_id"},
+	}, &catalog.VanillaLoc{
+		Sites: map[string]catalog.LocEntry{
+			"game_rule_setting_suf_quieter": {Path: "loc", Line: 1, Value: "Quieter"},
+		},
+	})
+	ef := filepath.Join(root, "events", "e.txt")
+	line, col := lineCol(use, "suf_quieter")
+	h := Hover(s, ef, line, col)
+	if h == nil || h.Body != "Quieter" {
+		t.Fatalf("hover body=%#v", h)
+	}
+	if locs := Definition(s, ef, line, col); len(locs) != 1 {
+		t.Fatalf("F12=%v", locs)
+	}
+}
+
+func ck3VanillaSess(t *testing.T, install string, cache *catalog.VanillaCache) *session.Session {
+	t.Helper()
+	if cache == nil {
+		cache = &catalog.VanillaCache{}
+	}
+	cache.InstallPath = install
+	if cache.GameID == "" {
+		cache.GameID = "ck3"
+	}
+	mod := t.TempDir()
+	write(t, mod, "descriptor.mod", "name = \"t\"\n")
+	return session.NewWithLoc("ws", "ck3", "english", cache, nil, []catalog.ModInput{
+		{Origin: "mod", Root: mod, Order: 0},
+	})
+}
+
+func TestVanillaScriptParamIgnoresFieldDoc(t *testing.T) {
+	trig := "can_fight = {\n\tsubject = $ARMY_OWNER$\n}\n"
+	call := "ev.1 = {\n\tcan_fight = { ARMY_OWNER = scope:potential }\n}\n"
+	trigRel := "game/common/scripted_triggers/00_religious_triggers.txt"
+	callRel := "game/events/dlc/mpo/mpo_events_ariana.txt"
+	install := t.TempDir()
+	tf := write(t, install, trigRel, trig)
+	ef := write(t, install, callRel, call)
+	s := ck3VanillaSess(t, install, &catalog.VanillaCache{
+		Defs: []catalog.Def{{
+			Kind: "scripted_trigger", Key: "can_fight", Path: tf,
+			Start: 0, End: len("can_fight"),
+		}},
+		FieldInfo: map[string]string{
+			"ARMY_OWNER": "Get owner of scoped army",
+		},
+	})
+	s.DidOpen(tf, trig)
+	s.DidOpen(ef, call)
+	line, col := lineCol(trig, "$ARMY_OWNER$")
+	h := Hover(s, tf, line, col+1)
+	if h == nil || h.Kind != "script param" ||
+		!hasHoverValue(h, "scope:potential") {
+		t.Fatalf("hover=%#v", h)
+	}
+}
+
+// A bare number or boolean on the right of an assignment is a literal, so it
+// must not be resolved against any database. Vanilla localization defines a key
+// spelled `yes`, and before this the card for `is_ai = yes` showed that key's
+// player-facing string as though it were the meaning of the line.
+func TestHoverLiteralValueIsNotAName(t *testing.T) {
+	body := "test.1 = {\n\ttrigger = {\n\t\tis_ai = yes\n\t\tgold = 100\n\t}\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt": body,
+		// Both spellings exist as real objects, so a hover that resolves the
+		// literal has something to latch onto and the test can tell.
+		"localization/english/ui.yml": "l_english:\n yes:0 \"Yes\"\n no:0 \"No\"\n",
+		"common/traits/00.txt":        "brave = { category = personality }\n",
+	}, &catalog.VanillaCache{
+		Schema: &catalog.Schema{
+			Triggers: map[string]catalog.EngineToken{
+				"is_ai": {In: []string{"character"}, Doc: "Is the character AI-controlled?"},
+			},
+		},
+	}, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	for _, word := range []string{"yes", "100"} {
+		line, col := lineCol(body, word)
+		if h := Hover(s, f, line, col); h != nil {
+			t.Errorf("hover on literal %q = kind=%q key=%q docs=%q, want no card",
+				word, h.Kind, h.Key, h.Docs)
+		}
+		if locs := Definition(s, f, line, col); len(locs) > 0 {
+			t.Errorf("F12 on literal %q = %v, want none", word, locs)
+		}
+	}
+	// The key on the same line still hovers; only the value is suppressed.
+	line, col := lineCol(body, "is_ai")
+	if h := Hover(s, f, line, col); h == nil {
+		t.Error("hover on the key is_ai: no card")
+	}
+}
+
+// script_docs documents the engine API, not script: of CK3's 11,708 scripted
+// macros exactly 4 appear in it. The definition is the only source of a macro's
+// signature, and PMT already harvests the $PARAM$ names inside its body.
+func TestHoverScriptedMacroShowsItsParameters(t *testing.T) {
+	macro := "scripted_effect give_gift_effect = {\n" +
+		"\tadd_gold = $AMOUNT$\n" +
+		"\tsave_scope_as = $RECIPIENT$\n}\n"
+	call := "ns.1 = {\n\timmediate = {\n\t\tgive_gift_effect = { AMOUNT = 10 RECIPIENT = x }\n\t}\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_effects/x.txt": macro,
+		"events/e.txt":                  call,
+	}, nil, nil)
+	f := filepath.Join(root, "common", "scripted_effects", "x.txt")
+	line, col := lineCol(macro, "give_gift_effect")
+	h := Hover(s, f, line, col)
+	if h == nil {
+		t.Fatal("no card for the macro")
+	}
+	for _, want := range []string{"AMOUNT", "RECIPIENT", "give_gift_effect = {"} {
+		if !strings.Contains(h.Usage, want) {
+			t.Errorf("usage %q missing %q", h.Usage, want)
+		}
+	}
+	// The old fixed string said nothing about this macro in particular.
+	if strings.Contains(h.Hint, "{ PARAM }") {
+		t.Errorf("hint still the placeholder: %q", h.Hint)
+	}
+}
+
+// EU5 declares 2,436 modifiers with a category and prose for none of them, so
+// the category is the whole of what the game says about one. The three games
+// phrase the list differently and EU5 appends "all" to every entry.
+func TestHoverModifierShowsDeclaredArea(t *testing.T) {
+	body := "aga_tr = {\n\tlocal_trades_per_burgher = 0.25\n}\n"
+	s, root := buildSession(t, "eu5", map[string]string{
+		"in_game/common/town_rights/x.txt": body,
+	}, &catalog.VanillaCache{
+		Schema: &catalog.Schema{
+			Modifiers: map[string]catalog.Modifier{
+				"local_trades_per_burgher": {Area: "location, all"},
+				"monthly_income":           {Area: "character and province"},
+			},
+		},
+	}, nil)
+	f := filepath.Join(root, "in_game", "common", "town_rights", "x.txt")
+	line, col := lineCol(body, "local_trades_per_burgher")
+	h := Hover(s, f, line, col)
+	if h == nil {
+		t.Fatal("no card for the modifier")
+	}
+	if !strings.Contains(strings.ToLower(h.Docs), "location") {
+		t.Errorf("docs = %q, want the declared area", h.Docs)
+	}
+	if strings.Contains(strings.ToLower(h.Docs), "all") {
+		t.Errorf("docs = %q, must drop the all-modifiers filler", h.Docs)
+	}
+}

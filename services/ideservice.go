@@ -125,4 +125,3 @@ func (s *IdeService) WorkspaceSymbols(workspaceID, query string) ([]lsp.SymbolIn
 		return lsp.WorkspaceSymbols(sess, query)
 	})
 }
-

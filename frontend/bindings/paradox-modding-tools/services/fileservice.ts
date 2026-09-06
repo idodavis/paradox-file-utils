@@ -30,14 +30,30 @@ export function DeletePath(fullPath: string): $CancellablePromise<void> {
 
 /**
  * ListDirectory lists immediate children of dirPath (non-recursive).
- * Shows all non-dot files and directories (binary included; editor handles view).
+ * showAll lists every name; otherwise skip dotfiles except .metadata.
  */
-export function ListDirectory(dirPath: string): $CancellablePromise<$models.DirEntry[] | null> {
-    return $Call.ByID(2302512980, dirPath);
+export function ListDirectory(dirPath: string, showAll: boolean): $CancellablePromise<$models.DirEntry[] | null> {
+    return $Call.ByID(2302512980, dirPath, showAll);
 }
 
 /**
- * ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if missing.
+ * ReadEditableBase64 is ReadFileBase64 for the IDE file bridge, which opens the
+ * bytes in an editor and so additionally refuses binary content.
+ * 
+ * The two are separate because one function cannot serve both: the binary guard
+ * keys on a NUL byte in the first 512, and a PNG carries its IHDR chunk length
+ * (00 00 00 0D) at byte 8. Sharing the guard rejected every thumbnail, and the
+ * explorer's per-mod icons quietly disappeared.
+ */
+export function ReadEditableBase64(fullPath: string): $CancellablePromise<$models.FileBytes> {
+    return $Call.ByID(4002040534, fullPath);
+}
+
+/**
+ * ReadFileBase64 reads raw file bytes as standard base64, or Exists=false if
+ * missing. Binary content is expected: this is how mod thumbnails and workshop
+ * previews reach the webview. Oversized files are still refused so a gfx read
+ * cannot pull the whole file into RAM.
  */
 export function ReadFileBase64(fullPath: string): $CancellablePromise<$models.FileBytes> {
     return $Call.ByID(2750173100, fullPath);

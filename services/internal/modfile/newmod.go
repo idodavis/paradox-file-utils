@@ -1,12 +1,13 @@
 // newmod.go writes a starter mod folder: descriptor + loc stub + empty common/events.
 
-package game
+package modfile
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"paradox-modding-tools/services/internal/game"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -16,7 +17,7 @@ var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
 // DefaultModParent is UserDataDir/<game>/mod, or "".
 func DefaultModParent(gameID string) string {
-	ud := UserDataDir(gameID, "")
+	ud := game.UserDataDir(gameID, "")
 	if ud == "" {
 		return ""
 	}
@@ -77,7 +78,7 @@ type NewModOpts struct {
 // WriteNewMod creates root with a descriptor, empty common/ and events/, loc stub,
 // description files, and an optional thumbnail copied in with picture= on the descriptor.
 func WriteNewMod(opts NewModOpts) error {
-	info := Get(opts.GameID)
+	info := game.Get(opts.GameID)
 	if info == nil {
 		return fmt.Errorf("unknown game %s", opts.GameID)
 	}
@@ -86,7 +87,7 @@ func WriteNewMod(opts NewModOpts) error {
 		return fmt.Errorf("name is required")
 	}
 	root := opts.Root
-	desc := DescriptorPath(opts.GameID, root)
+	desc := game.DescriptorPath(opts.GameID, root)
 	if _, err := os.Stat(desc); err == nil {
 		return fmt.Errorf("mod already exists: %s", desc)
 	}
@@ -157,7 +158,7 @@ func copyThumbnail(root, src string) (string, error) {
 	return name, nil
 }
 
-func writeDescriptor(info *GameInfo, root, name, supported, picture string) error {
+func writeDescriptor(info *game.GameInfo, root, name, supported, picture string) error {
 	if info.Descriptor == "metadata" {
 		return writeMetadataJSON(root, name, supported, picture)
 	}

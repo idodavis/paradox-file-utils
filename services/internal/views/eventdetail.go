@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/catalog"
-	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -35,7 +34,7 @@ func Detail(s *session.Session, id string) *EventDetail {
 	if d == nil {
 		return nil
 	}
-	kind := game.CanonicalKind(d.Kind)
+	kind := jomini.CanonicalKind(d.Kind)
 	res := s.Parsed(d.Path)
 	if res.Root == nil {
 		if kind == "event" {
@@ -70,7 +69,7 @@ func Detail(s *session.Session, id string) *EventDetail {
 		}
 	}
 	block := jomini.BlockOf(stmt.Value)
-	_, _, fields := inspectBlock(block, lineOf, nil)
+	_, _, fields := inspectBlock(s, block, lineOf, nil)
 	detail := &EventDetail{
 		ID: id, Kind: kind, Path: d.Path, Rel: s.DisplayRel(d.Path),
 		Origin: originID(d.Origin), OriginName: s.OriginName(originID(d.Origin)),
@@ -81,7 +80,7 @@ func Detail(s *session.Session, id string) *EventDetail {
 		detail.Namespace = eventNamespace(s, d, id)
 	}
 	if kind != "event" {
-		lines, targets, _ := inspectBlock(block, lineOf, nil)
+		lines, targets, _ := inspectBlock(s, block, lineOf, nil)
 		detail.Title = locIfAny(s, id)
 		detail.Sections = []EventSectionInfo{{
 			Name: kind, Lines: lines, Targets: targets,
@@ -110,7 +109,7 @@ func Detail(s *session.Session, id string) *EventDetail {
 		case key == "flavor":
 			detail.Flavor = locField(s, a)
 		case sectionKeys[key] && sub != nil:
-			detail.Sections = append(detail.Sections, sectionOf(a.Key.Text, sub, lineOf))
+			detail.Sections = append(detail.Sections, sectionOf(s, a.Key.Text, sub, lineOf))
 		case key == "option" && sub != nil:
 			detail.Options = append(detail.Options, optionOf(s, sub, lineOf))
 		}
@@ -229,16 +228,16 @@ func locField(s *session.Session, a *jomini.Assignment) *EventLocField {
 	return f
 }
 
-func sectionOf(name string, block *jomini.Block, lineOf func(int) int) EventSectionInfo {
-	lines, targets, _ := inspectBlock(block, lineOf, nil)
+func sectionOf(s *session.Session, name string, block *jomini.Block, lineOf func(int) int) EventSectionInfo {
+	lines, targets, _ := inspectBlock(s, block, lineOf, nil)
 	return EventSectionInfo{
-		Name: name, Role: game.EventSectionRole(name),
+		Name: name, Role: jomini.EventSectionRole(name),
 		Lines: lines, Targets: targets,
 	}
 }
 
 func optionOf(s *session.Session, block *jomini.Block, lineOf func(int) int) EventOptionInfo {
-	lines, targets, fields := inspectBlock(block, lineOf, optionNonEffect)
+	lines, targets, fields := inspectBlock(s, block, lineOf, optionNonEffect)
 	info := EventOptionInfo{Fields: fields, Lines: lines, Targets: targets}
 	for _, st := range block.Statements {
 		a, ok := st.(*jomini.Assignment)
@@ -252,17 +251,17 @@ func optionOf(s *session.Session, block *jomini.Block, lineOf func(int) int) Eve
 			continue
 		}
 		if key == "trigger" && sub != nil && info.Trigger == nil {
-			info.Trigger = sectionPtr("trigger", sub, lineOf)
+			info.Trigger = sectionPtr(s, "trigger", sub, lineOf)
 		}
 		if key == "ai_chance" && sub != nil && info.AiChance == nil {
-			info.AiChance = sectionPtr("ai_chance", sub, lineOf)
+			info.AiChance = sectionPtr(s, "ai_chance", sub, lineOf)
 		}
 	}
 	return info
 }
 
-func sectionPtr(name string, block *jomini.Block, lineOf func(int) int) *EventSectionInfo {
-	sec := sectionOf(name, block, lineOf)
+func sectionPtr(s *session.Session, name string, block *jomini.Block, lineOf func(int) int) *EventSectionInfo {
+	sec := sectionOf(s, name, block, lineOf)
 	return &sec
 }
 
@@ -270,7 +269,7 @@ func sectionPtr(name string, block *jomini.Block, lineOf func(int) int) *EventSe
 // depth-0 scalar fields. skip keys (option name/trigger/ai) omit line emission
 // but still contribute targets.
 func inspectBlock(
-	block *jomini.Block, lineOf func(int) int, skip map[string]bool,
+	s *session.Session, block *jomini.Block, lineOf func(int) int, skip map[string]bool,
 ) (lines []EventScriptLine, targets []EventStepTarget, fields []EventFieldInfo) {
 	if block == nil {
 		return nil, nil, nil
@@ -333,7 +332,7 @@ func inspectBlock(
 					}
 				}
 			}
-			own := game.FireKind(a.Key.Text)
+			own := s.FireKind(a.Key.Text)
 			if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted {
 				if own != "" {
 					addTarget(sc.Text)

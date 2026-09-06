@@ -107,16 +107,16 @@ func TestWorkspaceService_PrefsAndIdeSession(t *testing.T) {
 	svc := testWorkspaceService(t)
 	seedWorkspace(t, svc.Store, "ws1", "inst1")
 
-	if err := svc.UpdateWorkspacePrefs("ws1", true, "event-graph", ""); err != nil {
+	if err := svc.UpdateWorkspacePrefs("ws1", true, "event-graph", "", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.UpdateWorkspacePrefs("ws1", false, "not-a-tool", ""); err == nil {
+	if err := svc.UpdateWorkspacePrefs("ws1", false, "not-a-tool", "", true); err == nil {
 		t.Fatal("want invalid default tool")
 	}
-	if err := svc.UpdateWorkspacePrefs("ws1", false, "conflicts", ""); err == nil {
+	if err := svc.UpdateWorkspacePrefs("ws1", false, "conflicts", "", true); err == nil {
 		t.Fatal("want invalid default tool")
 	}
-	if err := svc.UpdateWorkspacePrefs("ws1", true, "health", ""); err != nil {
+	if err := svc.UpdateWorkspacePrefs("ws1", true, "health", "", false); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.SaveIdeSession("ws1", []string{"/a.txt"}, "/a.txt"); err != nil {
@@ -126,7 +126,7 @@ func TestWorkspaceService_PrefsAndIdeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ws.ResetIdeOnOpen || ws.DefaultTool != "health" {
+	if !ws.ResetIdeOnOpen || ws.DefaultTool != "health" || ws.HideExplorerBinaries {
 		t.Fatalf("prefs: %+v", ws)
 	}
 	if len(ws.IdeOpenFiles) != 1 || ws.IdeActiveFile != "/a.txt" {

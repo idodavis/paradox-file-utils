@@ -11,7 +11,7 @@ People say “docs” for three different things. PMT keeps them separate on pur
 | What | In PMT | Where it comes from | What it is |
 |------|--------|---------------------|------------|
 | Community wiki | **Guide** | Cached MediaWiki HTML | The pane beside the IDE. Search, contents, related pages. |
-| Console dumps | `script_docs` | User-data `logs/` (CK3) or `docs/` (Vic3/EU5) | In-game `script_docs` / `dump_data_types` output. Ingested silently. Health’s `scriptDocsEffects` is an **indexed effect count**, not “folder exists.” |
+| Console dumps | `script_docs` | User-data `logs/` (CK3) or `docs/` (Vic3/EU5) | Optional overlay. In-game `script_docs` / `dump_data_types`. Health’s effect chip is **voted** install uses, not “folder exists.” `DumpHint` appears only when dump signatures (`TokenDoc`) are missing. |
 | Install prose | game info | `_*.info`, readmes, `*.md` **inside the game install** | Harvested into field info for hover. |
 
 ## Guide (wiki)
@@ -27,7 +27,7 @@ From the game’s debug console (`~` with `-debug_mode`):
 - CK3: writes under Documents `Crusader Kings III/logs/`
 - Vic3 / EU5: Documents `<Game>/docs/` (Vic3 also `DumpDataTypes`; EU5 `dump_data_types` under `logs/data_types`)
 
-PMT reads those dumps when present so hover can show signatures. If the count is zero, run `script_docs` in-game once, then reopen the workspace.
+Dumps are optional. Hover and complete work from the install walk (voted effect/trigger names). Dumps add signatures, unused tokens, and Vic3 dynamic modifier types. If Health shows the optional hint, run `script_docs` in-game once, then Rescan.
 
 ## Install `_*.info`
 

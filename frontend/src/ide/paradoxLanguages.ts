@@ -38,7 +38,7 @@ export async function registerParadoxLanguages(): Promise<void> {
           {
             id: "paradox",
             aliases: ["Paradox Script"],
-            extensions: [".txt"],
+            extensions: [".txt", ".editordata", ".animsm", ".asset", ".compound"],
           },
           {
             id: "paradox-gui",

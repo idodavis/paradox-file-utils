@@ -1,4 +1,4 @@
-package game
+package modfile
 
 import (
 	"os"

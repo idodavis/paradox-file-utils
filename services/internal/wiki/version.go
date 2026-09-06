@@ -93,8 +93,6 @@ func parsePatchTitle(title string) (patchVer, bool) {
 	return pv, true
 }
 
-func (v patchVer) cmp() (int, int, int) { return v.Major, v.Minor, v.Patch }
-
 func cmpPatch(a, b patchVer) int {
 	if a.Major != b.Major {
 		return a.Major - b.Major

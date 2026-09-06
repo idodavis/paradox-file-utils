@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"paradox-modding-tools/services/internal/catalog"
-	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -24,7 +24,7 @@ const (
 
 // Graph returns the event graph for the live session. Layout is not computed.
 func Graph(s *session.Session, params EventGraphParams) EventGraph {
-	picker, kinds, effectSet := s.GraphCatalog(params.Origins)
+	picker, kinds, macroKeys := s.GraphCatalog(params.Origins)
 	sugg := suggestionsOf(picker, params.Namespace)
 	if params.Root == "" {
 		return EventGraph{Suggestions: sugg, EmptyReason: "Pick a root event."}
@@ -35,7 +35,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 		maxNodes = defaultMaxNodes
 	}
 
-	edges := storedEdges(s, effectSet)
+	edges := storedEdges(s, macroKeys)
 	selected, truncated, hidden, hiddenIn := neighborhood(
 		edges, params.Root, kinds, maxNodes, params.Expand,
 	)
@@ -101,7 +101,7 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 		d := s.Resolve(id)
 		n := EventGraphNode{ID: id, Kind: "unknown"}
 		if d != nil {
-			n.Kind = game.CanonicalKind(d.Kind)
+			n.Kind = jomini.CanonicalKind(d.Kind)
 			n.Origin = originID(d.Origin)
 			n.OriginName = s.OriginName(n.Origin)
 		}
@@ -125,13 +125,13 @@ func Graph(s *session.Session, params EventGraphParams) EventGraph {
 	}
 }
 
-func storedEdges(s *session.Session, effectSet map[string]bool) []EventGraphEdge {
+func storedEdges(s *session.Session, macroKeys map[string]bool) []EventGraphEdge {
 	var out []EventGraphEdge
 	for _, e := range s.EdgesFrom("") {
 		if e.Kind == catalog.EdgeKindCall {
 			continue
 		}
-		if e.Kind != "via" && effectSet[e.From] {
+		if e.Kind != "via" && macroKeys[e.From] {
 			continue
 		}
 		out = append(out, labeledEdge(s, e))

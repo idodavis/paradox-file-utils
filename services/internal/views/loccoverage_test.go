@@ -52,11 +52,11 @@ ns.1 = {
 	if coverageIssue(cov, "english", "missing", "some_var") {
 		t.Fatal("loc-broad name= should not be missing")
 	}
-	if coverageIssue(cov, "english", "orphaned", "setting_rule") {
-		t.Fatal("game_rules loc should not be orphaned")
+	if !coverageIssue(cov, "english", "orphaned", "setting_rule") {
+		t.Fatal("unused game_rules loc is orphaned without a convention vote")
 	}
-	if coverageIssue(cov, "english", "orphaned", "filter_key") {
-		t.Fatal("message_filter loc should not be orphaned")
+	if !coverageIssue(cov, "english", "orphaned", "filter_key") {
+		t.Fatal("unused message_filter loc is orphaned without a convention vote")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "orphan_key") {
 		t.Fatal("unused loc should stay orphaned")
@@ -70,10 +70,16 @@ ns.1 = {
 }
 
 func TestCoverageConventionLocsInGenericFile(t *testing.T) {
-	s := buildSession(t, "ck3", nil, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
+	s := buildSession(t, "ck3", &catalog.VanillaCache{
+		LocConventions: map[string]string{
+			"decisions":  "id_desc",
+			"game_rules": "kind_id",
+		},
+	}, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
 		"common/game_rules/00.txt": `my_rule = {
 	default = opt_a
 	opt_a = { }
+	exists = game_rule_setting:opt_a
 }
 `,
 		"common/decisions/00.txt": `ai_mogyer_adopt_christianity = { }
@@ -85,8 +91,9 @@ func TestCoverageConventionLocsInGenericFile(t *testing.T) {
 		"common/messages/00.txt": `my_msg = { }
 `,
 		"localization/english/mod_l_english.yml": "" +
-			"l_english:\n rule_my_rule:0 \"R\"\n setting_opt_a:0 \"A\"\n my_msg:0 \"M\"\n" +
+			"l_english:\n game_rules_my_rule:0 \"R\"\n rule_my_rule:0 \"R\"\n setting_opt_a:0 \"A\"\n my_msg:0 \"M\"\n" +
 			" ai_mogyer_adopt_christianity:0 \"A\"\n" +
+			" ai_mogyer_adopt_christianity_desc:0 \"D\"\n" +
 			" ai_mogyer_adopt_christianity_tooltip:0 \"T\"\n" +
 			" ai_mogyer_adopt_christianity_confirm:0 \"C\"\n" +
 			" HRE_CONQUEST_WAR_NAME:0 \"War\"\n" +
@@ -95,20 +102,24 @@ func TestCoverageConventionLocsInGenericFile(t *testing.T) {
 			" cn_hungarian_empire_adj:0 \"Hungarian\"\n unused_key:0 \"U\"\n",
 	})})
 	_, cov := Coverage(s)
-	if coverageIssue(cov, "english", "orphaned", "rule_my_rule") {
-		t.Fatal("rule_<id> should not be orphaned")
+	if coverageIssue(cov, "english", "orphaned", "game_rules_my_rule") &&
+		coverageIssue(cov, "english", "orphaned", "game_rule_my_rule") {
+		t.Fatal("voted game_rules kind_id loc should not be orphaned")
 	}
-	if coverageIssue(cov, "english", "orphaned", "setting_opt_a") {
-		t.Fatal("game_rules option setting should not be orphaned")
+	if !coverageIssue(cov, "english", "orphaned", "rule_my_rule") {
+		t.Fatal("encyclopedia rule_<id> is unused without a vote")
+	}
+	if !coverageIssue(cov, "english", "orphaned", "setting_opt_a") {
+		t.Fatal("encyclopedia setting_ key is unused without a vote")
 	}
 	if coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity") {
 		t.Fatal("decision id loc should not be orphaned")
 	}
-	if coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity_tooltip") {
-		t.Fatal("decision <id>_tooltip should not be orphaned")
+	if !coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity_tooltip") {
+		t.Fatal("encyclopedia <id>_tooltip is unused without a vote")
 	}
-	if coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity_confirm") {
-		t.Fatal("decision <id>_confirm should not be orphaned")
+	if !coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity_confirm") {
+		t.Fatal("encyclopedia <id>_confirm is unused without a vote")
 	}
 	if coverageIssue(cov, "english", "orphaned", "HRE_CONQUEST_WAR_NAME") {
 		t.Fatal("war_name cite should not be orphaned")
@@ -119,8 +130,11 @@ func TestCoverageConventionLocsInGenericFile(t *testing.T) {
 	if coverageIssue(cov, "english", "orphaned", "DEMAND_IMPERIAL_SUBJUGATION_NOTIFICATION") {
 		t.Fatal("notification_text cite should not be orphaned")
 	}
-	if coverageIssue(cov, "english", "orphaned", "cn_hungarian_empire_adj") {
-		t.Fatal("flavorization cn_<id>_adj should not be orphaned")
+	if coverageIssue(cov, "english", "orphaned", "ai_mogyer_adopt_christianity_desc") {
+		t.Fatal("decision id_desc loc should not be orphaned")
+	}
+	if !coverageIssue(cov, "english", "orphaned", "cn_hungarian_empire_adj") {
+		t.Fatal("encyclopedia flavorization loc is unused without a vote")
 	}
 	if !coverageIssue(cov, "english", "orphaned", "my_msg") {
 		t.Fatal("message def id is not a loc key")

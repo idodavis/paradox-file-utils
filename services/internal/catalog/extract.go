@@ -4,13 +4,9 @@ package catalog
 
 import (
 	"cmp"
-	"context"
-	"maps"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"paradox-modding-tools/services/internal/game"
@@ -60,8 +56,8 @@ type FileExtract struct {
 	FieldRHS     map[string]map[string]bool
 }
 
-// ExtractLoc turns a localization file into loc_key defs, values, and `$key$` refs.
-func ExtractLoc(absPath, content, origin string) (defs []Def, locd LocDelta, refs []Ref) {
+// extractLoc turns a localization file into loc_key defs, values, and `$key$` refs.
+func extractLoc(absPath, content, origin string) (defs []Def, locd LocDelta, refs []Ref) {
 	r := loc.Parse(content)
 	lang := loc.LanguageOf(absPath, r.Language)
 	vals := map[string]LocEntry{}
@@ -76,7 +72,7 @@ func ExtractLoc(absPath, content, origin string) (defs []Def, locd LocDelta, ref
 		}
 		vals[e.Key] = LocEntry{Value: v, Path: absPath, Line: e.Line}
 		for _, ip := range loc.Interps(e.Value, e.ValueRange.Start) {
-			if game.IsLocEngineValue(ip.Key, ip.Filter) {
+			if loc.IsLocEngineValue(ip.Key, ip.Filter) {
 				continue
 			}
 			refs = append(refs, Ref{
@@ -88,9 +84,41 @@ func ExtractLoc(absPath, content, origin string) (defs []Def, locd LocDelta, ref
 	return defs, LocDelta{Lang: lang, Vals: vals}, refs
 }
 
+// parsedScript is one install/mod file kept in RAM for the derive + nested pass.
+type parsedScript struct {
+	f   fileRef
+	res jomini.Result
+}
+
 // ExtractParsed extracts defs, refs, edges, and call candidates from a parsed
-// script or GUI file. Callers turn Cands into edges via ApplyCallEdges.
+// script or GUI file. overlay supplies vanilla derived for live reindex; nil
+// overlay derived from this file only (tests). Callers turn Cands into edges
+// via ApplyCallEdges.
 func ExtractParsed(
+	gameID, absPath, rel, origin string,
+	res jomini.Result,
+	harvestBodies bool,
+	overlay *VanillaCache,
+) FileExtract {
+	ex := extractForms(gameID, absPath, rel, origin, res, harvestBodies)
+	derived := derivedFromCache(overlay)
+	var schema *Schema
+	if overlay != nil {
+		schema = overlay.Schema
+	}
+	derived.mergeLocal(deriveFile(gameID, rel, res, ex.Defs, schema))
+	derived.mergeLocal(&Derived{FieldValueKinds: deriveFieldValueKinds(ex.FieldRHS, ex.Defs)})
+	ex.Defs = applyDerivedDefs(gameID, absPath, origin, rel, res, ex.Defs, derived, nil)
+	ex.Refs = append(ex.Refs, conventionLocRefs(res.Lines(), absPath, ex.Defs, derived)...)
+	bodyRefs, edges, cands := extractRefsAndEdges(
+		gameID, res.Root, res.Lines(), absPath, ex.Defs, derived,
+	)
+	ex.Refs = append(ex.Refs, bodyRefs...)
+	ex.Edges, ex.Cands = edges, cands
+	return ex
+}
+
+func extractForms(
 	gameID, absPath, rel, origin string,
 	res jomini.Result,
 	harvestBodies bool,
@@ -100,15 +128,22 @@ func ExtractParsed(
 	var ex FileExtract
 	switch rule.Mode {
 	case game.ModeGUIType:
-		ex.Defs, ex.GUITypes, ex.GUIProps = extractGUI(res.Root, res.Lines(), absPath)
+		ex.Defs, ex.GUITypes, ex.GUIProps = extractKeywordName(
+			res.Root, res.Lines(), absPath, origin,
+		)
 	case game.ModeTopLevelKey, game.ModeEventID:
 		if rule.Mode == game.ModeEventID {
 			var nsRefs []Ref
-			ex.Defs, nsRefs = extractEvents(res.Root, res.Lines(), gameID, absPath, origin)
+			ex.Defs, nsRefs = extractEventID(res.Root, res.Lines(), absPath, origin)
 			ex.Refs = nsRefs
 		} else {
 			ex.Defs = extractTopLevel(res.Root, res.Lines(), gameID, rule.Kind, absPath, origin)
 		}
+		if rule.Mode == game.ModeEventID {
+			kw, _, _ := extractKeywordName(res.Root, res.Lines(), absPath, origin)
+			ex.Defs = append(ex.Defs, kw...)
+		}
+		attachLeadingDocs(res.Src, res.Lines(), ex.Defs)
 		if harvestBodies {
 			ex.StructKind = rule.Kind
 			if rule.Mode == game.ModeEventID {
@@ -119,23 +154,88 @@ func ExtractParsed(
 	default:
 		return ex
 	}
-	bodyRefs, edges, cands := extractRefsAndEdges(gameID, res.Root, res.Lines(), absPath, ex.Defs)
-	ex.Refs = append(ex.Refs, bodyRefs...)
-	ex.Edges, ex.Cands = edges, cands
 	nameDefs, nameRefs := extractScriptNames(gameID, res.Root, res.Lines(), absPath, origin)
 	ex.Defs = append(ex.Defs, nameDefs...)
 	ex.Refs = append(ex.Refs, nameRefs...)
-	paramDefs, paramRefs := extractScriptParams(gameID, res.Root, res.Lines(), absPath, origin, ex.Defs)
+	paramDefs, paramRefs := extractScriptParams(res.Root, res.Lines(), absPath, origin, ex.Defs)
 	ex.Defs = append(ex.Defs, paramDefs...)
 	ex.Refs = append(ex.Refs, paramRefs...)
-	if ck := game.CanonicalKind(rule.Kind); ck == "game_rule" {
-		ex.Defs = append(ex.Defs, extractGameRuleSettings(res.Root, res.Lines(), absPath, origin)...)
-	}
-	ex.Refs = append(ex.Refs, conventionLocRefs(
-		res.Root, res.Lines(), absPath, ex.Defs, rule.Kind,
-	)...)
 	ex.FieldRHS = extractFieldRHS(res.Root)
 	return ex
+}
+
+// deriveFile derives one file's facts for a live reindex. The prefix table stays
+// empty here: prefixes are bound against the whole install by bindKinds, and one
+// edited file is not evidence enough to rebind anything.
+func deriveFile(gameID, rel string, res jomini.Result, defs []Def, schema *Schema) *Derived {
+	ev, oa := eventOnActionIDs(defs)
+	fire := resolveFireKinds(deriveFireKeys(res.Root, ev, oa))
+	if fire == nil {
+		fire = map[string]string{}
+	}
+	v := &Derived{
+		PrefixKinds: map[string]string{},
+		FireKeys:    fire,
+		Wrappers:    map[string]bool{},
+	}
+	for _, w := range deriveWrappers(gameID, rel, res.Root, defKeySet(defs)) {
+		v.Wrappers[w] = true
+	}
+	v.NestedShapes = deriveNestedShapes(
+		gameID, oneFile(gameID, rel, res), defs, v.PrefixKinds, schema,
+		collectTypedCites(res.Root), collectFieldCites(res.Root))
+	return v
+}
+
+// applyDerivedDefs harvests the nested databases a file contains.
+//
+// citedByKind is the whole corpus's citations, keyed by child kind. A file-local
+// set is not enough and quietly harvested nothing: EU5 declares its
+// sub-continents in `map_data/definitions.txt` but cites them from
+// `common/advances/`, so the definitions file saw no citations and produced
+// zero defs. CK3 faiths only worked because `faith:` happens to be cited inside
+// the religion files themselves. Nil falls back to this file's own citations,
+// which is all a live single-file reindex can see.
+func applyDerivedDefs(
+	gameID, path, origin, rel string, res jomini.Result, defs []Def, derived *Derived,
+	citedByKind map[string]map[string]bool,
+) []Def {
+	if derived == nil {
+		return defs
+	}
+	defs = dropWrapperDefs(defs, derived.Wrappers)
+	rule := game.MatchExtract(gameID, rel)
+	ck := jomini.CanonicalKind(rule.Kind)
+	var local []typedCite
+	if citedByKind == nil {
+		local = collectTypedCites(res.Root)
+	}
+	for _, shape := range derived.NestedShapes {
+		if jomini.CanonicalKind(shape.ParentKind) != ck && shape.ParentKind != rule.Kind {
+			continue
+		}
+		cited := citedByKind[shape.ChildKind]
+		if citedByKind == nil {
+			cited = citedIDsForKind(local, derived.PrefixKinds, shape.ChildKind)
+		}
+		defs = append(defs, applyNestedShape(
+			gameID, path, origin, res.Root, res.Lines(), shape, cited,
+		)...)
+	}
+	return defs
+}
+
+// citedIDsByKind indexes the corpus's citations once per nested child kind, so
+// the second pass does not re-scan them for every file.
+func citedIDsByKind(shapes []NestedShape, cites []typedCite, prefixKinds map[string]string) map[string]map[string]bool {
+	out := make(map[string]map[string]bool, len(shapes))
+	for _, s := range shapes {
+		if _, done := out[s.ChildKind]; done {
+			continue
+		}
+		out[s.ChildKind] = citedIDsForKind(cites, prefixKinds, s.ChildKind)
+	}
+	return out
 }
 
 // ExtractFile extracts one decoded (CR-free) file, choosing the loc or script
@@ -144,15 +244,15 @@ func ExtractFile(gameID, absPath, rel, origin, text string, harvestBodies bool) 
 	text = jomini.Normalize(text)
 	if game.MatchExtract(gameID, rel).Mode == game.ModeLocKey {
 		var ex FileExtract
-		ex.Defs, ex.Loc, ex.Refs = ExtractLoc(filepath.Clean(absPath), text, origin)
+		ex.Defs, ex.Loc, ex.Refs = extractLoc(filepath.Clean(absPath), text, origin)
 		return ex
 	}
-	return ExtractParsed(gameID, absPath, rel, origin, jomini.Parse(text), harvestBodies)
+	return ExtractParsed(gameID, absPath, rel, origin, jomini.Parse(text), harvestBodies, nil)
 }
 
 func makeDef(kind, key, path, origin string, kr jomini.Range, li *jomini.LineIndex) Def {
 	return Def{
-		Kind:   game.CanonicalKind(kind),
+		Kind:   jomini.CanonicalKind(kind),
 		Key:    key,
 		Path:   path,
 		Line:   li.PositionAt(kr.Start).Line,
@@ -162,17 +262,80 @@ func makeDef(kind, key, path, origin string, kr jomini.Range, li *jomini.LineInd
 	}
 }
 
+// maxDefDocLines caps one definition's harvested comment. Four lines is what
+// the install-prose reader already keeps, and it is enough for a description
+// without pulling in a whole changelog someone parked above a macro.
+const maxDefDocLines = 4
+
+// attachLeadingDocs fills Def.Doc from the comment block written directly above
+// each definition.
+//
+// For a great many objects this is the only description that will ever exist.
+// script_docs covers the engine API, not script: 4 of CK3's 11,708 scripted
+// macros appear in it, and none of its events, decisions or traits do. Authors
+// document them in a comment instead — vanilla comments 29% of its scripted
+// effects and events are commented more often still, and mods far more than
+// vanilla.
+//
+// Ephemeral and localization defs are skipped: a saved scope or a loc key has no
+// declaration site to comment, and keeping their neighbours' comments would both
+// mislead and dominate the cache. Everything conventionally declared — a root
+// key, an event id, a nested row — is kept.
+//
+// A blank line ends the block. Without that, the banner above a section
+// ("#####  COURT EVENTS  #####") would be read as documentation of whichever
+// definition happened to follow it.
+func attachLeadingDocs(src string, li *jomini.LineIndex, defs []Def) {
+	for i := range defs {
+		if !docWorthyKind(defs[i].Kind) {
+			continue
+		}
+		defs[i].Doc = leadingComment(src, li, defs[i].Line)
+	}
+}
+
+// docWorthyKind reports a definition whose declaration site is a line an author
+// can comment.
+func docWorthyKind(kind string) bool {
+	switch jomini.CanonicalKind(kind) {
+	case "loc_key", "loc_value", "mod_descriptor", "":
+		return false
+	}
+	return !jomini.IsEphemeral(kind)
+}
+
+func leadingComment(src string, li *jomini.LineIndex, line int) string {
+	var rev []string
+	for n := line - 1; n >= 0 && len(rev) < maxDefDocLines; n-- {
+		start := li.LineStart(n)
+		end := len(src)
+		if n+1 < li.LineCount() {
+			end = li.LineStart(n + 1)
+		}
+		body, hashed := peelDocLine(src[start:end])
+		if !hashed {
+			break // a blank line or real script ends the block
+		}
+		if body == "" || strings.Trim(body, "=-*_ ") == "" {
+			break // a separator rule, not prose
+		}
+		rev = append(rev, body)
+	}
+	if len(rev) == 0 {
+		return ""
+	}
+	slices.Reverse(rev)
+	return prose(rev)
+}
+
 func extractTopLevel(root *jomini.Root, li *jomini.LineIndex, gameID, kind, path, origin string) []Def {
-	if game.CanonicalKind(kind) == "title" {
-		return extractTitleTree(root, li, gameID, path, origin)
-	}
-	if game.CanonicalKind(kind) == "religion" {
-		return extractReligionTree(root, li, gameID, kind, path, origin)
-	}
 	var defs []Def
 	for _, st := range root.Statements {
 		a, ok := st.(*jomini.Assignment)
 		if !ok || a.Key.Quoted || (a.Op != "=" && a.Op != "?=") {
+			continue
+		}
+		if jomini.BlockOf(a.Value) == nil {
 			continue
 		}
 		name := game.KeyIdentity(gameID, a.Key.Text)
@@ -184,146 +347,62 @@ func extractTopLevel(root *jomini.Root, li *jomini.LineIndex, gameID, kind, path
 	return defs
 }
 
-// extractTitleTree walks landed_titles once and emits e_/k_/d_/c_/b_ keys at any depth.
-func extractTitleTree(root *jomini.Root, li *jomini.LineIndex, gameID, path, origin string) []Def {
-	if root == nil {
-		return nil
-	}
-	var defs []Def
-	var walk func([]jomini.Statement)
-	walk = func(stmts []jomini.Statement) {
-		for _, st := range stmts {
-			a, ok := st.(*jomini.Assignment)
-			if !ok || a.Key.Quoted || (a.Op != "=" && a.Op != "?=") {
-				continue
-			}
-			name := game.KeyIdentity(gameID, a.Key.Text)
-			if isTitleID(name) {
-				defs = append(defs, makeDef("title", name, path, origin, a.Key.Range, li))
-			}
-			if b := jomini.BlockOf(a.Value); b != nil {
-				walk(b.Statements)
-			}
-		}
-	}
-	walk(root.Statements)
-	return defs
-}
-
-func isTitleID(s string) bool {
-	return len(s) > 2 && s[1] == '_' &&
-		(s[0] == 'e' || s[0] == 'k' || s[0] == 'd' || s[0] == 'c' || s[0] == 'b')
-}
-
-// extractReligionTree emits top-level religions and nested `faiths = { }` keys.
-func extractReligionTree(
-	root *jomini.Root, li *jomini.LineIndex, gameID, kind, path, origin string,
-) []Def {
-	if root == nil {
-		return nil
-	}
-	var defs []Def
-	for _, st := range root.Statements {
-		a, ok := st.(*jomini.Assignment)
-		if !ok || a.Key.Quoted || (a.Op != "=" && a.Op != "?=") {
-			continue
-		}
-		name := game.KeyIdentity(gameID, a.Key.Text)
-		if !defNameRe.MatchString(name) || name == "namespace" {
-			continue
-		}
-		defs = append(defs, makeDef(kind, name, path, origin, a.Key.Range, li))
-		b := jomini.BlockOf(a.Value)
-		if b == nil {
-			continue
-		}
-		for _, inner := range b.Statements {
-			ia, ok := inner.(*jomini.Assignment)
-			if !ok || ia.Key.Quoted || ia.Key.Text != "faiths" {
-				continue
-			}
-			fb := jomini.BlockOf(ia.Value)
-			if fb == nil {
-				continue
-			}
-			for _, fs := range fb.Statements {
-				fa, ok := fs.(*jomini.Assignment)
-				if !ok || fa.Key.Quoted || (fa.Op != "=" && fa.Op != "?=") {
-					continue
-				}
-				fname := game.KeyIdentity(gameID, fa.Key.Text)
-				if !defNameRe.MatchString(fname) || jomini.BlockOf(fa.Value) == nil {
-					continue
-				}
-				defs = append(defs, makeDef("faith", fname, path, origin, fa.Key.Range, li))
-			}
-		}
-	}
-	return defs
-}
-
-func extractEvents(
-	root *jomini.Root, li *jomini.LineIndex, gameID, path, origin string,
+// extractEventID harvests namespace plus `ident.digits` event ids.
+func extractEventID(
+	root *jomini.Root, li *jomini.LineIndex, path, origin string,
 ) (defs []Def, refs []Ref) {
-	var currentNs string
-	var walk func(stmts []jomini.Statement, depth int)
-	walk = func(stmts []jomini.Statement, depth int) {
-		var marker string
-		for _, st := range stmts {
-			if vs, ok := st.(*jomini.ValueStmt); ok {
-				if sc, ok := vs.Value.(*jomini.Scalar); ok && !sc.Quoted {
-					if game.IsCallKind(sc.Text) {
-						marker = sc.Text
-					} else {
-						marker = ""
-					}
-				}
-				if b := jomini.BlockOf(vs.Value); b != nil {
-					walk(b.Statements, depth+1)
-				}
-				continue
-			}
-			a, ok := st.(*jomini.Assignment)
-			if !ok {
-				marker = ""
-				continue
-			}
-			m := marker
-			marker = ""
-			if !a.Key.Quoted && (a.Op == "=" || a.Op == "?=") {
-				if depth == 0 && strings.EqualFold(a.Key.Text, "namespace") {
-					if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted &&
-						sc.Text != "" && defNameRe.MatchString(sc.Text) {
-						currentNs = sc.Text
-						defs = append(defs, makeDef(
-							"namespace", sc.Text, path, origin, sc.Range, li,
-						))
-					}
-				} else if m != "" && defNameRe.MatchString(a.Key.Text) {
-					defs = append(defs, makeDef(m, a.Key.Text, path, origin, a.Key.Range, li))
-				} else if depth == 0 && eventIDRe.MatchString(a.Key.Text) {
-					defs = append(defs, makeDef("event", a.Key.Text, path, origin, a.Key.Range, li))
-					if currentNs != "" {
-						refs = append(refs, Ref{
-							Key: currentNs, Kind: "namespace", Path: path,
-							Line:  li.PositionAt(a.Key.Range.Start).Line,
-							Start: a.Key.Range.Start, End: a.Key.Range.End,
-						})
-					}
-				}
-			}
-			if b := jomini.BlockOf(a.Value); b != nil {
-				walk(b.Statements, depth+1)
-			}
-		}
+	if root == nil {
+		return nil, nil
 	}
-	if root != nil {
-		walk(root.Statements, 0)
+	var currentNs string
+	for _, st := range root.Statements {
+		a, ok := st.(*jomini.Assignment)
+		if !ok || a.Key.Quoted || (a.Op != "=" && a.Op != "?=") {
+			continue
+		}
+		if strings.EqualFold(a.Key.Text, "namespace") {
+			sc, ok := a.Value.(*jomini.Scalar)
+			if !ok || sc.Quoted || sc.Text == "" || !defNameRe.MatchString(sc.Text) {
+				continue
+			}
+			currentNs = sc.Text
+			defs = append(defs, makeDef("namespace", sc.Text, path, origin, sc.Range, li))
+			continue
+		}
+		if !eventIDRe.MatchString(a.Key.Text) {
+			continue
+		}
+		defs = append(defs, makeDef("event", a.Key.Text, path, origin, a.Key.Range, li))
+		if currentNs != "" {
+			refs = append(refs, Ref{
+				Key: currentNs, Kind: "namespace", Path: path,
+				Line:  li.PositionAt(a.Key.Range.Start).Line,
+				Start: a.Key.Range.Start, End: a.Key.Range.End,
+			})
+		}
 	}
 	return defs, refs
 }
 
-func extractGUI(root *jomini.Root, li *jomini.LineIndex, path string) ([]Def, map[string]bool, map[string]bool) {
+func keywordNameKind(kw string) string {
+	switch strings.ToLower(kw) {
+	case "type", "template", "local_template":
+		return "gui_type"
+	case "types":
+		return "types"
+	default:
+		if IsStop(kw) {
+			return ""
+		}
+		return kw
+	}
+}
+
+// extractKeywordName harvests `type X` / `template X` GUI forms and any other
+// `keyword name = { }` pair (inline scripted_*).
+func extractKeywordName(
+	root *jomini.Root, li *jomini.LineIndex, path, origin string,
+) ([]Def, map[string]bool, map[string]bool) {
 	var defs []Def
 	guiTypes := map[string]bool{}
 	var scan func(stmts []jomini.Statement)
@@ -337,25 +416,44 @@ func extractGUI(root *jomini.Root, li *jomini.LineIndex, path string) ([]Def, ma
 			if !ok || sc.Quoted {
 				continue
 			}
-			kw := strings.ToLower(sc.Text)
-			if kw != "type" && kw != "template" && kw != "local_template" && kw != "types" {
+			kind := keywordNameKind(sc.Text)
+			if kind == "" {
 				continue
 			}
 			named, ok := stmts[i+1].(*jomini.Assignment)
 			if !ok || named.Key.Quoted {
 				continue
 			}
-			if kw == "types" {
+			if kind == "types" {
 				if b := jomini.BlockOf(named.Value); b != nil {
 					scan(b.Statements)
 				}
-			} else if defNameRe.MatchString(named.Key.Text) {
-				defs = append(defs, makeDef("gui_type", named.Key.Text, path, "", named.Key.Range, li))
+				continue
+			}
+			if !defNameRe.MatchString(named.Key.Text) {
+				continue
+			}
+			defs = append(defs, makeDef(kind, named.Key.Text, path, origin, named.Key.Range, li))
+			if kind == "gui_type" {
 				guiTypes[named.Key.Text] = true
 			}
 		}
+		for _, st := range stmts {
+			switch n := st.(type) {
+			case *jomini.ValueStmt:
+				if b := jomini.BlockOf(n.Value); b != nil {
+					scan(b.Statements)
+				}
+			case *jomini.Assignment:
+				if b := jomini.BlockOf(n.Value); b != nil {
+					scan(b.Statements)
+				}
+			}
+		}
 	}
-	scan(root.Statements)
+	if root != nil {
+		scan(root.Statements)
+	}
 	guiProps := map[string]bool{}
 	jomini.Walk(root, func(st jomini.Statement, _ int, _ *jomini.Block) bool {
 		a, ok := st.(*jomini.Assignment)
@@ -446,12 +544,18 @@ func containerAt(containers []defAtLine, line int) string {
 	return best
 }
 
-// objectRefKey is the stored key for a RefFieldKind RHS, or false to skip.
+// objectRefKey is the stored key for a typed field RHS, or false to skip.
 func objectRefKey(gameID, kind, text string) (string, bool) {
-	if game.SkipFieldRHS(kind, text) {
+	if jomini.SkipFieldRHS(text) {
 		return "", false
 	}
-	if _, ok := game.ParsePrefixed(text); ok {
+	// Grammar words are never object names. `c:FRA ?= this` recorded `this` as a
+	// reference 253 times on one Vic3 mod; the stoplist already knew better, but
+	// nothing on the reference path consulted it.
+	if IsStop(text) {
+		return "", false
+	}
+	if _, ok := jomini.ParsePrefixed(text); ok {
 		return "", false
 	}
 	if _, id, ok := game.ParseTyped(gameID, text); ok {
@@ -462,6 +566,7 @@ func objectRefKey(gameID, kind, text string) (string, bool) {
 
 func extractRefsAndEdges(
 	gameID string, root *jomini.Root, li *jomini.LineIndex, path string, defs []Def,
+	derived *Derived,
 ) ([]Ref, []Edge, []CallCandidate) {
 	var refs []Ref
 	var edges []Edge
@@ -496,7 +601,9 @@ func extractRefsAndEdges(
 					}
 					if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted && sc.Text != "" {
 						if prop == loc.PropNone {
-							if rk := game.RefFieldKind(gameID, key); rk != "" {
+							if _, _, ok := game.ParseTyped(gameID, sc.Text); ok {
+								// typed cite already recorded in extractScriptNames
+							} else if rk := derived.fieldKind(key); rk != "" && !isMacroArgKey(key) {
 								if refKey, ok := objectRefKey(gameID, rk, sc.Text); ok {
 									refs = append(refs, Ref{
 										Key: refKey, Kind: rk, Path: path,
@@ -504,19 +611,23 @@ func extractRefsAndEdges(
 										Start: sc.Range.Start, End: sc.Range.End,
 									})
 								}
-							} else if key == "type" && len(stack) > 0 &&
-								game.MessageTypeParent(stack[len(stack)-1].key) {
-								refs = append(refs, Ref{
-									Key: sc.Text, Kind: "message", Path: path,
-									Line:  li.PositionAt(sc.Range.Start).Line,
-									Start: sc.Range.Start, End: sc.Range.End,
-								})
 							}
 						}
 					}
-					if fk := game.FireKind(key); fk != "" {
+					if fk := derived.fireKind(key); fk != "" {
 						kind, nameKey := fireSiteKind(stack, key)
-						walkFireTargets(a.Value, func(to string, start, end int) {
+						// A numeric key is a weight, and the only place one
+						// names an event directly is a `random_events` block,
+						// where targets are always `namespace.number`. Requiring
+						// that shape there — and only there — stops `1 = empty`
+						// in a Vic3 genes file reading as a fire site, without
+						// silencing a real broken target on a named key like
+						// trigger_event.
+						numericEvent := isDigitKey(key) && fk == "event"
+						walkFireTargets(a.Value, derived, func(to string, start, end int) {
+							if numericEvent && !eventIDRe.MatchString(to) {
+								return
+							}
 							refs = append(refs, Ref{
 								Key: to, Kind: fk, Path: path,
 								Line: li.PositionAt(start).Line, Start: start, End: end,
@@ -555,6 +666,10 @@ func extractRefsAndEdges(
 	return refs, edges, cands
 }
 
+// extractFieldRHS collects `field = value` pairs whose RHS could name a def, so
+// deriveFieldValueKinds can later type the field. Fire keys are not excluded
+// here: this runs before any fire key is known, and the fire pass filters its
+// own keys anyway.
 func extractFieldRHS(root *jomini.Root) map[string]map[string]bool {
 	if root == nil {
 		return nil
@@ -572,8 +687,7 @@ func extractFieldRHS(root *jomini.Root) map[string]map[string]bool {
 				}
 				continue
 			}
-			if !a.Key.Quoted && game.FireKind(a.Key.Text) == "" &&
-				loc.Classify(a.Key.Text) == loc.PropNone {
+			if !a.Key.Quoted && loc.Classify(a.Key.Text) == loc.PropNone {
 				if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted &&
 					sc.Text != "" && loc.LooksLikeKey(sc.Text) {
 					m := out[a.Key.Text]
@@ -596,525 +710,21 @@ func extractFieldRHS(root *jomini.Root) map[string]map[string]bool {
 	return out
 }
 
-// VoteFieldValueKinds keeps field→def type when every RHS that hits a def
-// shares exactly one CanonicalKind.
-func VoteFieldValueKinds(rhs map[string]map[string]bool, defs []Def) map[string]string {
-	kindsByKey := map[string][]string{}
-	for _, d := range defs {
-		k := game.CanonicalKind(d.Kind)
-		if k == "" || d.Key == "" || game.IsEphemeral(k) {
-			continue
-		}
-		seen := false
-		for _, have := range kindsByKey[d.Key] {
-			if have == k {
-				seen = true
-				break
-			}
-		}
-		if !seen {
-			kindsByKey[d.Key] = append(kindsByKey[d.Key], k)
-		}
-	}
-	out := map[string]string{}
-	for field, vals := range rhs {
-		var kind string
-		ok, conflict := false, false
-		for v := range vals {
-			kinds := kindsByKey[v]
-			if len(kinds) == 0 {
-				continue
-			}
-			if len(kinds) > 1 {
-				conflict = true
-				break
-			}
-			if !ok {
-				kind, ok = kinds[0], true
-				continue
-			}
-			if kinds[0] != kind {
-				conflict = true
-				break
-			}
-		}
-		if ok && !conflict {
-			out[field] = kind
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// MergeFieldValueKinds overlays mods on vanilla; a type conflict drops the field.
-func MergeFieldValueKinds(vanilla, mods map[string]string) map[string]string {
-	if len(vanilla) == 0 && len(mods) == 0 {
-		return nil
-	}
-	out := maps.Clone(vanilla)
-	if out == nil {
-		out = map[string]string{}
-	}
-	for k, v := range mods {
-		if prev, ok := out[k]; ok && prev != v {
-			delete(out, k)
-			continue
-		}
-		out[k] = v
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-const fieldEnumMin, fieldEnumMax = 2, 64
-
-// VoteFieldEnums keeps unique scalar RHS per kind+field when the field did not
-// vote a def type and the unique count is a small enum (2–64).
-func VoteFieldEnums(
-	byKind map[string]map[string]map[string]bool,
-	voted map[string]string,
-) map[string]map[string][]string {
-	votedL := map[string]bool{}
-	for k := range voted {
-		votedL[strings.ToLower(k)] = true
-	}
-	var out map[string]map[string][]string
-	for kind, fields := range byKind {
-		for field, vals := range fields {
-			if votedL[strings.ToLower(field)] {
-				continue
-			}
-			if n := len(vals); n < fieldEnumMin || n > fieldEnumMax {
-				continue
-			}
-			keys := make([]string, 0, len(vals))
-			for v := range vals {
-				keys = append(keys, v)
-			}
-			slices.Sort(keys)
-			if out == nil {
-				out = map[string]map[string][]string{}
-			}
-			m := out[kind]
-			if m == nil {
-				m = map[string][]string{}
-				out[kind] = m
-			}
-			m[strings.ToLower(field)] = keys
-		}
-	}
-	return out
-}
-
-// MergeFieldEnums overlays mod enums on vanilla per kind+field.
-func MergeFieldEnums(
-	vanilla, mods map[string]map[string][]string,
-) map[string]map[string][]string {
-	if len(vanilla) == 0 && len(mods) == 0 {
-		return nil
-	}
-	out := cloneFieldEnums(vanilla)
-	if out == nil {
-		out = map[string]map[string][]string{}
-	}
-	for kind, fields := range mods {
-		dst := out[kind]
-		if dst == nil {
-			dst = map[string][]string{}
-			out[kind] = dst
-		}
-		for field, vals := range fields {
-			dst[strings.ToLower(field)] = slices.Clone(vals)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func cloneFieldEnums(
-	in map[string]map[string][]string,
-) map[string]map[string][]string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]map[string][]string, len(in))
-	for kind, fields := range in {
-		m := make(map[string][]string, len(fields))
-		for field, vals := range fields {
-			m[field] = slices.Clone(vals)
-		}
-		out[kind] = m
-	}
-	return out
-}
-
-// locKindRefs keeps loc / loc-broad / loc-convention uses for the vanilla sidecar.
-func locKindRefs(refs []Ref) []Ref {
-	var out []Ref
-	for _, r := range refs {
-		switch r.Kind {
-		case "loc", "loc-broad", "loc-convention":
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
-// callKindRefs keeps scripted_trigger/effect/modifier invocations for the cache.
-func callKindRefs(refs []Ref) []Ref {
-	var out []Ref
-	for _, r := range refs {
-		if game.IsCallKind(r.Kind) {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
-func fireSiteKind(stack []edgeFrame, fireKey string) (kind, nameKey string) {
-	for i := len(stack) - 1; i >= 0; i-- {
-		if k, ok := classifyFireSite(stack[i].key); ok {
-			if k == "option" {
-				return k, stack[i].nameKey
-			}
-			return k, ""
-		}
-	}
-	if k, ok := classifyFireSite(fireKey); ok {
-		return k, ""
-	}
-	return "effect", ""
-}
-
-func classifyFireSite(key string) (kind string, ok bool) {
-	switch strings.ToLower(key) {
-	case "option":
-		return "option", true
-	case "immediate", "after":
-		return "immediate", true
-	case "trigger":
-		return "trigger", true
-	case "on_action", "on_actions":
-		return "on_action", true
-	case "events", "random_events", "trigger_event", "first_valid", "fallback":
-		return "events", true
-	case "effect":
-		return "effect", true
-	default:
-		return "", false
-	}
-}
-
-func optionNameKey(v jomini.Value) string {
-	b := jomini.BlockOf(v)
-	if b == nil {
-		return ""
-	}
-	for _, st := range b.Statements {
-		a, ok := st.(*jomini.Assignment)
-		if ok && strings.EqualFold(a.Key.Text, "name") {
-			if sc, ok := a.Value.(*jomini.Scalar); ok {
-				return sc.Text
-			}
-		}
-	}
-	return ""
-}
-
-func walkFireTargets(v jomini.Value, fn func(name string, start, end int)) {
-	switch t := v.(type) {
-	case *jomini.Scalar:
-		if !t.Quoted && fireTargetOK(t.Text) {
-			fn(t.Text, t.Range.Start, t.Range.End)
-		}
-	case *jomini.Block, *jomini.TaggedBlock:
-		b := jomini.BlockOf(v)
-		if b == nil {
-			return
-		}
-		for _, st := range b.Statements {
-			switch n := st.(type) {
-			case *jomini.ValueStmt:
-				if sc, ok := n.Value.(*jomini.Scalar); ok && !sc.Quoted && fireTargetOK(sc.Text) {
-					fn(sc.Text, sc.Range.Start, sc.Range.End)
-				} else if jomini.BlockOf(n.Value) != nil {
-					walkFireTargets(n.Value, fn)
-				}
-			case *jomini.Assignment:
-				key := strings.ToLower(n.Key.Text)
-				own := game.FireKind(n.Key.Text)
-				if sc, ok := n.Value.(*jomini.Scalar); ok && !sc.Quoted && fireTargetOK(sc.Text) &&
-					(key == "id" || isDigitKey(key) || own != "") {
-					fn(sc.Text, sc.Range.Start, sc.Range.End)
-					continue
-				}
-				if own != "" || key == "id" || isDigitKey(key) {
-					walkFireTargets(n.Value, fn)
-				}
-			}
-		}
-	}
-}
-
-func fireTargetOK(s string) bool {
-	if s == "" {
-		return false
-	}
-	c := s[0]
-	if c < 'A' || (c > 'Z' && c < 'a') || c > 'z' {
-		return false
-	}
-	for i := 1; i < len(s); i++ {
-		c = s[i]
-		if c != '_' && c != '.' && c != '-' &&
-			(c < '0' || c > '9') && (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') {
+// isMacroArgKey reports the all-caps convention Paradox uses for the arguments
+// of a scripted macro: `some_effect = { ROLE = chemist }`. The value is a
+// fragment the macro pastes into a name, not a reference to an object of the
+// field's type — Morgenroete builds `character_role_mendelejew_chemist` that
+// way, and reading `chemist` as a character_roles reference reported it missing.
+func isMacroArgKey(key string) bool {
+	upper := false
+	for i := range len(key) {
+		c := key[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+			upper = true
+		case c >= 'a' && c <= 'z':
 			return false
 		}
 	}
-	return true
-}
-
-func isDigitKey(s string) bool {
-	_, err := strconv.ParseUint(s, 10, 64)
-	return err == nil
-}
-
-// CallKindSet maps scripted_trigger/effect/modifier keys to CanonicalKind.
-// Only harvested defs (never script_docs vocab).
-func CallKindSet(defs []Def, cache *VanillaCache) map[string]string {
-	out := map[string]string{}
-	add := func(ds []Def) {
-		for _, d := range ds {
-			k := game.CanonicalKind(d.Kind)
-			if game.IsCallKind(k) {
-				out[d.Key] = k
-			}
-		}
-	}
-	add(defs)
-	if cache != nil {
-		add(cache.Defs)
-	}
-	return out
-}
-
-// EffectSet is every scripted_effect key in defs plus cache.
-func EffectSet(defs []Def, cache *VanillaCache) map[string]bool {
-	out := map[string]bool{}
-	for key, kind := range CallKindSet(defs, cache) {
-		if kind == "scripted_effect" {
-			out[key] = true
-		}
-	}
-	return out
-}
-
-// ApplyCallRefs turns candidates whose To is a call-kind def into refs.
-func ApplyCallRefs(cands []CallCandidate, kinds map[string]string) []Ref {
-	if len(cands) == 0 || len(kinds) == 0 {
-		return nil
-	}
-	var out []Ref
-	for _, c := range cands {
-		kind, ok := kinds[c.To]
-		if !ok || c.From == c.To || c.Start >= c.End {
-			continue
-		}
-		out = append(out, Ref{
-			Key: c.To, Kind: kind, Path: c.Path, Line: c.Line,
-			Start: c.Start, End: c.End,
-		})
-	}
-	return out
-}
-
-// ApplyCallEdges turns candidates into call edges using a complete effectSet.
-func ApplyCallEdges(cands []CallCandidate, effectSet map[string]bool) []Edge {
-	if len(cands) == 0 || len(effectSet) == 0 {
-		return nil
-	}
-	var out []Edge
-	for _, c := range cands {
-		if effectSet[c.To] && c.From != c.To {
-			out = append(out, Edge{
-				From: c.From, To: c.To, Path: c.Path, Line: c.Line, Kind: EdgeKindCall,
-			})
-		}
-	}
-	return out
-}
-
-const maxViaHops = 3
-
-// DeriveVia extends stored edges with indirect event hops through scripted effects.
-func DeriveVia(stored []Edge, cache *VanillaCache, effectSet map[string]bool, mods []Def) []Edge {
-	kinds := map[string]bool{}
-	addKinds := func(defs []Def) {
-		for _, d := range defs {
-			switch game.CanonicalKind(d.Kind) {
-			case "event", "on_action", "decision":
-				kinds[d.Key] = true
-			}
-		}
-	}
-	addKinds(mods)
-	if cache != nil {
-		stored = append(stored, cache.Edges...)
-		addKinds(cache.Defs)
-	}
-	calls := map[string]map[string]bool{}
-	fires := map[string][]Edge{}
-	direct := map[string]bool{}
-	for _, e := range stored {
-		switch {
-		case e.Kind == EdgeKindCall:
-			if calls[e.From] == nil {
-				calls[e.From] = map[string]bool{}
-			}
-			calls[e.From][e.To] = true
-		case effectSet[e.From]:
-			fires[e.From] = append(fires[e.From], e)
-		default:
-			direct[e.From+"→"+e.To] = true
-		}
-	}
-	var via []Edge
-	for from, hop := range calls {
-		if !kinds[from] {
-			continue
-		}
-		visited := map[string]bool{}
-		type step struct {
-			eff   string
-			chain []string
-		}
-		var q []step
-		for eff := range hop {
-			visited[eff] = true
-			q = append(q, step{eff, []string{eff}})
-		}
-		for n := 0; n < maxViaHops && len(q) > 0; n++ {
-			var next []step
-			for _, st := range q {
-				for _, fired := range fires[st.eff] {
-					if fired.To == from || direct[from+"→"+fired.To] {
-						continue
-					}
-					direct[from+"→"+fired.To] = true
-					via = append(via, Edge{
-						From: from, To: fired.To, Via: fired.Via,
-						Path: fired.Path, Line: fired.Line, Kind: "via",
-						NameKey: strings.Join(st.chain, " → "),
-					})
-				}
-				for deeper := range calls[st.eff] {
-					if visited[deeper] {
-						continue
-					}
-					visited[deeper] = true
-					next = append(next, step{deeper, append(append([]string{}, st.chain...), deeper)})
-				}
-			}
-			q = next
-		}
-	}
-	return via
-}
-
-// Harvest is the in-memory result of indexing a workspace's mods.
-type Harvest struct {
-	Defs             []Def
-	Refs             []Ref
-	Edges            []Edge
-	Loc              map[string]map[string]LocEntry
-	Order            []string
-	FieldValueKinds  map[string]string
-	FieldEnumsByKind map[string]map[string][]string
-}
-
-func ingestFile(gameID string, f fileRef, harvestBodies bool) FileExtract {
-	raw, err := os.ReadFile(f.abs)
-	if err != nil {
-		return FileExtract{}
-	}
-	text, _ := jomini.Decode(raw)
-	return ExtractFile(gameID, f.abs, f.rel, f.origin, text, harvestBodies)
-}
-
-// BuildIndex walks every mod in load order and harvests its files.
-func BuildIndex(ctx context.Context, gameID string, mods []ModInput, cache *VanillaCache) (Harvest, error) {
-	ordered := append([]ModInput{}, mods...)
-	slices.SortStableFunc(ordered, func(a, b ModInput) int { return cmp.Compare(a.Order, b.Order) })
-	var files []fileRef
-	var order []string
-	for _, m := range ordered {
-		order = append(order, m.Origin)
-		for _, f := range modFiles(m.Root) {
-			f.origin = m.Origin
-			files = append(files, f)
-		}
-	}
-	acc, err := collectExtracts(ctx, gameID, files, false, cache)
-	if acc == nil {
-		return Harvest{}, err
-	}
-	defs := acc.defs
-	if cache != nil && len(cache.Defs) > 0 {
-		defs = append(append([]Def{}, cache.Defs...), acc.defs...)
-	}
-	kinds := VoteFieldValueKinds(acc.fieldRHS, defs)
-	return Harvest{
-		Defs: acc.defs, Refs: acc.refs, Edges: acc.edges, Loc: acc.loc,
-		Order: uniqKeep(order), FieldValueKinds: kinds,
-		FieldEnumsByKind: VoteFieldEnums(acc.fieldRHSByKind, kinds),
-	}, err
-}
-
-func uniqKeep(in []string) []string {
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if seen[s] {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
-
-// MergeLoc copies locd into dst, allocating maps as needed.
-func MergeLoc(dst map[string]map[string]LocEntry, locd LocDelta) map[string]map[string]LocEntry {
-	if locd.Lang == "" || len(locd.Vals) == 0 {
-		return dst
-	}
-	if dst == nil {
-		dst = map[string]map[string]LocEntry{}
-	}
-	m := dst[locd.Lang]
-	if m == nil {
-		m = map[string]LocEntry{}
-		dst[locd.Lang] = m
-	}
-	for k, v := range locd.Vals {
-		m[k] = v
-	}
-	return dst
-}
-
-func modFiles(root string) []fileRef {
-	var out []fileRef
-	walkClassified(root, func(kind string, f fileRef) {
-		switch kind {
-		case "mod", "gui", "loc", "script":
-			out = append(out, f)
-		}
-	})
-	return out
+	return upper
 }

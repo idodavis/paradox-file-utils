@@ -1,13 +1,10 @@
-// types.go holds LSP DTOs and shared cursor/path helpers.
+// types.go holds LSP DTOs and shared path helpers.
 package lsp
 
 import (
 	"os"
-	"regexp"
 	"strings"
 
-	"paradox-modding-tools/services/internal/catalog"
-	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -122,201 +119,6 @@ const (
 	sevWarning = 2
 )
 
-// atPos is the parsed file and one NodeAtOffset probe at a cursor.
-type atPos struct {
-	src, word       string
-	off, start, end int
-	res             jomini.Result
-	kind            string
-	assign          *jomini.Assignment
-	saveName        string
-	saveOK          bool
-	inKey           bool
-	slotKey         string
-	msgType         bool
-	paramOwner      string
-}
-
-// resolveAt parses path and returns the identifier covering (line, col).
-func resolveAt(s *session.Session, path string, line, col int) (atPos, bool) {
-	src := s.FileText(path)
-	if src == "" {
-		return atPos{}, false
-	}
-	res := s.Parsed(path)
-	off := res.Lines().OffsetAt(line, col)
-	if inComment(res, off) {
-		return atPos{}, false
-	}
-	word, start, end := res.TokenAt(off)
-	if name, pStart, pEnd, ok := game.ScriptParamSpan(src, off); ok {
-		word, start, end = name, pStart, pEnd
-	}
-	at := atPos{src: src, off: off, res: res, word: word, start: start, end: end}
-	rel := path
-	if _, r, ok := s.Locate(path); ok {
-		rel = r
-	}
-	at.kind = game.MatchExtract(s.GameID, rel).Kind
-	if res.Root == nil || s.KindFor(path) == "loc" {
-		return at, true
-	}
-	chain := jomini.NodeAtOffset(res.Root, off)
-	if len(chain) > 0 {
-		if a, ok := chain[0].(*jomini.Assignment); ok && !a.Key.Quoted {
-			if !isLocalDefFile(s, path, at.kind) {
-				if d := s.Resolve(a.Key.Text); d != nil && d.Kind != "" && d.Kind != "loc_key" {
-					at.kind = d.Kind
-				}
-			}
-		}
-		fillCompleteSlot(&at, chain, off)
-		if key := pendingAssignKey(at.src, off); key != "" {
-			at.slotKey = key
-			at.inKey = false
-		}
-		at.msgType = messageTypeSlot(chain, at.slotKey)
-		at.saveName, at.saveOK = saveScopeIn(chain, off)
-		at.paramOwner = paramOwnerIn(s, chain)
-	}
-	return at, true
-}
-
-func paramOwnerIn(s *session.Session, chain []jomini.Statement) string {
-	for i := len(chain) - 1; i >= 0; i-- {
-		a, ok := chain[i].(*jomini.Assignment)
-		if !ok || a.Key.Quoted || strings.Contains(a.Key.Text, "$") {
-			continue
-		}
-		key := a.Key.Text
-		if game.IsCallKind(game.CanonicalKind(key)) {
-			return key
-		}
-		d := s.Resolve(key)
-		if d == nil {
-			continue
-		}
-		switch game.CanonicalKind(d.Kind) {
-		case "scripted_trigger", "scripted_effect", "scripted_modifier", "script_value":
-			return key
-		}
-	}
-	return ""
-}
-
-func messageTypeSlot(chain []jomini.Statement, slotKey string) bool {
-	if slotKey != "type" || len(chain) < 2 {
-		return false
-	}
-	a, ok := chain[0].(*jomini.Assignment)
-	return ok && !a.Key.Quoted && game.MessageTypeParent(a.Key.Text)
-}
-
-// fillCompleteSlot sets inKey/slotKey for completion, and assign when the
-// cursor is on an assignment key (hover). chain is outermost-first.
-func fillCompleteSlot(at *atPos, chain []jomini.Statement, off int) {
-	var assigns []*jomini.Assignment
-	for _, st := range chain {
-		if a, ok := st.(*jomini.Assignment); ok && !a.Key.Quoted {
-			assigns = append(assigns, a)
-		}
-	}
-	if len(assigns) == 0 {
-		return
-	}
-	inner := assigns[len(assigns)-1]
-	if off >= inner.Key.Range.Start && off < inner.Key.Range.End {
-		at.assign = inner
-		at.inKey = true
-		if len(assigns) >= 2 {
-			at.slotKey = assigns[len(assigns)-2].Key.Text
-		}
-		return
-	}
-	innerSt := chain[len(chain)-1]
-	if vs, ok := innerSt.(*jomini.ValueStmt); ok {
-		at.slotKey = inner.Key.Text
-		if sc, ok := vs.Value.(*jomini.Scalar); ok && !sc.Quoted {
-			keyLine := at.res.Lines().PositionAt(inner.Key.Range.Start).Line
-			valLine := at.res.Lines().PositionAt(sc.Range.Start).Line
-			if valLine != keyLine {
-				at.inKey = true
-			}
-		}
-		return
-	}
-	if sc, ok := inner.Value.(*jomini.Scalar); ok &&
-		off >= sc.Range.Start && off <= sc.Range.End {
-		at.slotKey = inner.Key.Text
-		return
-	}
-	if b := jomini.BlockOf(inner.Value); b != nil &&
-		off >= b.Range.Start && off <= b.Range.End {
-		at.inKey = true
-		at.slotKey = inner.Key.Text
-		return
-	}
-	if off >= inner.Key.Range.End {
-		at.slotKey = inner.Key.Text
-		end := min(off, len(at.src))
-		from := inner.Key.Range.End
-		if from < end && !strings.Contains(at.src[from:end], "=") {
-			at.inKey = true
-		}
-	}
-}
-
-var pendingAssignRe = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*=\s*$`)
-
-func pendingAssignKey(src string, off int) string {
-	if off < 0 {
-		return ""
-	}
-	if off > len(src) {
-		off = len(src)
-	}
-	lineStart := strings.LastIndex(src[:off], "\n") + 1
-	m := pendingAssignRe.FindStringSubmatch(src[lineStart:off])
-	if m == nil {
-		return ""
-	}
-	return m[1]
-}
-
-func saveScopeIn(chain []jomini.Statement, off int) (name string, ok bool) {
-	for _, n := range chain {
-		a, isA := n.(*jomini.Assignment)
-		if !isA || a.Key.Quoted {
-			continue
-		}
-		if game.IsSaveScopeKey(a.Key.Text) {
-			sc, isS := a.Value.(*jomini.Scalar)
-			if isS && !sc.Quoted && off >= sc.Range.Start && off <= sc.Range.End {
-				return sc.Text, true
-			}
-			return "", false
-		}
-		if !game.IsSaveScopeValueKey(a.Key.Text) {
-			continue
-		}
-		b := jomini.BlockOf(a.Value)
-		if b == nil {
-			continue
-		}
-		for _, st := range b.Statements {
-			ca, isC := st.(*jomini.Assignment)
-			if !isC || ca.Key.Text != "name" {
-				continue
-			}
-			sc, isS := ca.Value.(*jomini.Scalar)
-			if isS && !sc.Quoted && off >= sc.Range.Start && off <= sc.Range.End {
-				return sc.Text, true
-			}
-		}
-	}
-	return "", false
-}
-
 // byteRange converts a UTF-8 byte span using a cached LineIndex.
 func byteRange(li *jomini.LineIndex, start, end int) Range {
 	a := li.PositionAt(start)
@@ -335,47 +137,12 @@ func isMetaFile(s *session.Session, path string) bool {
 	return strings.Contains(l, "/.metadata/") && strings.HasSuffix(l, "/metadata.json")
 }
 
-// isLocalDefFile reports mod descriptor / metadata files whose keys are
-// defined locally in each mod, not resolved across the workspace.
-func isLocalDefFile(s *session.Session, path string, extractKind string) bool {
-	if extractKind == "mod_descriptor" {
-		return true
-	}
-	return isMetaFile(s, path)
-}
-
 func locDefined(s *session.Session, key string) bool {
 	if _, ok := s.DefaultLoc(key); ok {
 		return true
 	}
 	_, _, _, ok := s.LocSite(key)
 	return ok
-}
-
-func resolveNonLoc(s *session.Session, word string) *catalog.Def {
-	return s.ResolveMatching(word, func(d catalog.Def) bool {
-		return d.Kind != "loc_key" && !game.IsEphemeral(d.Kind)
-	})
-}
-
-// resolveOfKind resolves word to a def of the given kind (ephemeral or not).
-func resolveOfKind(s *session.Session, word, kind string) *catalog.Def {
-	return resolveOfKindOwner(s, word, kind, "")
-}
-
-func resolveOfKindOwner(s *session.Session, word, kind, owner string) *catalog.Def {
-	if word == "" || kind == "" {
-		return nil
-	}
-	return s.ResolveMatching(word, func(d catalog.Def) bool {
-		if game.CanonicalKind(d.Kind) != game.CanonicalKind(kind) {
-			return false
-		}
-		if owner != "" && d.OwnerKey != "" && d.OwnerKey != owner {
-			return false
-		}
-		return true
-	})
 }
 
 func fileExists(path string) bool {
@@ -398,14 +165,4 @@ func modRootOf(s *session.Session, path string) string {
 
 func lowerPrefix(s, prefix string) bool {
 	return prefix == "" || strings.HasPrefix(strings.ToLower(s), strings.ToLower(prefix))
-}
-
-// inComment reports whether offset falls inside a `#` comment span.
-func inComment(res jomini.Result, off int) bool {
-	for _, c := range res.Comments {
-		if off >= c.Range.Start && off < c.Range.End {
-			return true
-		}
-	}
-	return false
 }

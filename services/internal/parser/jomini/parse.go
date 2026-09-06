@@ -1,9 +1,7 @@
-// parse.go is the error-tolerant recursive-descent parser (Parse/ParseFile). It
-// never panics and always returns a usable CST plus any recovered structural errors.
+// parse.go is the error-tolerant recursive-descent parser. It never panics and
+// always returns a usable CST plus any recovered structural errors.
 
 package jomini
-
-import "os"
 
 // Result is an immutable parse result. Src is the exact text that was parsed;
 // all node offsets are byte indices into it.
@@ -108,17 +106,6 @@ func Parse(src string) Result {
 		lines:    li,
 		tokens:   toks,
 	}
-}
-
-// ParseFile reads and decodes a file, then parses it. The BOM is stripped by
-// Decode, so offsets are byte indices into the decoded text stored in Result.Src.
-func ParseFile(path string) (Result, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return Result{}, err
-	}
-	text, _ := Decode(raw)
-	return Parse(text), nil
 }
 
 // parser holds recursive-descent state over a token stream. Comments are skipped

@@ -1,0 +1,429 @@
+// complete_test.go covers completion: which items each slot offers, their
+// ordering, and the range they replace.
+
+package lsp
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"paradox-modding-tools/services/internal/catalog"
+)
+
+func TestCompleteActionsSymbols(t *testing.T) {
+	body := "test.1 = {\n  type = character_event\n}\n"
+	s, f := ck3Sess(t, body)
+	if edits := FormatDocument(s, f); len(edits) == 0 {
+		t.Fatal("want indent edits")
+	}
+	if folds := FoldingRanges(s, f); len(folds) == 0 {
+		t.Fatal("want fold range")
+	}
+	syms := DocumentSymbols(s, f)
+	if len(syms) == 0 || syms[0].Name != "test.1" {
+		t.Fatalf("doc symbols=%v", syms)
+	}
+	if ws := WorkspaceSymbols(s, "test"); len(ws) == 0 {
+		t.Fatal("workspace symbols empty")
+	}
+
+	s, f = ck3Sess(t, "test.1 = {\n	title = brand_new_key\n}\n")
+	var edit *WorkspaceEdit
+	for _, a := range CodeActions(s, f) {
+		if strings.Contains(a.Title, "brand_new_key") {
+			edit = a.Edit
+		}
+	}
+	if edit == nil || len(edit.Create) == 0 {
+		t.Fatal("expected create-loc")
+	}
+	for _, edits := range edit.Changes {
+		if len(edits) > 0 && !strings.HasPrefix(edits[0].NewText, "\uFEFF") {
+			t.Fatal("loc create must include BOM")
+		}
+	}
+
+	s, root := buildSession(t, "ck3", map[string]string{"descriptor.mod": "name = \"t\"\n"}, nil, nil)
+	f = filepath.Join(root, "descriptor.mod")
+	found := false
+	for _, it := range Complete(s, f, 0, 0) {
+		found = found || it.Label == "dependencies"
+	}
+	if !found {
+		t.Fatal("missing dependencies completion")
+	}
+
+	imm := "test.1 = {\n\timm"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": imm}, &catalog.VanillaCache{
+		Structures: map[string][]string{"event": {"immediate", "option"}},
+		Schema: &catalog.Schema{Effects: map[string]catalog.EngineToken{
+			"immortal": {}, "immune": {},
+		}},
+		Vocabulary: []string{"immune_to", "immortal"},
+	}, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(imm, "imm")
+	if items := Complete(s, f, line, col+len("imm")); len(items) == 0 || items[0].Label != "immediate" {
+		t.Fatalf("complete=%v", items)
+	}
+	vocab := make([]string, 5000)
+	for i := range vocab {
+		vocab[i] = "tok_" + string(rune('a'+i%26))
+	}
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": "test.1 = {\n\t"}, &catalog.VanillaCache{
+		Structures: map[string][]string{"event": {"immediate", "option"}},
+		Vocabulary: vocab,
+	}, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	items := Complete(s, f, 1, 1)
+	if len(items) > 80 || len(items) == 0 || items[0].Label != "immediate" {
+		t.Fatalf("complete len=%d first=%q", len(items), items[0].Label)
+	}
+}
+
+func hasComplete(items []CompletionItem, label string) bool {
+	for _, it := range items {
+		if it.Label == label {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCompleteSlots(t *testing.T) {
+	cache := &catalog.VanillaCache{
+		Structures: map[string][]string{"event": {"immediate", "option", "title"}},
+		Schema: &catalog.Schema{
+			Effects:  map[string]catalog.EngineToken{"add_gold": {}},
+			Triggers: map[string]catalog.EngineToken{"is_adult": {}},
+		},
+		FieldInfo: map[string]string{"immediate": "runs first"},
+		FireKeys:  map[string]string{"trigger_event": "event"},
+	}
+	vloc := &catalog.VanillaLoc{Sites: map[string]catalog.LocEntry{
+		"test.1.t": {Value: "Hi"},
+		"other":    {},
+	}}
+
+	imm := "test.1 = {\n\timmediate = {\n\t\t\n\t}\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": imm}, cache, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, _ := lineCol(imm, "immediate = {")
+	items := Complete(s, f, line+1, 2)
+	if !hasComplete(items, "add_gold") {
+		t.Fatalf("immediate slot missing add_gold: %v", labels(items))
+	}
+	if hasComplete(items, "option") || hasComplete(items, "title") {
+		t.Fatalf("immediate slot leaked structures: %v", labels(items))
+	}
+
+	trig := "test.1 = {\n\ttrigger = {\n\t\t\n\t}\n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": trig}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, _ = lineCol(trig, "trigger = {")
+	items = Complete(s, f, line+1, 2)
+	if !hasComplete(items, "is_adult") {
+		t.Fatalf("trigger slot missing is_adult: %v", labels(items))
+	}
+	if hasComplete(items, "add_gold") {
+		t.Fatalf("trigger slot leaked effect: %v", labels(items))
+	}
+
+	title := "test.1 = {\n\ttitle = te\n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": title}, cache, vloc)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(title, "title = te")
+	items = Complete(s, f, line, col+len("title = te"))
+	if !hasComplete(items, "test.1.t") || hasComplete(items, "other") {
+		t.Fatalf("title value loc: %v", labels(items))
+	}
+	if hasComplete(items, "add_gold") {
+		t.Fatalf("title value leaked effect: %v", labels(items))
+	}
+
+	fire := "test.1 = {\n\timmediate = { trigger_event = te }\n}\ntest.2 = { type = character_event }\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": fire}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(fire, "trigger_event = te")
+	items = Complete(s, f, line, col+len("trigger_event = te"))
+	if !hasComplete(items, "test.1") && !hasComplete(items, "test.2") {
+		t.Fatalf("trigger_event value: %v", labels(items))
+	}
+
+	body := "test.1 = {\n\timm"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": body}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(body, "imm")
+	items = Complete(s, f, line, col+len("imm"))
+	if len(items) == 0 || items[0].Label != "immediate" {
+		t.Fatalf("structure key: %v", labels(items))
+	}
+	if items[0].Documentation != "runs first" {
+		t.Fatalf("FieldDoc: %#v", items[0].Documentation)
+	}
+	if items[0].InsertText != "immediate = " {
+		t.Fatalf("scalar insert=%q", items[0].InsertText)
+	}
+	if items[0].Range.Start.Line != line {
+		t.Fatalf("range=%v want line %d", items[0].Range, line)
+	}
+
+	theme := "test.1 = {\n\ttheme = s\n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{
+		"events/x.txt":               theme,
+		"common/event_themes/00.txt": "seduction = { }\n",
+	}, &catalog.VanillaCache{
+		FieldValueKinds: map[string]string{"theme": "event_themes"},
+		Defs: []catalog.Def{
+			{Kind: "event_themes", Key: "seduction", Path: "t.txt", Line: 0},
+		},
+	}, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(theme, "theme = s")
+	items = Complete(s, f, line, col+len("theme = s"))
+	if !hasComplete(items, "seduction") {
+		t.Fatalf("theme value: %v", labels(items))
+	}
+	if hasComplete(items, "add_gold") {
+		t.Fatalf("theme leaked effect: %v", labels(items))
+	}
+}
+
+func TestCompleteEmptyPrefixAndFallback(t *testing.T) {
+	cache := &catalog.VanillaCache{
+		Structures: map[string][]string{"event": {"immediate", "option"}},
+		Defs: []catalog.Def{
+			{Kind: "trait", Key: "ambitious", Path: "t.txt", Line: 0},
+		},
+	}
+	vloc := &catalog.VanillaLoc{Sites: map[string]catalog.LocEntry{
+		"test.1.t": {Value: "Hi"},
+	}}
+
+	title := "test.1 = {\n\ttitle = \n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": title}, cache, vloc)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(title, "title = ")
+	items := Complete(s, f, line, col+len("title = "))
+	if !hasComplete(items, "test.1.t") {
+		t.Fatalf("empty title loc: %v", labels(items))
+	}
+
+	body := "test.1 = { \n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": body}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(body, "{ ")
+	items = Complete(s, f, line, col+len("{ "))
+	if !hasComplete(items, "immediate") {
+		t.Fatalf("structure key after space: %v", labels(items))
+	}
+
+	unk := "test.1 = {\n\tunknown_field = \n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": unk}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(unk, "unknown_field = ")
+	items = Complete(s, f, line, col+len("unknown_field = "))
+	if len(items) == 0 || !hasComplete(items, "yes") {
+		t.Fatalf("unknown field value: %v", labels(items))
+	}
+}
+
+func TestCompleteRangeAndInsert(t *testing.T) {
+	cache := &catalog.VanillaCache{
+		Structures: map[string][]string{
+			"event": {"title", "immediate", "rare_flag"},
+		},
+		StructureBlocks: map[string][]string{"event": {"immediate"}},
+	}
+	body := "test.1 = {\n\t\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body}, cache, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	items := Complete(s, f, 1, 1)
+	if len(items) < 3 || items[0].Label != "title" || items[2].Label != "rare_flag" {
+		t.Fatalf("freq order: %v", labels(items))
+	}
+	var imm, title CompletionItem
+	for _, it := range items {
+		switch it.Label {
+		case "immediate":
+			imm = it
+		case "title":
+			title = it
+		}
+	}
+	if imm.InsertText != "immediate = { $0 }" {
+		t.Fatalf("block insert=%q", imm.InsertText)
+	}
+	if title.InsertText != "title = " {
+		t.Fatalf("scalar insert=%q", title.InsertText)
+	}
+}
+
+func TestCompleteDottedReplace(t *testing.T) {
+	src := "namespace = hostile_scheme_discovery\n" +
+		"hostile_scheme_discovery.3002 = { type = character_event }\n" +
+		"hostile_scheme_discovery.1 = {\n" +
+		"	trigger_event = hostile_scheme_discovery.3\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": src}, nil, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(src, "trigger_event = hostile_scheme_discovery.3")
+	col += len("trigger_event = ")
+	items := Complete(s, f, line, col+len("hostile_scheme_discovery.3"))
+	var hit CompletionItem
+	for _, it := range items {
+		if it.Label == "hostile_scheme_discovery.3002" {
+			hit = it
+			break
+		}
+	}
+	if hit.Label == "" {
+		t.Fatalf("missing 3002: %v", labels(items))
+	}
+	if hit.Range.Start.Line != line || hit.Range.Start.Character != col {
+		t.Fatalf("range start=%v want %d:%d", hit.Range.Start, line, col)
+	}
+	end := col + len("hostile_scheme_discovery.3")
+	if hit.Range.End.Line != line || hit.Range.End.Character != end {
+		t.Fatalf("range end=%v want %d:%d", hit.Range.End, line, end)
+	}
+}
+
+func TestCompleteRootAndEnums(t *testing.T) {
+	src := "script"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_triggers/x.txt": src,
+	}, &catalog.VanillaCache{}, nil)
+	f := filepath.Join(root, "common", "scripted_triggers", "x.txt")
+	items := Complete(s, f, 0, len("script"))
+	if !hasComplete(items, "scripted_triggers") {
+		t.Fatalf("root scripted_triggers: %v", labels(items))
+	}
+
+	cache := &catalog.VanillaCache{
+		Structures: map[string][]string{"event": {"type", "immediate"}},
+		FieldEnumsByKind: map[string]map[string][]string{
+			"event": {"type": {"character_event", "letter_event"}},
+		},
+	}
+	body := "test.1 = {\n\ttype = c\n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{"events/x.txt": body}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(body, "type = c")
+	items = Complete(s, f, line, col+len("type = c"))
+	if !hasComplete(items, "character_event") {
+		t.Fatalf("type enum: %v", labels(items))
+	}
+
+	unk := "test.1 = {\n\tunknown_field = \n}\n"
+	s, root = buildSession(t, "ck3", map[string]string{
+		"events/x.txt": unk,
+		"events/y.txt": "other.1 = { type = character_event }\n",
+	}, cache, nil)
+	f = filepath.Join(root, "events", "x.txt")
+	line, col = lineCol(unk, "unknown_field = ")
+	items = Complete(s, f, line, col+len("unknown_field = "))
+	if !hasComplete(items, "yes") {
+		t.Fatalf("unknown_field yes: %v", labels(items))
+	}
+	for _, it := range items {
+		if it.Label != "yes" && it.Label != "no" {
+			t.Fatalf("unknown_field dumped %q: %v", it.Label, labels(items))
+		}
+	}
+}
+
+// The game declares what a token takes: EU5 states
+// "Supported Targets: culture_group" for has_culture_group. Completion must use
+// that, and in the form the schema says the value is written — as `prefix:id`
+// when the target type is a global link requiring data, bare otherwise.
+func TestCompleteUsesDeclaredTarget(t *testing.T) {
+	cache := &catalog.VanillaCache{
+		Schema: &catalog.Schema{
+			Triggers: map[string]catalog.EngineToken{
+				"has_culture_group": {In: []string{"culture"}, Target: "culture_group"},
+				"has_or_had_tag":    {In: []string{"country"}},
+			},
+			Links: map[string]catalog.ScopeLink{
+				"culture_group": {Out: "culture_group", Global: true, Data: true},
+			},
+		},
+		KindScope: map[string]string{"culture_groups": "culture_group"},
+	}
+	body := "potential = {\n\thas_culture_group = \n}\n"
+	s, root := buildSession(t, "eu5", map[string]string{
+		"in_game/common/scripts/x.txt": body,
+		"in_game/common/culture_groups/00.txt": "turkic_group = { }\n" +
+			"iranian_group = { }\n",
+	}, cache, nil)
+	f := filepath.Join(root, "in_game", "common", "scripts", "x.txt")
+
+	labels := func(line, col int) []string {
+		var out []string
+		for _, it := range Complete(s, f, line, col) {
+			out = append(out, it.Label)
+		}
+		return out
+	}
+	has := func(got []string, want string) bool {
+		for _, g := range got {
+			if g == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Right after `= `, the whole citation is offered so one accept is valid.
+	got := labels(1, len("\thas_culture_group = "))
+	if !has(got, "culture_group:turkic_group") {
+		t.Errorf("after `=` got %v, want culture_group:turkic_group", got)
+	}
+	if has(got, "yes") {
+		t.Errorf("declared target must beat the yes/no fallback: %v", got)
+	}
+}
+
+// Accepting a completion must replace what was typed, not append to it. The
+// word scan stops at `:` while the lexer does not, so with `culture_group:tur`
+// typed the replace range covered only `tur` and accepting the citation
+// produced `culture_group:culture_group:turkic_group`.
+func TestCompleteCitationReplacesWholeCite(t *testing.T) {
+	cache := &catalog.VanillaCache{
+		Schema: &catalog.Schema{
+			Triggers: map[string]catalog.EngineToken{
+				"has_culture_group": {In: []string{"culture"}, Target: "culture_group"},
+			},
+			Links: map[string]catalog.ScopeLink{
+				"culture_group": {Out: "culture_group", Global: true, Data: true},
+			},
+		},
+		KindScope: map[string]string{"culture_groups": "culture_group"},
+	}
+	const typed = "\thas_culture_group = culture_group:tur"
+	body := "potential = {\n" + typed + "\n}\n"
+	s, root := buildSession(t, "eu5", map[string]string{
+		"in_game/common/scripts/x.txt":         body,
+		"in_game/common/culture_groups/00.txt": "turkic_group = { }\n",
+	}, cache, nil)
+	f := filepath.Join(root, "in_game", "common", "scripts", "x.txt")
+
+	items := Complete(s, f, 1, len(typed))
+	var cite *CompletionItem
+	for i, it := range items {
+		if it.Label == "culture_group:turkic_group" {
+			cite = &items[i]
+		}
+	}
+	if cite == nil {
+		t.Fatalf("no citation item; got %v", items)
+	}
+	// The replaced span must be the whole `culture_group:tur`, so applying the
+	// label leaves exactly the label behind.
+	startCol := strings.Index(typed, "culture_group:tur")
+	if cite.Range.Start.Character != startCol || cite.Range.End.Character != len(typed) {
+		t.Fatalf("range = %d..%d, want %d..%d (over %q)",
+			cite.Range.Start.Character, cite.Range.End.Character, startCol, len(typed),
+			"culture_group:tur")
+	}
+}

@@ -1,5 +1,5 @@
-// scriptparam_test.go covers $NAME$ spans and loc engine substitutions.
-package game
+// engineval_test.go covers the $KEY$ engine-substitution rule.
+package loc
 
 import "testing"
 

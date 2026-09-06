@@ -6,11 +6,7 @@ import { useQuery, useQueryCache } from "@pinia/colada";
 import { useEventListener } from "@vueuse/core";
 import { Events } from "@wailsio/runtime";
 import { useToast } from "@nuxt/ui/composables/useToast";
-import {
-  EnsureSession,
-  GetLanguageHealth,
-  RebuildInstallSemantics,
-} from "@services/sessionservice";
+import { EnsureSession, GetLanguageHealth, RebuildInstallSemantics } from "@services/sessionservice";
 
 type ScanState = {
   scanning: boolean;
@@ -21,18 +17,15 @@ type ScanState = {
 const scanByInstall = new Map<string, ScanState>();
 /** Installs already toasted for CacheStale this process (no per-navigation spam). */
 const staleToasted = new Set<string>();
+/** Same, for the script_docs state: told once, not on every navigation. */
+const schemaToasted = new Set<string>();
 let scanListening = false;
 let sessionQueryCache: ReturnType<typeof useQueryCache> | null = null;
 
 /** Bust health + IDE boot so a failed first open remounts after rescan. */
-async function bustSessionQueries(
-  cache: ReturnType<typeof useQueryCache> | null,
-): Promise<void> {
+async function bustSessionQueries(cache: ReturnType<typeof useQueryCache> | null): Promise<void> {
   if (!cache) return;
-  await Promise.all([
-    cache.invalidateQueries({ key: ["session"] }),
-    cache.invalidateQueries({ key: ["ide-boot"] }),
-  ]);
+  await Promise.all([cache.invalidateQueries({ key: ["session"] }), cache.invalidateQueries({ key: ["ide-boot"] })]);
 }
 
 function scanState(id: string): ScanState {
@@ -62,8 +55,7 @@ function ensureScanListener(): void {
   Events.On("wiki:first", () => {
     useToast().add({
       title: "Downloading wiki guides",
-      description:
-        "The first cache can take a few minutes because of MediaWiki rate limits.",
+      description: "The first cache can take a few minutes because of MediaWiki rate limits.",
       duration: 8000,
     });
   });
@@ -96,9 +88,7 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
     enabled: () => !!id.value,
     refetchOnWindowFocus: false,
   });
-  const scan = computed(() =>
-    scanState(health.value?.installId || id.value || "_"),
-  );
+  const scan = computed(() => scanState(health.value?.installId || id.value || "_"));
 
   useEventListener(window, "focus", () => {
     if (id.value) void refetch();
@@ -147,8 +137,7 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
       staleToasted.add(s.installId);
       useToast().add({
         title: "Game updated",
-        description:
-          "The installed version changed since the last scan. Rescan so the semantic cache matches.",
+        description: "The installed version changed since the last scan. Rescan so the semantic cache matches.",
         color: "warning",
         icon: "i-lucide-refresh-cw",
         duration: 0,
@@ -162,6 +151,41 @@ export function useLanguageHealth(workspaceId: MaybeRefOrGetter<string>) {
             },
           },
         ],
+      });
+    },
+    { immediate: true },
+  );
+
+  // The type system is the one part of the engine the user has to produce by
+  // hand, so its two failure states are worth interrupting for — once each.
+  watch(
+    () => ({
+      installId: health.value?.installId,
+      source: health.value?.schema?.source,
+      archived: health.value?.schema?.archived,
+    }),
+    (s) => {
+      if (!s.installId || !s.source || s.source === "live") return;
+      const seen = `${s.installId}:${s.source}`;
+      if (schemaToasted.has(seen)) return;
+      schemaToasted.add(seen);
+      if (s.source === "archive") {
+        useToast().add({
+          title: "Using PMT's archived script_docs",
+          description:
+            "The game's own files are gone, so PMT is reading the copy it kept. Everything still works; regenerate after a game update.",
+          icon: "i-lucide-archive",
+          duration: 6000,
+        });
+        return;
+      }
+      useToast().add({
+        title: "No script_docs for this game",
+        description:
+          "Definitions, references, conflicts and localization still work. Scope-aware completion, typed hover and scope diagnostics need the game to print its documentation once.",
+        color: "warning",
+        icon: "i-lucide-triangle-alert",
+        duration: 0,
       });
     },
     { immediate: true },

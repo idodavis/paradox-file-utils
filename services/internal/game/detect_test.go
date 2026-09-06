@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func writeLauncher(t *testing.T, body string) string {
@@ -86,5 +87,69 @@ func TestUserDataDirProtonWhenXDGAbsent(t *testing.T) {
 	got := UserDataDir("ck3", "")
 	if got != want {
 		t.Fatalf("UserDataDir = %q want %q", got, want)
+	}
+}
+
+// InstallUpdatedAt decides whether generated script_docs still describe the
+// installed build, so it must answer for every game. The obvious source,
+// launcher/launcher-settings.json, does not exist on EU5 and was 11 days stale
+// on CK3; the binaries are what actually track the update.
+func TestInstallUpdatedAt(t *testing.T) {
+	if got := InstallUpdatedAt(""); !got.IsZero() {
+		t.Errorf("empty path = %v, want zero", got)
+	}
+	if got := InstallUpdatedAt(filepath.Join(t.TempDir(), "nope")); !got.IsZero() {
+		t.Errorf("missing install = %v, want zero", got)
+	}
+
+	root := t.TempDir()
+	bin := filepath.Join(root, "binaries")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A launcher file far in the future must not win: the binaries decide.
+	launcher := filepath.Join(root, "launcher")
+	if err := os.MkdirAll(launcher, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(72 * time.Hour)
+	settings := filepath.Join(launcher, "launcher-settings.json")
+	if err := os.WriteFile(settings, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(settings, future, future); err != nil {
+		t.Fatal(err)
+	}
+
+	exe := filepath.Join(bin, "game.exe")
+	if err := os.WriteFile(exe, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(exe, old, old); err != nil {
+		t.Fatal(err)
+	}
+	got := InstallUpdatedAt(root)
+	if got.Sub(old).Abs() > time.Minute {
+		t.Fatalf("InstallUpdatedAt = %v, want the binary's %v", got, old)
+	}
+
+	// A downgrade rewrites the binaries, so the timestamp moves forward even
+	// though the version went backwards. That is the behaviour we want.
+	now := time.Now()
+	if err := os.Chtimes(exe, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if after := InstallUpdatedAt(root); !after.After(got) {
+		t.Errorf("rewriting the binary did not move the timestamp: %v then %v", got, after)
+	}
+
+	// No binaries directory: fall back to the install root's own files.
+	flat := t.TempDir()
+	if err := os.WriteFile(filepath.Join(flat, "game.exe"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if InstallUpdatedAt(flat).IsZero() {
+		t.Error("no binaries/ dir should fall back to the install root")
 	}
 }

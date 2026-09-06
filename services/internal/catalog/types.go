@@ -3,10 +3,33 @@
 
 package catalog
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // CacheFormatVersion is the on-disk schema of VanillaCache.
-const CacheFormatVersion = 16
+const CacheFormatVersion = 22
+
+// NestedShape is a derived parent→child harvest pattern (faiths under religion,
+// nested titles, law policies, …). GroupKey is the wrapper when every hit
+// sat under the same assignment.
+type NestedShape struct {
+	ParentKind string `json:"parentKind"`
+	ChildKind  string `json:"childKind"`
+	GroupKey   string `json:"groupKey,omitempty"`
+	// KeyPrefix is the shared `X_` first letters of discovered child keys
+	// (CK3 titles: "ekdcb"). Empty means harvest every matching block.
+	KeyPrefix string `json:"keyPrefix,omitempty"`
+	// SkipKeys marks an option database and lists the inner keys that are
+	// ordinary fields rather than rows — a game rule's `categories` and
+	// `default`. Everything else under the parent is a row, so a mod that adds
+	// its own option is picked up without re-deriving anything.
+	SkipKeys []string `json:"skipKeys,omitempty"`
+	// IsOption distinguishes an option database with nothing to skip (every key
+	// under the group is a row) from an ordinary cite-driven nested shape.
+	IsOption bool `json:"isOption,omitempty"`
+}
 
 // LocFormatVersion is the on-disk schema of a vanilla loc sidecar.
 const LocFormatVersion = 3
@@ -24,6 +47,12 @@ type Def struct {
 	Origin   string `json:"origin,omitempty"`
 	OwnerKey string `json:"ownerKey,omitempty"`
 	Value    string `json:"value,omitempty"`
+
+	// Doc is the comment block written immediately above the definition. For
+	// most objects it is the only description that exists: script_docs covers
+	// the engine API, not script, so no dump describes an event, a decision, a
+	// trait or a scripted macro. Authors write a comment instead.
+	Doc string `json:"doc,omitempty"`
 }
 
 // Ref is a use-site. Kind is "loc", "loc-broad", "loc-convention",
@@ -86,8 +115,6 @@ type VanillaCache struct {
 	Structures       map[string][]string            `json:"structures"`
 	StructureBlocks  map[string][]string            `json:"structureBlocks,omitempty"`
 	Vocabulary       []string                       `json:"vocabulary"`
-	Effects          []string                       `json:"effects"`
-	Triggers         []string                       `json:"triggers"`
 	GUITypes         []string                       `json:"guiTypes"`
 	GUIProps         []string                       `json:"guiProps"`
 	MetaKeys         []string                       `json:"metaKeys"`
@@ -96,18 +123,37 @@ type VanillaCache struct {
 	CallRefs         []Ref                          `json:"callRefs,omitempty"` // scripted_* call sites
 	FieldValueKinds  map[string]string              `json:"fieldValueKinds,omitempty"`
 	FieldEnumsByKind map[string]map[string][]string `json:"fieldEnumsByKind,omitempty"`
-	TokenUsage       map[string]string              `json:"tokenUsage,omitempty"`
-	TokenDoc         map[string]string              `json:"tokenDoc,omitempty"`
-	TokenScopes      map[string]string              `json:"tokenScopes,omitempty"`
+	PrefixKinds      map[string]string              `json:"prefixKinds,omitempty"`
+	FireKeys         map[string]string              `json:"fireKeys,omitempty"`
+	NestedShapes     []NestedShape                  `json:"nestedShapes,omitempty"`
+	Wrappers         []string                       `json:"wrappers,omitempty"`
+	LocConventions   map[string]string              `json:"locConventions,omitempty"`
+	KindInfo         map[string]string              `json:"kindInfo,omitempty"`
 	DataFunctions    []string                       `json:"dataFunctions,omitempty"`
 
-	// Built by PrepareCache on load/scan; not persisted.
+	// Schema is the type system the game declares in script_docs: scope types,
+	// scope links, and typed engine tokens. Nil when the user has not run
+	// script_docs; callers degrade rather than infer.
+	Schema *Schema `json:"schema,omitempty"`
+
+	// KindScope maps a harvested database kind to the scope type it holds
+	// (kind "cultures" → scope "culture"), resolved by bindKinds. This is what
+	// lets completion filter effects by the scope the cursor sits in.
+	KindScope map[string]string `json:"kindScope,omitempty"`
+
+	// Paths is the interning table for Def/Ref/Edge paths. It exists only on
+	// disk: saveCacheFile writes it and loadCacheFile expands it away, so code
+	// reading a cache always sees real paths.
+	Paths []string `json:"paths,omitempty"`
+
+	// Built by PrepareCache on load/scan; not persisted. The token views are
+	// projections of Schema, rebuilt each load so the declared API is stored
+	// exactly once.
+	effectNames        []string                   `json:"-"`
+	triggerNames       []string                   `json:"-"`
+	vocabNames         []string                   `json:"-"`
 	effectSet          map[string]bool            `json:"-"`
 	triggerSet         map[string]bool            `json:"-"`
-	vocabSet           map[string]bool            `json:"-"`
-	guiTypesSet        map[string]bool            `json:"-"`
-	guiPropsSet        map[string]bool            `json:"-"`
-	metaKeysSet        map[string]bool            `json:"-"`
 	structureSets      map[string]map[string]bool `json:"-"`
 	structureBlockSets map[string]map[string]bool `json:"-"`
 }
@@ -129,9 +175,6 @@ func PrepareCache(c *VanillaCache) {
 	if c.FieldInfoByKind == nil {
 		c.FieldInfoByKind = map[string]map[string]string{}
 	}
-	if c.TokenDoc == nil {
-		c.TokenDoc = map[string]string{}
-	}
 	if c.Structures == nil {
 		c.Structures = map[string][]string{}
 	}
@@ -144,14 +187,23 @@ func PrepareCache(c *VanillaCache) {
 	if c.FieldEnumsByKind == nil {
 		c.FieldEnumsByKind = map[string]map[string][]string{}
 	}
+	if c.PrefixKinds == nil {
+		c.PrefixKinds = map[string]string{}
+	}
+	if c.FireKeys == nil {
+		c.FireKeys = map[string]string{}
+	}
+	if c.LocConventions == nil {
+		c.LocConventions = map[string]string{}
+	}
+	if c.KindInfo == nil {
+		c.KindInfo = map[string]string{}
+	}
 	c.FieldInfo = normalizeDocMap(c.FieldInfo)
-	c.TokenDoc = normalizeDocMap(c.TokenDoc)
 	for kind, m := range c.FieldInfoByKind {
 		c.FieldInfoByKind[kind] = normalizeDocMap(m)
 	}
-	c.effectSet, c.triggerSet = sliceSet(c.Effects), sliceSet(c.Triggers)
-	c.vocabSet, c.guiTypesSet = sliceSet(c.Vocabulary), sliceSet(c.GUITypes)
-	c.guiPropsSet, c.metaKeysSet = sliceSet(c.GUIProps), sliceSet(c.MetaKeys)
+	c.projectSchema()
 	c.structureSets = map[string]map[string]bool{}
 	for kind, keys := range c.Structures {
 		c.structureSets[kind] = sliceSet(keys)
@@ -159,6 +211,50 @@ func PrepareCache(c *VanillaCache) {
 	c.structureBlockSets = map[string]map[string]bool{}
 	for kind, keys := range c.StructureBlocks {
 		c.structureBlockSets[kind] = sliceSet(keys)
+	}
+}
+
+// projectSchema builds the completion and ranking views over the declared API.
+// Nothing here is persisted: Schema is the only stored copy, so a cache written
+// without script_docs simply offers no engine tokens.
+func (c *VanillaCache) projectSchema() {
+	c.effectSet, c.triggerSet = map[string]bool{}, map[string]bool{}
+	c.effectNames, c.triggerNames = nil, nil
+	vocab := make(map[string]bool, len(c.Vocabulary))
+	for _, k := range c.Vocabulary {
+		vocab[k] = true
+	}
+	if c.Schema != nil {
+		for name := range c.Schema.Effects {
+			c.effectSet[name] = true
+			c.effectNames = append(c.effectNames, name)
+		}
+		for name := range c.Schema.Triggers {
+			c.triggerSet[name] = true
+			c.triggerNames = append(c.triggerNames, name)
+		}
+		c.Schema.EachName(func(name string) { vocab[name] = true })
+		slices.Sort(c.effectNames)
+		slices.Sort(c.triggerNames)
+	}
+	c.vocabNames = sortedKeys(vocab)
+}
+
+// TokenNames returns the declared names for a completion slot: "effect",
+// "trigger", or "vocabulary" for the walk's keys plus the whole engine API.
+func (c *VanillaCache) TokenNames(slot string) []string {
+	if c == nil {
+		return nil
+	}
+	switch slot {
+	case "effect":
+		return c.effectNames
+	case "trigger":
+		return c.triggerNames
+	case "vocabulary":
+		return c.vocabNames
+	default:
+		return nil
 	}
 }
 

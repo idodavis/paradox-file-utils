@@ -16,6 +16,14 @@ export interface Def {
     "origin"?: string;
     "ownerKey"?: string;
     "value"?: string;
+
+    /**
+     * Doc is the comment block written immediately above the definition. For
+     * most objects it is the only description that exists: script_docs covers
+     * the engine API, not script, so no dump describes an event, a decision, a
+     * trait or a scripted macro. Authors write a comment instead.
+     */
+    "doc"?: string;
 }
 
 /**
@@ -29,6 +37,57 @@ export interface Edge {
     "line": number;
     "kind"?: string;
     "nameKey"?: string;
+}
+
+/**
+ * EngineToken is one effect or trigger. In is Supported Scopes ("none" means
+ * usable anywhere); Target is Supported Targets, the argument's scope type.
+ */
+export interface EngineToken {
+    "in"?: string[] | null;
+    "target"?: string;
+    "doc"?: string;
+    "usage"?: string;
+}
+
+/**
+ * Modifier is one modifier token. Area is CK3 "Use areas" / Vic3 "Mask".
+ */
+export interface Modifier {
+    "name"?: string;
+    "doc"?: string;
+    "area"?: string;
+}
+
+/**
+ * NestedShape is a derived parent→child harvest pattern (faiths under religion,
+ * nested titles, law policies, …). GroupKey is the wrapper when every hit
+ * sat under the same assignment.
+ */
+export interface NestedShape {
+    "parentKind": string;
+    "childKind": string;
+    "groupKey"?: string;
+
+    /**
+     * KeyPrefix is the shared `X_` first letters of discovered child keys
+     * (CK3 titles: "ekdcb"). Empty means harvest every matching block.
+     */
+    "keyPrefix"?: string;
+
+    /**
+     * SkipKeys marks an option database and lists the inner keys that are
+     * ordinary fields rather than rows — a game rule's `categories` and
+     * `default`. Everything else under the parent is a row, so a mod that adds
+     * its own option is picked up without re-deriving anything.
+     */
+    "skipKeys"?: string[] | null;
+
+    /**
+     * IsOption distinguishes an option database with nothing to skip (every key
+     * under the group is a row) from an ordinary cite-driven nested shape.
+     */
+    "isOption"?: boolean;
 }
 
 /**
@@ -47,6 +106,95 @@ export interface Ref {
 }
 
 /**
+ * Schema is the declared type system for one install, read from script_docs.
+ * Nil means the user has not run script_docs; callers degrade rather than guess.
+ */
+export interface Schema {
+    "scopes"?: { [_ in string]?: ScopeType } | null;
+    "links"?: { [_ in string]?: ScopeLink } | null;
+    "effects"?: { [_ in string]?: EngineToken } | null;
+    "triggers"?: { [_ in string]?: EngineToken } | null;
+    "onActions"?: { [_ in string]?: string } | null;
+    "modifiers"?: { [_ in string]?: Modifier } | null;
+
+    /**
+     * SavedScopes are the scope names the engine saves itself (actor, recipient,
+     * …), listed under "Event Targets Saved from Code" in event_targets.log.
+     */
+    "savedScopes"?: string[] | null;
+
+    /**
+     * ScopesDerived says Scopes was recovered from the link table rather than
+     * declared: only CK3 ships event_scopes.log. Provenance is kept because a
+     * derived entry carries only ChangeScopes / EvaluateTriggers, never the
+     * ExecuteEffects / StoresVariables / SaveToken facts no other file states.
+     */
+    "scopesDerived"?: boolean;
+
+    /**
+     * Source says whether the dumps came from the game's user-data folder or
+     * from PMT's archived copy, so the UI can tell the user.
+     */
+    "source"?: SchemaSource;
+
+    /**
+     * ReadAt is the newest dump mtime (RFC3339), for staleness against the install.
+     */
+    "readAt"?: string;
+}
+
+/**
+ * SchemaSource says where a Schema was read from.
+ */
+export enum SchemaSource {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * SchemaLive means the game's own user-data folder supplied the dumps.
+     */
+    SchemaLive = "live",
+
+    /**
+     * SchemaArchive means the live dumps were gone and PMT's copy was used.
+     */
+    SchemaArchive = "archive",
+
+    /**
+     * SchemaMissing means neither exists; the engine runs without a type system.
+     */
+    SchemaMissing = "missing",
+};
+
+/**
+ * ScopeLink is one scope transition (event_targets.log). In is the scope types
+ * the link may be used from; Out is the type it yields. Global+Data together
+ * mean the link is cited as `name:key` — this is the typed-prefix table.
+ */
+export interface ScopeLink {
+    "in"?: string[] | null;
+    "out"?: string;
+    "global"?: boolean;
+    "data"?: boolean;
+    "wild"?: boolean;
+    "doc"?: string;
+}
+
+/**
+ * ScopeType is one entry of the game's scope-type universe (event_scopes.log).
+ * A scope type is the "class" an effect or trigger runs against.
+ */
+export interface ScopeType {
+    "evaluateTriggers"?: boolean;
+    "executeEffects"?: boolean;
+    "changeScopes"?: boolean;
+    "storesVariables"?: boolean;
+    "saveToken"?: string;
+}
+
+/**
  * VanillaCache is the vanilla script model for one install + version.
  */
 export interface VanillaCache {
@@ -62,8 +210,6 @@ export interface VanillaCache {
     "structures": { [_ in string]?: string[] | null } | null;
     "structureBlocks"?: { [_ in string]?: string[] | null } | null;
     "vocabulary": string[] | null;
-    "effects": string[] | null;
-    "triggers": string[] | null;
     "guiTypes": string[] | null;
     "guiProps": string[] | null;
     "metaKeys": string[] | null;
@@ -76,8 +222,32 @@ export interface VanillaCache {
     "callRefs"?: Ref[] | null;
     "fieldValueKinds"?: { [_ in string]?: string } | null;
     "fieldEnumsByKind"?: { [_ in string]?: { [_ in string]?: string[] | null } | null } | null;
-    "tokenUsage"?: { [_ in string]?: string } | null;
-    "tokenDoc"?: { [_ in string]?: string } | null;
-    "tokenScopes"?: { [_ in string]?: string } | null;
+    "prefixKinds"?: { [_ in string]?: string } | null;
+    "fireKeys"?: { [_ in string]?: string } | null;
+    "nestedShapes"?: NestedShape[] | null;
+    "wrappers"?: string[] | null;
+    "locConventions"?: { [_ in string]?: string } | null;
+    "kindInfo"?: { [_ in string]?: string } | null;
     "dataFunctions"?: string[] | null;
+
+    /**
+     * Schema is the type system the game declares in script_docs: scope types,
+     * scope links, and typed engine tokens. Nil when the user has not run
+     * script_docs; callers degrade rather than infer.
+     */
+    "schema"?: Schema | null;
+
+    /**
+     * KindScope maps a harvested database kind to the scope type it holds
+     * (kind "cultures" → scope "culture"), resolved by bindKinds. This is what
+     * lets completion filter effects by the scope the cursor sits in.
+     */
+    "kindScope"?: { [_ in string]?: string } | null;
+
+    /**
+     * Paths is the interning table for Def/Ref/Edge paths. It exists only on
+     * disk: saveCacheFile writes it and loadCacheFile expands it away, so code
+     * reading a cache always sees real paths.
+     */
+    "paths"?: string[] | null;
 }

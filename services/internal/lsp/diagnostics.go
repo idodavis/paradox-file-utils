@@ -18,24 +18,48 @@ func diag(rg Range, sev int, msg, code string) Diagnostic {
 	return Diagnostic{Range: rg, Severity: sev, Message: msg, Code: code}
 }
 
+// diagFile is one file gathered once for the whole diagnostic run. Each pass
+// used to fetch what it needed itself, so a single Diagnose read the text four
+// times and re-parsed the file five times — and Parsed re-parses whenever the
+// file is not an open buffer.
+type diagFile struct {
+	s    *session.Session
+	path string
+	kind string
+	src  string
+	res  jomini.Result
+	li   *jomini.LineIndex
+	refs []catalog.Ref
+}
+
 // Diagnose returns diagnostics for path. Suppressions (# pmt:ignore) are honored.
 // Install (vanilla) files are silent — harvest stays in the scan cache, not IDE lint.
 func Diagnose(s *session.Session, path string) []Diagnostic {
 	if origin, _, ok := s.Locate(path); ok && origin == game.OriginVanilla {
 		return nil
 	}
-	src := s.FileText(path)
-	sup := scanSuppressions(src)
-	var out []Diagnostic
-	if s.KindFor(path) == "loc" {
-		out = append(out, locDiags(path, src)...)
-	} else if !isMetaFile(s, path) {
-		out = append(out, scriptDiags(s, path)...)
+	f := diagFile{s: s, path: path, kind: s.KindFor(path), src: s.FileText(path)}
+	f.refs = s.RefsInFile(path)
+	if f.kind == "loc" {
+		f.li = jomini.NewLineIndex(f.src)
+	} else {
+		f.res = s.Parsed(path)
+		f.li = f.res.Lines()
 	}
-	out = append(out, missingLocDiags(s, path)...)
-	out = append(out, requiredLocDiags(s, path)...)
-	out = append(out, unknownEventDiags(s, path)...)
+
+	var out []Diagnostic
+	if f.kind == "loc" {
+		out = append(out, f.locDiags()...)
+	} else if !isMetaFile(s, path) {
+		out = append(out, f.scriptDiags()...)
+	}
+	out = append(out, f.missingLocDiags()...)
+	out = append(out, f.requiredLocDiags()...)
+	out = append(out, f.unknownEventDiags()...)
+	out = append(out, f.wrongScopeDiags()...)
 	out = append(out, descriptorDiags(s, path)...)
+
+	sup := scanSuppressions(f.src)
 	filtered := out[:0]
 	for _, d := range out {
 		if sup.Covers(d.Range.Start.Line, d.Code) {
@@ -46,20 +70,36 @@ func Diagnose(s *session.Session, path string) []Diagnostic {
 	return filtered
 }
 
-func scriptDiags(s *session.Session, path string) []Diagnostic {
-	res := s.Parsed(path)
-	li := res.Lines()
-	out := make([]Diagnostic, 0, len(res.Errors))
-	for _, e := range res.Errors {
-		out = append(out, diag(byteRange(li, e.Range.Start, e.Range.End),
+// wrongScopeDiags flags an effect or trigger used in a scope the game does not
+// allow, for example a character-only effect inside a landed_title block. It
+// reports only where the game declares both the token and the scope, so a
+// missing or partial script_docs dump produces silence rather than noise.
+func (f diagFile) wrongScopeDiags() []Diagnostic {
+	misuses := f.s.ScopeMisuses(f.path)
+	if len(misuses) == 0 {
+		return nil
+	}
+	out := make([]Diagnostic, 0, len(misuses))
+	for _, m := range misuses {
+		msg := m.Key + " runs on " + strings.Join(m.Allowed, " or ") +
+			", but this block is " + m.Scope + " scope."
+		out = append(out, diag(byteRange(f.li, m.Start, m.End), sevWarning, msg, "wrong-scope"))
+	}
+	return out
+}
+
+func (f diagFile) scriptDiags() []Diagnostic {
+	out := make([]Diagnostic, 0, len(f.res.Errors))
+	for _, e := range f.res.Errors {
+		out = append(out, diag(byteRange(f.li, e.Range.Start, e.Range.End),
 			sevError, e.Message, string(e.Code)))
 	}
 	return out
 }
 
-func locDiags(path, src string) []Diagnostic {
+func (f diagFile) locDiags() []Diagnostic {
+	path, src, li := f.path, f.src, f.li
 	r := loc.Parse(src)
-	li := jomini.NewLineIndex(src)
 	out := make([]Diagnostic, 0, len(r.Errors)+2)
 	for _, e := range r.Errors {
 		out = append(out, diag(byteRange(li, e.Range.Start, e.Range.End),
@@ -107,60 +147,49 @@ func locSeverity(code loc.ErrorCode) int {
 	}
 }
 
-func missingLocDiags(s *session.Session, path string) []Diagnostic {
+func (f diagFile) missingLocDiags() []Diagnostic {
 	var out []Diagnostic
-	src := s.FileText(path)
-	var li *jomini.LineIndex
-	if s.KindFor(path) == "loc" {
-		li = jomini.NewLineIndex(src)
-	} else {
-		li = s.Parsed(path).Lines()
-	}
-	for _, r := range s.RefsInFile(path) {
-		if r.Kind != "loc" || locDefined(s, r.Key) {
+	for _, r := range f.refs {
+		if r.Kind != "loc" || locDefined(f.s, r.Key) {
 			continue
 		}
-		out = append(out, diag(byteRange(li, r.Start, r.End), sevWarning,
+		out = append(out, diag(byteRange(f.li, r.Start, r.End), sevWarning,
 			"Missing localization key \""+r.Key+"\".", "missing-required-loc"))
 	}
 	return out
 }
 
-func requiredLocDiags(s *session.Session, path string) []Diagnostic {
-	src := s.FileText(path)
-	if src == "" {
+func (f diagFile) requiredLocDiags() []Diagnostic {
+	if f.src == "" {
 		return nil
 	}
-	li := s.Parsed(path).Lines()
 	var out []Diagnostic
-	for _, d := range s.DefsInFile(path) {
-		for _, key := range game.RequiredLocKeys(d.Kind, d.Key) {
-			if locDefined(s, key) {
+	for _, d := range f.s.DefsInFile(f.path) {
+		for _, key := range f.s.ConventionLocKeys(d.Kind, d.Key) {
+			if locDefined(f.s, key) {
 				continue
 			}
-			out = append(out, diag(byteRange(li, d.Start, d.End), sevWarning,
+			out = append(out, diag(byteRange(f.li, d.Start, d.End), sevWarning,
 				"Missing localization key \""+key+"\".", "required-loc"))
 		}
 	}
 	return out
 }
 
-func unknownEventDiags(s *session.Session, path string) []Diagnostic {
-	src := s.FileText(path)
-	if src == "" {
+func (f diagFile) unknownEventDiags() []Diagnostic {
+	if f.src == "" {
 		return nil
 	}
-	li := s.Parsed(path).Lines()
 	var out []Diagnostic
-	for _, r := range s.RefsInFile(path) {
-		if r.Kind != "event" || s.Resolve(r.Key) != nil {
+	for _, r := range f.refs {
+		if r.Kind != "event" || f.s.Resolve(r.Key) != nil {
 			continue
 		}
 		ns, rest, ok := strings.Cut(r.Key, ".")
-		if !ok || rest == "" || !modDeclaresNamespace(s, ns) {
+		if !ok || rest == "" || !modDeclaresNamespace(f.s, ns) {
 			continue
 		}
-		out = append(out, diag(byteRange(li, r.Start, r.End), sevWarning,
+		out = append(out, diag(byteRange(f.li, r.Start, r.End), sevWarning,
 			"Unknown event \""+r.Key+"\".", "unknown-event"))
 	}
 	return out
@@ -171,7 +200,7 @@ func modDeclaresNamespace(s *session.Session, ns string) bool {
 		return false
 	}
 	return s.ResolveMatching(ns, func(d catalog.Def) bool {
-		return game.CanonicalKind(d.Kind) == "namespace"
+		return jomini.CanonicalKind(d.Kind) == "namespace"
 	}) != nil
 }
 

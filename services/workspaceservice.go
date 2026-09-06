@@ -11,6 +11,7 @@ import (
 
 	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/modfile"
 
 	"github.com/google/uuid"
 )
@@ -134,7 +135,7 @@ func (w *WorkspaceService) CreateWorkspace(
 	id := uuid.New().String()
 	ws := Workspace{
 		ID: id, GameID: gameID, Name: name, InstallID: installID,
-		CreatedAt: nowUTC(),
+		HideExplorerBinaries: true, CreatedAt: nowUTC(),
 	}
 	err := w.Store.Mutate(func(c *Config) error {
 		c.Workspaces = append(c.Workspaces, ws)
@@ -228,7 +229,7 @@ func (w *WorkspaceService) AddWorkspaceMod(
 
 // DefaultModParent is UserDataDir/<game>/mod, or "".
 func (w *WorkspaceService) DefaultModParent(gameID string) string {
-	return game.DefaultModParent(gameID)
+	return modfile.DefaultModParent(gameID)
 }
 
 // CreateMod writes a new mod skeleton under parentDir and returns its path.
@@ -243,13 +244,13 @@ func (w *WorkspaceService) CreateMod(
 		return "", fmt.Errorf("name is required")
 	}
 	if parentDir == "" {
-		parentDir = game.DefaultModParent(gameID)
+		parentDir = modfile.DefaultModParent(gameID)
 	}
 	if parentDir == "" {
 		return "", fmt.Errorf("parent folder is required")
 	}
-	root := filepath.Join(parentDir, game.ModSlug(name))
-	if err := game.WriteNewMod(game.NewModOpts{
+	root := filepath.Join(parentDir, modfile.ModSlug(name))
+	if err := modfile.WriteNewMod(modfile.NewModOpts{
 		GameID: gameID, Root: root, Name: name, SupportedVersion: supportedVersion,
 		LocLang: locLang, Description: description, ThumbnailSrc: thumbnailSrc,
 	}); err != nil {
@@ -452,7 +453,7 @@ func listingRel(root, chosen string) (string, error) {
 		return "", fmt.Errorf("description file must be inside the mod folder")
 	}
 	slash := filepath.ToSlash(rel)
-	if slash == game.DescMdName || slash == game.DescBbName {
+	if slash == modfile.DescMdName || slash == modfile.DescBbName {
 		return "", nil
 	}
 	return slash, nil
@@ -480,9 +481,10 @@ var legalDefaultTools = map[string]bool{
 	"release":       true,
 }
 
-// UpdateWorkspacePrefs sets IDE persist, default landing page, and game origin color.
+// UpdateWorkspacePrefs sets IDE persist, default landing page, explorer hide, and game origin color.
 func (w *WorkspaceService) UpdateWorkspacePrefs(
 	workspaceID string, resetIdeOnOpen bool, defaultTool, gameColor string,
+	hideExplorerBinaries bool,
 ) error {
 	if !legalDefaultTools[defaultTool] {
 		return fmt.Errorf("invalid default tool")
@@ -495,6 +497,7 @@ func (w *WorkspaceService) UpdateWorkspacePrefs(
 		ws.ResetIdeOnOpen = resetIdeOnOpen
 		ws.DefaultTool = defaultTool
 		ws.GameColor = gameColor
+		ws.HideExplorerBinaries = hideExplorerBinaries
 		return nil
 	})
 }
@@ -568,10 +571,11 @@ type IdeRoot struct {
 
 // IdeRoots is the IDE boot DTO: folders plus tab restore.
 type IdeRoots struct {
-	Roots          []IdeRoot `json:"roots"`
-	ResetIdeOnOpen bool      `json:"resetIdeOnOpen"`
-	IdeOpenFiles   []string  `json:"ideOpenFiles,omitempty"`
-	IdeActiveFile  string    `json:"ideActiveFile,omitempty"`
+	Roots                []IdeRoot `json:"roots"`
+	ResetIdeOnOpen       bool      `json:"resetIdeOnOpen"`
+	HideExplorerBinaries bool      `json:"hideExplorerBinaries"`
+	IdeOpenFiles         []string  `json:"ideOpenFiles,omitempty"`
+	IdeActiveFile        string    `json:"ideActiveFile,omitempty"`
 }
 
 // GetIdeRoots returns game / mod folders and tab restore for the IDE.
@@ -584,9 +588,10 @@ func (w *WorkspaceService) GetIdeRoots(workspaceID string) (*IdeRoots, error) {
 		return nil, err
 	}
 	out := &IdeRoots{
-		ResetIdeOnOpen: ws.ResetIdeOnOpen,
-		IdeOpenFiles:   append([]string(nil), ws.IdeOpenFiles...),
-		IdeActiveFile:  ws.IdeActiveFile,
+		ResetIdeOnOpen:       ws.ResetIdeOnOpen,
+		HideExplorerBinaries: ws.HideExplorerBinaries,
+		IdeOpenFiles:         append([]string(nil), ws.IdeOpenFiles...),
+		IdeActiveFile:        ws.IdeActiveFile,
 	}
 	for _, mod := range ws.Mods {
 		if mod.IsBroken || mod.Path == "" {

@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -41,7 +42,37 @@ type LanguageHealth struct {
 	ScriptDocsEffects int    `json:"scriptDocsEffects"`
 	IndexReady        bool   `json:"indexReady"`
 	DefCount          int    `json:"defCount"`
-	DumpHint          string `json:"dumpHint"`
+
+	// Schema is the declared type system's state. Without it PMT still resolves
+	// definitions, references, conflicts and loc coverage from the install walk;
+	// scope-aware completion, typed hover and the scope diagnostics need it.
+	Schema ScriptDocsHealth `json:"schema"`
+}
+
+// ScriptDocsHealth is structured state for the walkthrough, replacing the old
+// free-text DumpHint so the frontend can render a step list rather than parse a
+// sentence.
+type ScriptDocsHealth struct {
+	// Source is "live", "archive" or "missing".
+	Source     string `json:"source"`
+	Effects    int    `json:"effects"`
+	Triggers   int    `json:"triggers"`
+	ScopeTypes int    `json:"scopeTypes"`
+	Prefixes   int    `json:"prefixes"`
+	OnActions  int    `json:"onActions"`
+	ReadAt     string `json:"readAt,omitempty"`
+	// Archived reports PMT holds its own copy, so deleting the game's costs
+	// nothing and a rescan still has a type system.
+	Archived bool `json:"archived"`
+	// Stale means the install was patched after these dumps were written, so the
+	// engine API they describe may no longer match the game.
+	Stale bool `json:"stale"`
+
+	// The walkthrough, verified against all three game binaries: the same
+	// launch option and console command everywhere, only the folder differs.
+	Folder       string `json:"folder,omitempty"`
+	LaunchOption string `json:"launchOption"`
+	Command      string `json:"command"`
 }
 
 func recoverErr(err *error) {
@@ -322,29 +353,57 @@ func (s *SessionService) languageHealth(workspaceID string) (*LanguageHealth, er
 			h.CacheStale = ver != h.GameVersion
 		}
 	}
-	if inst != nil {
-		ver := h.GameVersion
-		if ver == "" {
-			ver = "latest"
-		}
+	if inst == nil {
+		return h, nil
+	}
+	ver := h.GameVersion
+	if ver == "" {
+		ver = "latest"
+	}
+	// The type system is read straight from script_docs rather than out of the
+	// model: a couple of megabytes instead of ninety, and health is polled.
+	st := catalog.ReadSchemaStatus(inst.GameID, inst.ID, inst.Path, ver)
+	h.Schema = ScriptDocsHealth{
+		Source: string(st.Source), Effects: st.Effects, Triggers: st.Triggers,
+		ScopeTypes: st.ScopeTypes, Prefixes: st.Prefixes, OnActions: st.OnActions,
+		ReadAt: st.ReadAt, Archived: st.Archived, Folder: st.Folder,
+		Stale:        dumpsPredateInstall(st.ReadAt, inst.Path),
+		LaunchOption: "-debug_mode",
+		Command:      "script_docs",
+	}
+	h.ScriptDocsEffects = st.Effects
+
+	if live == nil || h.ScannedAt == "" {
 		if c, e := catalog.LoadCache(inst.ID, ver); e == nil && c != nil {
-			h.ScriptDocsEffects = len(c.Effects)
 			if h.ScannedAt == "" {
 				h.ScannedAt = c.ScannedAt
 			}
 			if live == nil {
 				h.CacheStale = c.GameVersion != h.GameVersion && h.GameVersion != ""
 			}
-			if liveDetected != "" && inst.VersionDetected != "" &&
-				liveDetected != inst.VersionDetected {
-				h.CacheStale = true
-			}
 		}
 	}
-	if h.ScriptDocsEffects == 0 {
-		h.DumpHint = "Open the game, run script_docs in the console, then Rescan."
+	if liveDetected != "" && inst.VersionDetected != "" &&
+		liveDetected != inst.VersionDetected {
+		h.CacheStale = true
 	}
 	return h, nil
+}
+
+// dumpsPredateInstall reports that the game was patched after the dumps were
+// written. The dumps record no version of their own, so this compares
+// timestamps: the newest dump mtime against when the install was last patched.
+// An unknown install time means "cannot tell", never stale.
+func dumpsPredateInstall(readAt, installPath string) bool {
+	if readAt == "" {
+		return false
+	}
+	wrote, err := time.Parse(time.RFC3339, readAt)
+	if err != nil {
+		return false
+	}
+	patched := game.InstallUpdatedAt(installPath)
+	return !patched.IsZero() && patched.After(wrote)
 }
 
 // loadVanillaLoc returns the loc sidecar, harvesting and saving if it is missing.

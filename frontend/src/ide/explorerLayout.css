@@ -122,11 +122,7 @@
 .ide-activity-bar .action-item.active,
 .monaco-workbench .part.activitybar .action-item.checked,
 .monaco-workbench .part.activitybar .action-item.active {
-  background-color: color-mix(
-    in srgb,
-    var(--vscode-focusBorder) 28%,
-    transparent
-  );
+  background-color: color-mix(in srgb, var(--vscode-focusBorder) 28%, transparent);
 }
 
 /* Activity-bar context only — do not hide explorer file context. */
@@ -140,13 +136,13 @@
   max-width: min(48rem, 92vw) !important;
 }
 
-/* Copy button is absolute; only grow the reserved gutter while the popup is hovered. */
+/* The copy button is absolutely positioned, so its row needs a reserved gutter.
+   Reserve it always, never on :hover. VS Code measures the rendered content once
+   and sizes the widget to it; adding padding the moment the pointer enters
+   re-wraps the text taller than that measurement, and the widget clips its own
+   bottom — the signature and the file links disappeared exactly as you reached
+   for them. A permanent 20px gutter costs one line-wrap and nothing moves. */
 .monaco-hover .hover-row.hover-row-with-copy {
-  padding-right: 0 !important;
-}
-
-.monaco-hover:hover .hover-row.hover-row-with-copy,
-.monaco-hover:focus-within .hover-row.hover-row-with-copy {
   padding-right: 20px !important;
 }
 
@@ -166,8 +162,7 @@
 .monaco-hover .rendered-markdown > p:first-child {
   padding-bottom: 8px;
   margin: 0 0 8px !important;
-  border-bottom: 1px solid
-    var(--vscode-widget-border, rgba(127, 127, 127, 0.35));
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, 0.35));
 }
 
 /* Two-span header: kind+key | Game Override (mod origin color on the span). */
@@ -211,8 +206,7 @@
 .monaco-hover blockquote {
   padding: 4px 8px;
   max-width: min(30rem, 76vw) !important;
-  border-left: 3px solid
-    var(--vscode-textBlockQuote-border, var(--vscode-focusBorder));
+  border-left: 3px solid var(--vscode-textBlockQuote-border, var(--vscode-focusBorder));
   background: var(
     --vscode-textBlockQuote-background,
     var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15))

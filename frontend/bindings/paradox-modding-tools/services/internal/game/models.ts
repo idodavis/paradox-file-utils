@@ -55,10 +55,6 @@ export interface GameInfo {
      */
     "entryModes"?: string[] | null;
     "steamAppId"?: number;
-
-    /**
-     * FirstWins is the FIOS sentence for Conflicts / Settings load-order copy.
-     */
     "firstWins"?: string;
 }
 

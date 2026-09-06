@@ -20,10 +20,13 @@ export interface DirEntry {
 /**
  * FileBytes is a binary file payload for the IDE FS bridge. Missing files are
  * Exists=false with no error so the workbench can skip optional paths quietly.
+ * Reject is set when the file exists but must not be opened (binary / too large);
+ * that is not a Go error so Wails does not log a binding failure.
  */
 export interface FileBytes {
     "exists": boolean;
     "b64"?: string;
+    "reject"?: string;
 }
 
 /**
@@ -84,6 +87,7 @@ export interface IdeRoot {
 export interface IdeRoots {
     "roots": IdeRoot[] | null;
     "resetIdeOnOpen": boolean;
+    "hideExplorerBinaries": boolean;
     "ideOpenFiles"?: string[] | null;
     "ideActiveFile"?: string;
 }
@@ -100,7 +104,13 @@ export interface LanguageHealth {
     "scriptDocsEffects": number;
     "indexReady": boolean;
     "defCount": number;
-    "dumpHint": string;
+
+    /**
+     * Schema is the declared type system's state. Without it PMT still resolves
+     * definitions, references, conflicts and loc coverage from the install walk;
+     * scope-aware completion, typed hover and the scope diagnostics need it.
+     */
+    "schema": ScriptDocsHealth;
 }
 
 /**
@@ -152,6 +162,44 @@ export interface PublishResult {
     "needsLegalAgreement": boolean;
     "legalUrl"?: string;
     "listing"?: Listing | null;
+}
+
+/**
+ * ScriptDocsHealth is structured state for the walkthrough, replacing the old
+ * free-text DumpHint so the frontend can render a step list rather than parse a
+ * sentence.
+ */
+export interface ScriptDocsHealth {
+    /**
+     * Source is "live", "archive" or "missing".
+     */
+    "source": string;
+    "effects": number;
+    "triggers": number;
+    "scopeTypes": number;
+    "prefixes": number;
+    "onActions": number;
+    "readAt"?: string;
+
+    /**
+     * Archived reports PMT holds its own copy, so deleting the game's costs
+     * nothing and a rescan still has a type system.
+     */
+    "archived": boolean;
+
+    /**
+     * Stale means the install was patched after these dumps were written, so the
+     * engine API they describe may no longer match the game.
+     */
+    "stale": boolean;
+
+    /**
+     * The walkthrough, verified against all three game binaries: the same
+     * launch option and console command everywhere, only the folder differs.
+     */
+    "folder"?: string;
+    "launchOption": string;
+    "command": string;
 }
 
 /**
@@ -216,6 +264,7 @@ export interface Workspace {
     "defaultLocLang": string;
     "gameColor"?: string;
     "resetIdeOnOpen": boolean;
+    "hideExplorerBinaries": boolean;
     "defaultTool"?: string;
     "ideOpenFiles"?: string[] | null;
     "ideActiveFile"?: string;

@@ -27,7 +27,7 @@ type Config struct {
 	FormatVersion int                          `json:"formatVersion"`
 	Installs      []GameInstall                `json:"installs"`
 	Workspaces    []Workspace                  `json:"workspaces"`
-	Settings   map[string]map[string]string `json:"settings"`
+	Settings      map[string]map[string]string `json:"settings"`
 }
 
 // GameInstall is a user-configured game installation.
@@ -45,18 +45,19 @@ type GameInstall struct {
 
 // Workspace is a user-defined mod working environment tied to a game.
 type Workspace struct {
-	ID             string         `json:"id"`
-	GameID         string         `json:"gameId"`
-	Name           string         `json:"name"`
-	InstallID      string         `json:"installId"`
-	DefaultLocLang string         `json:"defaultLocLang"`
-	GameColor      string         `json:"gameColor,omitempty"`
-	ResetIdeOnOpen bool           `json:"resetIdeOnOpen"`
-	DefaultTool    string         `json:"defaultTool,omitempty"`
-	IdeOpenFiles   []string       `json:"ideOpenFiles,omitempty"`
-	IdeActiveFile  string         `json:"ideActiveFile,omitempty"`
-	CreatedAt      string         `json:"createdAt"`
-	Mods           []WorkspaceMod `json:"mods"`
+	ID                   string         `json:"id"`
+	GameID               string         `json:"gameId"`
+	Name                 string         `json:"name"`
+	InstallID            string         `json:"installId"`
+	DefaultLocLang       string         `json:"defaultLocLang"`
+	GameColor            string         `json:"gameColor,omitempty"`
+	ResetIdeOnOpen       bool           `json:"resetIdeOnOpen"`
+	HideExplorerBinaries bool           `json:"hideExplorerBinaries"`
+	DefaultTool          string         `json:"defaultTool,omitempty"`
+	IdeOpenFiles         []string       `json:"ideOpenFiles,omitempty"`
+	IdeActiveFile        string         `json:"ideActiveFile,omitempty"`
+	CreatedAt            string         `json:"createdAt"`
+	Mods                 []WorkspaceMod `json:"mods"`
 }
 
 // WorkspaceMod is a mod attached to a workspace.
@@ -221,16 +222,6 @@ func findWorkspace(c *Config, id string) *Workspace {
 	for i := range c.Workspaces {
 		if c.Workspaces[i].ID == id {
 			return &c.Workspaces[i]
-		}
-	}
-	return nil
-}
-func findMod(c *Config, id string) *WorkspaceMod {
-	for i := range c.Workspaces {
-		for j := range c.Workspaces[i].Mods {
-			if c.Workspaces[i].Mods[j].ID == id {
-				return &c.Workspaces[i].Mods[j]
-			}
 		}
 	}
 	return nil

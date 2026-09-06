@@ -1,11 +1,10 @@
-// parse.go implements the localization dialect parser (Parse/ParseFile): a
-// line-by-line, never-panicking scanner emitting entries and typed errors with
-// UTF-8 byte offsets. See doc.go for the package overview.
+// parse.go implements the localization dialect parser: a line-by-line,
+// never-panicking scanner emitting entries and typed errors with UTF-8 byte
+// offsets. See doc.go for the package overview.
 
 package loc
 
 import (
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,8 +30,8 @@ type Entry struct {
 type Interp struct {
 	Key       string
 	Filter    string // text after | when present
-	KeyRange  Range // inner key, not `$` or `|filter`
-	WrapRange Range // opening `$` through closing `$` (exclusive end)
+	KeyRange  Range  // inner key, not `$` or `|filter`
+	WrapRange Range  // opening `$` through closing `$` (exclusive end)
 }
 
 // ErrorCode classifies a localization parse error.
@@ -169,18 +168,6 @@ func Interps(value string, valueStart int) []Interp {
 		i = closeAt + 1
 	}
 	return out
-}
-
-// ParseFile reads, decodes, and parses a loc file, recording whether it had a BOM.
-func ParseFile(path string) (Result, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return Result{}, err
-	}
-	text, hadBOM := jomini.Decode(raw)
-	r := Parse(text)
-	r.HadBOM = hadBOM
-	return r, nil
 }
 
 // scanner holds accumulators across the line-by-line parse.

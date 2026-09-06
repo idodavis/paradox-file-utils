@@ -29,10 +29,41 @@ export function workbenchSettingsForTheme(
   };
 }
 
+/** Default explorer hide: binaries only (images/.asset/.metadata stay). */
+const BINARY_EXCLUDES: Record<string, boolean> = {
+  "**/*.{dll,exe,pdb,hash,hex,bin,dat}": true,
+  "**/.git": true,
+};
+
+const FILE_ASSOCIATIONS: Record<string, string> = {
+  "**/localization/**/*.yml": "paradox-loc",
+  "**/localization/**/*.yaml": "paradox-loc",
+  "*.yml": "yaml",
+  "*.yaml": "yaml",
+};
+
+let hideExplorerBinaries = true;
 let applyingTheme = false;
 let lastThemeName = "";
 let queuedTheme: string | null = null;
 let editorFontSize = 14;
+
+/** Explorer exclude globs for files.exclude / search.exclude. */
+export function explorerExcludeSettings(
+  hide = hideExplorerBinaries,
+): Record<string, unknown> {
+  return {
+    "files.exclude": hide ? BINARY_EXCLUDES : {},
+    "search.exclude": hide ? BINARY_EXCLUDES : {},
+    "files.associations": FILE_ASSOCIATIONS,
+  };
+}
+
+/** Persist hide-binaries and rewrite workbench settings when the IDE is up. */
+export function setHideExplorerBinaries(hide: boolean): void {
+  hideExplorerBinaries = hide;
+  if (lastThemeName) void applyWorkbenchTheme(lastThemeName);
+}
 
 /** Merge editor.fontSize into the next workbench settings write. */
 export function applyEditorFontSize(px: number): void {
@@ -61,6 +92,7 @@ export async function applyWorkbenchTheme(themeName: string): Promise<void> {
             "workbench.startupEditor": "none",
             "window.title": "PMT${separator}${activeEditorShort}",
             "files.autoSave": "off",
+            ...explorerExcludeSettings(),
           },
           null,
           2,

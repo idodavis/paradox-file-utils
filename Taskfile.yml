@@ -78,3 +78,18 @@ tasks:
     summary: Builds and runs the Docker image
     cmds:
       - task: common:run:docker
+
+  test:
+    summary: Fast backend tests (~2s). Skips the real-install tier.
+    dir: services
+    cmds:
+      - go test -short ./...
+
+  test:full:
+    summary: >
+      Backend tests including the real-install tier (~2m). Needs
+      PMT_TEST_INSTALL_{CK3,VIC3,EU5} and PMT_TEST_DOCS_{CK3,VIC3,EU5};
+      the heavy tests skip themselves when those are unset.
+    dir: services
+    cmds:
+      - go test ./... -timeout 1800s

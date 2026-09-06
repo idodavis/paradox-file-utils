@@ -59,12 +59,22 @@ import {
 import { registerExtension } from "@codingame/monaco-vscode-api/extensions";
 import { ExtensionHostKind } from "@codingame/monaco-vscode-extensions-service-override";
 import "@codingame/monaco-vscode-theme-defaults-default-extension";
+import "@codingame/monaco-vscode-json-default-extension";
+import "@codingame/monaco-vscode-html-default-extension";
+import "@codingame/monaco-vscode-css-default-extension";
+import "@codingame/monaco-vscode-javascript-default-extension";
+import "@codingame/monaco-vscode-typescript-basics-default-extension";
+import "@codingame/monaco-vscode-markdown-basics-default-extension";
+import "@codingame/monaco-vscode-xml-default-extension";
+import "@codingame/monaco-vscode-yaml-default-extension";
+import "@codingame/monaco-vscode-ini-default-extension";
 import "./fileIcons";
 import "vscode/localExtensionHost";
 import * as monaco from "monaco-editor";
 import * as vscode from "vscode";
 import {
   WailsFileSystemProvider,
+  setListShowAll,
   setModRootDeletedHook,
   normFs,
   type IdeRoot,
@@ -72,6 +82,8 @@ import {
 import {
   applyWorkbenchTheme,
   EDITOR_BRACKET_DEFAULTS,
+  explorerExcludeSettings,
+  setHideExplorerBinaries,
   workbenchSettingsForTheme,
   lockWorkbenchTheme,
 } from "./themeBridge";
@@ -175,7 +187,14 @@ export type IdeSessionOpts = {
   persistTabs: boolean;
   openFiles: string[];
   activeFile: string;
+  hideExplorerBinaries?: boolean;
 };
+
+/** Apply Overview hide-binaries to explorer listing and workbench excludes. */
+export function applyExplorerVisibility(hideBinaries: boolean): void {
+  setListShowAll(!hideBinaries);
+  setHideExplorerBinaries(hideBinaries);
+}
 
 const ATTACHED_PARTS = [
   Parts.ACTIVITYBAR_PART,
@@ -336,32 +355,10 @@ function constructOptions(): IWorkbenchConstructionOptions {
       },
       ...EDITOR_BRACKET_DEFAULTS,
       "explorer.autoReveal": true,
-      "files.exclude": SEARCH_EXCLUDES,
-      "search.exclude": SEARCH_EXCLUDES,
+      ...explorerExcludeSettings(),
     },
   };
 }
-
-/** Heavy binaries the Search view should skip (VS Code exclude settings). */
-const SEARCH_EXCLUDES: Record<string, boolean> = {
-  "**/*.dds": true,
-  "**/*.png": true,
-  "**/*.jpg": true,
-  "**/*.jpeg": true,
-  "**/*.tga": true,
-  "**/*.fbx": true,
-  "**/*.mesh": true,
-  "**/*.anim": true,
-  "**/*.asset": true,
-  "**/*.bank": true,
-  "**/*.wem": true,
-  "**/*.ogg": true,
-  "**/*.wav": true,
-  "**/*.mp3": true,
-  "**/*.dll": true,
-  "**/*.exe": true,
-  "**/*.pdb": true,
-};
 
 const envOpts = { userHome: monaco.Uri.file("/") };
 
@@ -772,6 +769,7 @@ async function runInitialize(theme: string): Promise<void> {
               strings: "on",
             },
             ...EDITOR_BRACKET_DEFAULTS,
+            ...explorerExcludeSettings(),
           },
           null,
           2,
@@ -884,6 +882,9 @@ async function applyWorkbenchRoots(
   currentRoots = roots;
   fsProvider.setRoots(roots);
   setDecoratedRoots(roots);
+  if (session?.hideExplorerBinaries !== undefined) {
+    applyExplorerVisibility(session.hideExplorerBinaries);
+  }
   syncMountedEditors();
 
   await refsPromise;

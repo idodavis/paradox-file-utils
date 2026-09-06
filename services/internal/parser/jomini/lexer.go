@@ -50,7 +50,11 @@ func isWordTerminator(c byte) bool {
 
 // tokenize lexes the entire source into tokens (with a trailing EOF). Never panics.
 func tokenize(text string) []token {
-	tokens := make([]token, 0, len(text)/4+1)
+	// Measured across 900 CK3 vanilla files: 8.84 bytes per token. The buffer
+	// assumed 4, so every parse over-allocated the token slice 2.2×, and a scan
+	// parses the whole install several times over. Slightly under-guessing costs
+	// at most one doubling; over-guessing costs the difference on every file.
+	tokens := make([]token, 0, len(text)/8+16)
 	length := len(text)
 	i := 0
 

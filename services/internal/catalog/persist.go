@@ -46,8 +46,8 @@ func sanitize(s string) string {
 	return b.String()
 }
 
-// SaveJSON marshals v to path via a temp file then rename.
-func SaveJSON(path string, v any) error {
+// saveJSON marshals v to path via a temp file then rename.
+func saveJSON(path string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -63,8 +63,8 @@ func SaveJSON(path string, v any) error {
 	return os.Rename(tmp, path)
 }
 
-// LoadJSON reads path and rejects a missing or mismatched formatVersion.
-func LoadJSON[T any](path string, wantVersion int) (*T, error) {
+// loadJSON reads path and rejects a missing or mismatched formatVersion.
+func loadJSON[T any](path string, wantVersion int) (*T, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func SaveCache(c *VanillaCache) error {
 	if err != nil {
 		return err
 	}
-	if err := SaveCacheFile(path, c); err != nil {
+	if err := saveCacheFile(path, c); err != nil {
 		return err
 	}
 	dropLegacyWorkspaceCaches(filepath.Dir(path))
@@ -110,7 +110,7 @@ func LoadCache(installID, version string) (*VanillaCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	return LoadCacheFile(path)
+	return loadCacheFile(path)
 }
 
 // PeekCacheScannedAt returns scannedAt from the vanilla JSON without loading defs.
@@ -131,18 +131,19 @@ func PeekCacheScannedAt(installID, version string) string {
 	return s
 }
 
-// SaveCacheFile marshals c to an explicit path.
-func SaveCacheFile(path string, c *VanillaCache) error {
+// saveCacheFile marshals c to an explicit path, interning repeated file paths.
+func saveCacheFile(path string, c *VanillaCache) error {
 	PrepareCache(c)
-	return SaveJSON(path, c)
+	return saveJSON(path, internPaths(c))
 }
 
-// LoadCacheFile reads a VanillaCache from an explicit path.
-func LoadCacheFile(path string) (*VanillaCache, error) {
-	c, err := LoadJSON[VanillaCache](path, CacheFormatVersion)
+// loadCacheFile reads a VanillaCache from an explicit path.
+func loadCacheFile(path string) (*VanillaCache, error) {
+	c, err := loadJSON[VanillaCache](path, CacheFormatVersion)
 	if err != nil {
 		return nil, err
 	}
+	expandPaths(c)
 	PrepareCache(c)
 	return c, nil
 }
@@ -157,7 +158,7 @@ func SaveVanillaLoc(installID, version, lang string, loc *VanillaLoc) error {
 		return err
 	}
 	loc.FormatVersion = LocFormatVersion
-	return SaveJSON(path, loc)
+	return saveJSON(path, loc)
 }
 
 // LoadVanillaLoc reads the loc sidecar, or an error if absent / version mismatch.
@@ -166,7 +167,7 @@ func LoadVanillaLoc(installID, version, lang string) (*VanillaLoc, error) {
 	if err != nil {
 		return nil, err
 	}
-	loc, err := LoadJSON[VanillaLoc](path, LocFormatVersion)
+	loc, err := loadJSON[VanillaLoc](path, LocFormatVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +177,10 @@ func LoadVanillaLoc(installID, version, lang string) (*VanillaLoc, error) {
 	return loc, nil
 }
 
-// DropVanillaFiles removes vanilla-* files for installID (script + loc sidecars).
+// DropVanillaFiles removes vanilla-* files for installID (script + loc sidecars)
+// and the archived script_docs copies. Dropping the archive here is deliberate:
+// this is the "forget this install" path, and a stale archive would otherwise
+// outlive the install it describes.
 func DropVanillaFiles(installID string) error {
 	dir, err := CacheDir()
 	if err != nil {
@@ -189,9 +193,12 @@ func DropVanillaFiles(installID string) error {
 	}
 	for _, e := range ents {
 		name := e.Name()
-		if strings.HasPrefix(name, "vanilla-"+sid) ||
-			strings.HasPrefix(name, "vanilla-loc-"+sid) {
+		switch {
+		case strings.HasPrefix(name, "vanilla-"+sid),
+			strings.HasPrefix(name, "vanilla-loc-"+sid):
 			_ = os.Remove(filepath.Join(dir, name))
+		case strings.HasPrefix(name, "script-docs-"+sid):
+			_ = os.RemoveAll(filepath.Join(dir, name))
 		}
 	}
 	return nil

@@ -4,6 +4,11 @@ How to use this file: names here win over older code and comments. Rename in the
 owning cleanup phase; do not invent a synonym. Go JSON tags match Vue. Wails
 params stay `workspaceID`; Vue locals may be `workspaceId`.
 
+This file defines what words mean. **[GAME-SYNTAX.md](GAME-SYNTAX.md) records
+what the three games actually do**, measured against real installs with a
+reproduction per claim — start there when a game update breaks something, and
+before changing any inference pass.
+
 ## Guide, not Helper
 
 The product pane beside the IDE editor is **Guide**. The SFC is `GuidePane.vue`.
@@ -18,10 +23,16 @@ These are different pipelines. Never collapse them into one word.
 | What | Canonical | Where | What it is |
 |---|---|---|---|
 | Community wiki | wiki, Guide | `package wiki` | Sanitized MediaWiki HTML. Guide is wiki-only. |
-| Console dumps | script_docs | OS user-data `logs/` (CK3) or `docs/` (Vic3/EU5) | In-game `script_docs` output. Silent ingest. Health is `scriptDocsEffects` (indexed effect count), not “folder exists.” |
+| Console dumps | script_docs | OS user-data `logs/` (CK3) or `docs/` (Vic3/EU5), archived to `cache/script-docs-*` | **The type system**, not an overlay. In-game `script_docs` output, parsed by `catalog/schema.go` into `Schema`. Source is `live` / `archive` / `missing`. |
 | Install prose | game info | Shipped `_*.info`, readmes, `*.md` **inside the game install** | Harvested into `fieldInfo` / `fieldInfoByKind`. Never call this script_docs or wiki. Never name the cache field `GameInfo` (collides with `game.GameInfo`). |
 
-Hover one-liners are `session.FieldDoc`: kind `fieldInfo` → global `fieldInfo` → dump `TokenDoc`. Dump signatures stay in `TokenUsage`.
+Hover one-liners are `session.FieldDoc`: kind `fieldInfo` → global `fieldInfo` →
+`Schema` token doc. Signatures come from `EngineToken.Usage`. There is no flat
+`TokenDoc` / `TokenUsage` / `TokenScopes` map and no `VanillaCache.Effects` /
+`.Triggers` — `Schema` is the single representation, read through the session
+accessors. Never persist a rendered hover string; `TokenScopes` used to hold
+`"character; targets: culture"` and that display-flattening is the bug this
+engine was rebuilt to remove.
 
 ## Install, user data, workshop
 
@@ -37,6 +48,17 @@ Clausewitz/Jomini text (`.txt`, `.gui`). One CST in `parser/jomini`. Loc YAML is
 `parser/loc`. No third GUI parser. `MatchExtract` is **def kind**. `ClassifyRel`
 is **file bucket** (`script` / `gui` / `loc` / `info` / `meta`).
 
+**Game-aware vs shared.** `internal/game` is the only package that knows the
+titles apart; everything per-game is a field on `GameInfo` rather than a `switch`
+on a game id. The shared language — `CanonicalKind`, `ScriptSlot`,
+`ParseTyped`, `TypedSpans`, `ScriptName`, `IsEphemeral`, `ScriptParamSpan` —
+lives in `parser/jomini`, which is a leaf and must never import `game`. The test
+for membership is behavioural: a function belongs in `game` only if it acts
+differently on CK3, Victoria 3 and EU5. Taking a `gameID` parameter is not
+evidence — `ScriptName` and `SkipFieldRHS` both took one and never read it.
+Where a title reserves part of the shared grammar (EU5 spends `INJECT:` on entry
+modes), `game.ParseTyped` wraps `jomini.ParseTyped`; the leaf stays ignorant.
+
 ## Modding practice
 
 Load-order is **LIOS** (last in, only saved / last listed wins). CK3/Vic3 path
@@ -51,11 +73,12 @@ onto a new game version.
 | Guide RPC | `WikiService.Guide` | `SessionService.WikiGuide`; query key `wiki-guide` → `guide` |
 | Events | `wiki:first`, `wiki:updated` | `docs:wiki-*` |
 | Package / load | `package wiki`, `LoadGuides`, `guidesPath()` | `package docs`, `LoadDocs`, persist `docsPath()` |
-| script_docs health | `scriptDocsEffects` (int) | `docsPresent`, UI “dumps” |
+| script_docs health | `scriptDocsEffects` (declared effect count) | `docsPresent`, UI “dumps required” |
 | Install prose maps | `fieldInfo` / `fieldInfoByKind` | `fieldDocs*`; never `VanillaCache.GameInfo` |
 | One hover sentence | `session.FieldDoc` | `FieldDocsForKind`, `Guide.FieldDocs` |
-| Dump signature | `TokenUsage` | prose in TokenUsage |
-| Dump effect text | `TokenDoc` | stuffing into FieldInfo |
+| Dump signature | `EngineToken.Usage` | prose in the usage field; a flat `TokenUsage` map |
+| Dump effect text | `EngineToken.Doc` | stuffing into FieldInfo; a flat `TokenDoc` map |
+| Token input scope | `EngineToken.In` (`[]string`) | a rendered `TokenScopes` string |
 | Origin id on the wire | `"vanilla"` or mod uuid | `""` meaning vanilla |
 | Origin display | `originName` | showing the uuid |
 | Same origin field | JSON `origin` | `IdeRoot.originId` |
@@ -68,6 +91,64 @@ onto a new game version.
 | Load-order rule | LIOS | **LISO** |
 | Graph layout | dagre | AGENTS elkjs (do not add elkjs) |
 
+## Type system words
+
+| Term | Means |
+|---|---|
+| **Scope type** | A class an effect or trigger runs against (`character`, `country`). Declared in `event_scopes.log`. Not a "kind". |
+| **Kind** | A harvested database, named after its folder (`cultures`). `Def.Kind`. Not a scope type. |
+| **Scope link** | A named hop between scope types (`ruler`, `capital_county`), from `event_targets.log`. |
+| **Prefix** | A scope link citable as `name:key` (`culture:english`, `cu:`). Global + Requires Data. |
+| **Binding** | The join from a scope type to the kind(s) holding its rows. `catalog.bindKinds`. |
+| **Schema** | The whole declared type system for one install. `VanillaCache.Schema`. |
+
+`KindScope` maps kind → scope type. `PrefixKinds` maps prefix → kind. Do not
+swap those two.
+
+## Macro, not "call kind"
+
+A **macro** is a `scripted_*` definition invoked by name. `jomini.IsMacroKind`
+settles it from the folder name. The old "call kind" vote is gone.
+
+| Concept | Canonical | Kill |
+|---|---|---|
+| Macro def keys → kind | `catalog.macroDefKinds` | `CallKindSet` |
+| Macro def key set | `catalog.macroDefKeys` | `EffectSet` (means engine effects) |
+| Persisted macro call sites | `macroCallRefs` | `callKindRefs` |
+| Session macro maps | `s.macroDefKinds`, `s.macroKeys` | `callKindSet`, `effectSet` |
+| Session predicates | `IsMacroKind`, `IsMacroDef` | `IsCallKind`, `IsCallKey` |
+| Session macro lookups | `FindMacroDefs`, `addMacroDefsLocked`, `rebuildMacroSetsLocked` | `FindDefsOfCallKind`, `addCallKindsLocked`, `rebuildCallSetsLocked` |
+| Macro call at a cursor | `macroCallAt`, `macroCallIdentity` | `callKindDefAt`, `callKindID` |
+
+`Effects` / `Triggers` mean the game's **declared** engine API from `Schema`.
+Never reuse those words for macro keys.
+
+## Declared, derived, inferred
+
+Three sources, and a name must say which one it came from. Getting this wrong is
+what produced hovers showing the wrong kind.
+
+| Word | Source | Where |
+|---|---|---|
+| **Declared** | The game states it in `script_docs` | `Schema`. Read verbatim. |
+| **Bound** | Deterministic join of declared types against harvested def keys | `bindKinds` → `KindScope`, `PrefixKinds` |
+| **Derived** | Install evidence, for the four things no dump states | `catalog/derive.go`, `Derived` |
+
+Nothing is **voted** any more. `Derive*` functions resolve by unanimity or a
+stated threshold, and the doc comment must name which — not "votes".
+
+| Concept | Canonical | Kill |
+|---|---|---|
+| Install-derived facts | `catalog/derive.go`, `Derived`, `derivedFromCache` | `votes.go`, `Votes`, "vote maps" |
+| Fire-key derivation | `deriveFireKeys`, `resolveFireKinds`, `fireTargets` | `VoteFireKeys`, `finishFireVotes`, `voteFireTargets` |
+| Other derivations | `deriveNestedShapes`, `deriveWrappers`, `deriveLocConventions`, `deriveFieldValueKinds`, `deriveFieldEnums` | any `Vote*` name |
+| Prefix → kind origin | "bound by `bindKinds`" | "voted" |
+
+Only the four derivations above exist, because only they are unstated by every
+dump: fire keys (`event` is not a scope type in any game), nested databases
+(CK3 faiths under religions), setup wrappers, and loc conventions. Adding a
+fifth means first proving no dump declares it.
+
 **Keep as different words:** `lsp.Position.character` vs `HoverResult.col`.
 `EventFieldInfo` vs cache `fieldInfo`. `Ref.Kind` vs `Def.Kind`. Disk
 `DocsFolderName` / `ScriptDocsSubdir`.
@@ -76,9 +157,14 @@ onto a new game version.
 
 | Name | Lives in |
 |---|---|
-| `GameInfo`, `UserDataDir`, `WriteNewMod`, `MatchExtract` | `services/internal/game` |
-| `VanillaCache`, `Scan`, `BuildIndex`, `ClassifyRel`, dump parsers | `services/internal/catalog` |
-| `FieldDoc`, session query API | `services/internal/session` |
+| `GameInfo`, `UserDataDir`, `MatchExtract`, `IsFIOS`, `KeyIdentity` | `services/internal/game` — **the only game-aware package** |
+| `CanonicalKind`, `ScriptSlot`, `ParseTyped`, `ScriptName`, `IsEphemeral` | `parser/jomini` — shared Jomini grammar, no game id |
+| `WriteNewMod`, `ReadListingFields`, `DescriptorModKeys` | `services/internal/modfile` |
+| `VanillaCache`, `Scan`, `BuildIndex`, `ClassifyRel` | `services/internal/catalog` |
+| `ReadSchema`, `bindKinds`, dump archive | `catalog/schema.go`, `schemaarchive.go` |
+| The four `Derive*` passes | `catalog/derive.go` |
+| `FieldDoc`, the whole session query API | `session/query.go` (read-only; `session.go` is the mutable half) |
+| LSP tests | beside the request: `hover_test.go`, `definition_test.go`, `complete_test.go`, `diagnostics_test.go`, `scope_test.go`; `lsp_test.go` is fixtures only |
 | Wiki persist / sanitize / Guide payload | `services/internal/wiki` |
 | Health `scriptDocsEffects` | `SessionService.GetLanguageHealth` |
 | Guide UI | `GuidePane.vue` + monaco aux bar (`pmt.guide`) |

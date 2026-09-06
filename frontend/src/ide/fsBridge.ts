@@ -21,7 +21,7 @@ import * as monaco from "monaco-editor";
 import {
   StatPath,
   ListDirectory,
-  ReadFileBase64,
+  ReadEditableBase64,
   WriteFileBase64,
   CreateDir,
   DeletePath,
@@ -32,6 +32,13 @@ import type { IdeRoot } from "@services/models";
 type Uri = monaco.Uri;
 
 export type { IdeRoot };
+
+let listShowAll = false;
+
+/** Show-all lists dotfiles; hide binaries still lists .metadata. */
+export function setListShowAll(show: boolean): void {
+  listShowAll = show;
+}
 
 /** Role of a multi-root IDE folder (explorer color tags). */
 export type IdeRootKind = "game" | "mod";
@@ -211,7 +218,7 @@ export class WailsFileSystemProvider
   async readdir(resource: Uri): Promise<[string, FileType][]> {
     const path = fsPath(resource);
     if (!this.manages(path)) this.notFound();
-    const entries = (await ListDirectory(path)) ?? [];
+    const entries = (await ListDirectory(path, listShowAll)) ?? [];
     return entries.map((e) => [
       e.name,
       e.isDir ? FileType.Directory : FileType.File,
@@ -247,8 +254,14 @@ export class WailsFileSystemProvider
   async readFile(resource: Uri): Promise<Uint8Array> {
     const path = fsPath(resource);
     if (!this.manages(path)) this.notFound();
-    const file = await ReadFileBase64(path);
+    const file = await ReadEditableBase64(path);
     if (!file.exists) this.notFound();
+    if (file.reject) {
+      throw FileSystemProviderError.create(
+        file.reject,
+        FileSystemProviderErrorCode.Unknown,
+      );
+    }
     return bytesFromB64(file.b64 ?? "");
   }
 

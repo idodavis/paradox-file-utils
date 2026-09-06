@@ -45,6 +45,7 @@ const { error, isPending } = useQuery({
       persistTabs: !rec?.resetIdeOnOpen,
       openFiles: rec?.ideOpenFiles ?? [],
       activeFile: rec?.ideActiveFile ?? "",
+      hideExplorerBinaries: rec?.hideExplorerBinaries !== false,
     });
     if (sessionErr) throw sessionErr;
     return true;

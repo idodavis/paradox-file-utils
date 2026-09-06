@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strings"
 
-	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -21,17 +20,17 @@ var usageParamRe = regexp.MustCompile(`\$([A-Za-z0-9_]+)\$|\{([A-Za-z0-9_]+)\}`)
 
 // SignatureHelp returns usage-based signature help at (line, UTF-8 column).
 func SignatureHelp(s *session.Session, path string, line, col int) *SignatureHelpResult {
-	at, ok := resolveAt(s, path, line, col)
+	at, ok := s.CursorAt(path, line, col)
 	if !ok {
 		return nil
 	}
-	key := at.slotKey
+	key := at.SlotKey
 	if key == "" {
-		key = at.word
+		key = at.Word
 	}
 	usage := s.TokenUsage(key)
 	if usage == "" {
-		if d := s.Resolve(key); d != nil && game.IsCallKind(d.Kind) {
+		if d := s.Resolve(key); d != nil && s.IsMacroKind(d.Kind) {
 			usage = s.TokenUsage(d.Key)
 		}
 	}
@@ -40,7 +39,7 @@ func SignatureHelp(s *session.Session, path string, line, col int) *SignatureHel
 	}
 	return &SignatureHelpResult{
 		Label:         usage,
-		Documentation: s.FieldDoc(key, at.kind),
+		Documentation: s.FieldDoc(key, at.Kind),
 		Parameters:    paramsFromUsage(usage),
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -167,7 +168,7 @@ func eventNamespace(s *session.Session, d *catalog.Def, id string) string {
 	if d != nil {
 		var last string
 		for _, x := range s.DefsInFile(d.Path) {
-			if game.CanonicalKind(x.Kind) == "namespace" && x.Line <= d.Line {
+			if jomini.CanonicalKind(x.Kind) == "namespace" && x.Line <= d.Line {
 				last = x.Key
 			}
 		}

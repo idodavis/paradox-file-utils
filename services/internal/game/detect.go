@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bytedance/sonic"
 )
@@ -238,4 +239,66 @@ func defaultSteamRoots() []string {
 func dirExists(path string) bool {
 	st, err := os.Stat(path)
 	return err == nil && st.IsDir()
+}
+
+// InstallUpdatedAt is when the game's files last changed, for judging whether
+// generated files (script_docs) still describe the installed build.
+//
+// The binaries are the signal, for three reasons:
+//
+//   - `launcher/launcher-settings.json` is not usable. EU5 ships no launcher
+//     directory at all, and on CK3 the file was 11 days older than the actual
+//     update, so it is wrong even where it exists.
+//   - Steam's appmanifest LastUpdated is exact but only for Steam copies, and
+//     PMT supports installs it did not get from Steam.
+//   - Executable mtimes tracked Steam's own LastUpdated to within seconds on
+//     all three games, and need nothing outside the install folder.
+//
+// "Last changed" is deliberately not "highest version", which matters for the
+// common downgrade route: picking an older build in Steam's game-version (beta
+// branch) settings. Steam stamps files as it writes them rather than carrying
+// the build's own timestamps — measured on all three games, the executable
+// mtime lands 2–7 seconds *before* the appmanifest's LastUpdated — so switching
+// branches rewrites the binaries with a fresh mtime. Dumps generated against the
+// other build are then correctly reported as no longer describing this install,
+// which comparing version strings would miss entirely, and which PMT could not
+// do for EU5 at all since it publishes no version anywhere.
+//
+// Copying an install preserves mtimes, which can only make this quieter, never
+// falsely loud.
+//
+// Zero time means unknown; callers must treat that as "cannot tell", never stale.
+func InstallUpdatedAt(installPath string) time.Time {
+	if installPath == "" {
+		return time.Time{}
+	}
+	for _, dir := range []string{filepath.Join(installPath, "binaries"), installPath} {
+		if t := newestFileIn(dir); !t.IsZero() {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+// newestFileIn is the newest mtime among the files directly in dir. Directory
+// mtimes are not used: replacing a file in place leaves the parent untouched.
+func newestFileIn(dir string) time.Time {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return time.Time{}
+	}
+	var newest time.Time
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if fi.ModTime().After(newest) {
+			newest = fi.ModTime()
+		}
+	}
+	return newest
 }

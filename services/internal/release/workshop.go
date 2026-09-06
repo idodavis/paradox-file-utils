@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	previewDir      = "workshop/previews"
-	videosRel       = "workshop/videos.txt"
+	previewDir        = "workshop/previews"
+	videosRel         = "workshop/videos.txt"
 	maxWorkshopExtras = 10
-	metadataDir     = ".metadata"
+	metadataDir       = ".metadata"
 )
 
 var youtubeIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)

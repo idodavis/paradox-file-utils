@@ -58,8 +58,8 @@ func TestParseGUITemplateIsOneAssignment(t *testing.T) {
 
 func TestParseErrors(t *testing.T) {
 	tests := []struct {
-		name, src string
-		code      ErrorCode
+		name, src  string
+		code       ErrorCode
 		recoverBar bool
 	}{
 		{"unclosed brace", "foo = {\n\tid = 1\n", ErrUnclosedBrace, false},

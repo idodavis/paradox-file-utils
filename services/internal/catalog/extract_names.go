@@ -1,11 +1,9 @@
-// extract_names.go harvests ephemeral names, script params, game-rule settings,
-// and convention loc refs — kept out of extract.go.
+// extract_names.go harvests ephemeral names, script params, and convention
+// loc refs — kept out of extract.go.
 
 package catalog
 
 import (
-	"strings"
-
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
 )
@@ -30,7 +28,7 @@ func extractScriptNames(
 				continue
 			}
 			if !a.Key.Quoted {
-				if r, ok := game.ScriptName(gameID, a.Key.Text); ok {
+				if r, ok := jomini.ScriptName(a.Key.Text); ok {
 					name, start, end, found := scriptNameSpan(a, r.InnerKey)
 					if found && name != "" {
 						if r.IsDef {
@@ -48,17 +46,18 @@ func extractScriptNames(
 					}
 				}
 				if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted {
-					if p, ok := game.ParsePrefixed(sc.Text); ok {
-						if kind := game.PrefixKind(p.Prefix); kind != "" {
-							refs = append(refs, Ref{
-								Key: p.Name, Kind: kind, Path: path,
-								Line:  li.PositionAt(sc.Range.Start).Line,
-								Start: sc.Range.Start + p.NameOff,
-								End:   sc.Range.Start + p.NameOff + len(p.Name),
-							})
+					if p, ok := jomini.ParsePrefixed(sc.Text); ok {
+						kind := jomini.PrefixKind(p.Prefix)
+						if kind == "" {
+							kind = p.Prefix
 						}
-					} else if kind, id, ok := game.ParseTyped(gameID, sc.Text); ok &&
-						game.RefFieldKind(gameID, a.Key.Text) == "" {
+						refs = append(refs, Ref{
+							Key: p.Name, Kind: kind, Path: path,
+							Line:  li.PositionAt(sc.Range.Start).Line,
+							Start: sc.Range.Start + p.NameOff,
+							End:   sc.Range.Start + p.NameOff + len(p.Name),
+						})
+					} else if kind, id, ok := game.ParseTyped(gameID, sc.Text); ok {
 						refs = append(refs, Ref{
 							Key: id, Kind: kind, Path: path,
 							Line:  li.PositionAt(sc.Range.Start).Line,
@@ -78,7 +77,7 @@ func extractScriptNames(
 
 // extractScriptParams harvests $NAME$ macro defs/refs and call-site TARGET = refs.
 func extractScriptParams(
-	_ string, root *jomini.Root, li *jomini.LineIndex, path, origin string,
+	root *jomini.Root, li *jomini.LineIndex, path, origin string,
 	existing []Def,
 ) (defs []Def, refs []Ref) {
 	if root == nil {
@@ -142,8 +141,11 @@ func extractScriptParams(
 func scriptedMacroKeys(defs []Def) map[string]bool {
 	out := map[string]bool{}
 	for _, d := range defs {
-		switch game.CanonicalKind(d.Kind) {
-		case "scripted_trigger", "scripted_effect", "scripted_modifier", "script_value":
+		k := jomini.CanonicalKind(d.Kind)
+		if jomini.IsEphemeral(k) || k == "loc_key" || k == "namespace" || k == "gui_type" {
+			continue
+		}
+		if d.Key != "" {
 			out[d.Key] = true
 		}
 	}
@@ -243,39 +245,6 @@ func isParamByte(c byte, first bool) bool {
 		(c >= '0' && c <= '9')
 }
 
-// extractGameRuleSettings harvests option keys inside game_rule bodies.
-func extractGameRuleSettings(
-	root *jomini.Root, li *jomini.LineIndex, path, origin string,
-) []Def {
-	if root == nil {
-		return nil
-	}
-	var out []Def
-	for _, st := range root.Statements {
-		a, ok := st.(*jomini.Assignment)
-		if !ok || a.Key.Quoted {
-			continue
-		}
-		b := jomini.BlockOf(a.Value)
-		if b == nil {
-			continue
-		}
-		for _, inner := range b.Statements {
-			ia, ok := inner.(*jomini.Assignment)
-			if !ok || ia.Key.Quoted || jomini.BlockOf(ia.Value) == nil {
-				continue
-			}
-			key := strings.ToLower(ia.Key.Text)
-			if key == "default" || key == "categories" || key == "flag" {
-				continue
-			}
-			out = append(out, makeDef("game_rule_setting", ia.Key.Text, path, origin,
-				ia.Key.Range, li))
-		}
-	}
-	return out
-}
-
 // scriptNameSpan returns the name token span for a ScriptName assignment.
 // Scalar RHS uses the scalar; a block uses InnerKey (flag/name) when set.
 func scriptNameSpan(a *jomini.Assignment, innerKey string) (name string, start, end int, ok bool) {
@@ -305,7 +274,7 @@ func scriptNameSpan(a *jomini.Assignment, innerKey string) (name string, start, 
 
 // scriptNameValue is the hover RHS for a ScriptName def. Scalar saves
 // (save_scope_as) have no value; their hover body is the ancestor scope expr.
-func scriptNameValue(a *jomini.Assignment, r game.ScriptNameRule) string {
+func scriptNameValue(a *jomini.Assignment, r jomini.ScriptNameRule) string {
 	if r.Kind == "saved_scope" && r.InnerKey == "" {
 		return ""
 	}
@@ -329,44 +298,19 @@ func scriptNameValue(a *jomini.Assignment, r game.ScriptNameRule) string {
 }
 
 func conventionLocRefs(
-	root *jomini.Root, li *jomini.LineIndex, path string, defs []Def, kind string,
+	li *jomini.LineIndex, path string, defs []Def, derived *Derived,
 ) []Ref {
+	if derived == nil || li == nil {
+		return nil
+	}
 	var out []Ref
-	add := func(key string, start, end int) {
-		if key == "" {
-			return
-		}
-		out = append(out, Ref{
-			Key: key, Kind: "loc-convention", Path: path,
-			Line: li.PositionAt(start).Line, Start: start, End: end,
-		})
-	}
-	ck := game.CanonicalKind(kind)
 	for _, d := range defs {
-		for _, key := range game.ConventionLocKeys(d.Kind, d.Key) {
-			add(key, d.Start, d.End)
-		}
-	}
-	if (ck != "game_rules" && ck != "game_rule") || root == nil {
-		return out
-	}
-	for _, st := range root.Statements {
-		a, ok := st.(*jomini.Assignment)
-		if !ok {
-			continue
-		}
-		b := jomini.BlockOf(a.Value)
-		if b == nil {
-			continue
-		}
-		for _, inner := range b.Statements {
-			ia, ok := inner.(*jomini.Assignment)
-			if !ok || ia.Key.Quoted || jomini.BlockOf(ia.Value) == nil {
-				continue
-			}
-			key := ia.Key.Text
-			add("setting_"+key, ia.Key.Range.Start, ia.Key.Range.End)
-			add("setting_"+key+"_desc", ia.Key.Range.Start, ia.Key.Range.End)
+		pat := derived.locConvention(d.Kind)
+		for _, key := range ConventionKeys(d.Kind, d.Key, pat) {
+			out = append(out, Ref{
+				Key: key, Kind: "loc-convention", Path: path,
+				Line: li.PositionAt(d.Start).Line, Start: d.Start, End: d.End,
+			})
 		}
 	}
 	return out
@@ -377,8 +321,8 @@ func conventionLocRefs(
 func dropEphemeralDefs(defs []Def) []Def {
 	out := make([]Def, 0, len(defs))
 	for _, d := range defs {
-		k := game.CanonicalKind(d.Kind)
-		if game.IsEphemeral(k) && k != "script_param" {
+		k := jomini.CanonicalKind(d.Kind)
+		if jomini.IsEphemeral(k) && k != "script_param" {
 			continue
 		}
 		out = append(out, d)

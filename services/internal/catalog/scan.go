@@ -55,9 +55,15 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	progress(onProgress, 5, "listing files")
 	inv := gather(scriptRoots(info, req.InstallPath))
 
+	// The declared type system is read first: binding prefixes to databases
+	// needs it during the walk, not after. Live dumps win and refresh PMT's
+	// archived copy; the archive stands in when the user's have been removed.
+	docDirs := scriptDocsDirs(req.GameID, req.InstallPath)
+	schema, _ := loadSchema(req.InstallID, version, docDirs)
+
 	progress(onProgress, 15, "parsing script")
 	files := append(append([]fileRef{}, inv.script...), inv.gui...)
-	acc, err := collectExtracts(ctx, req.GameID, files, true, nil)
+	acc, derived, dataFns, err := collectExtracts(ctx, req.GameID, files, true, nil, schema)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -69,7 +75,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	}
 
 	progress(onProgress, 80, "reading game info")
-	fieldInfo, fieldByKind, docStructs := harvestGameInfo(req.GameID, inv.info)
+	fieldInfo, fieldByKind, kindInfo, docStructs := harvestGameInfo(req.GameID, inv.info)
 	for kind, keys := range docStructs {
 		set := acc.structures[kind]
 		if set == nil {
@@ -83,7 +89,21 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		}
 	}
 
-	kinds := VoteFieldValueKinds(acc.fieldRHS, acc.defs)
+	kinds := deriveFieldValueKinds(acc.fieldRHS, acc.defs)
+	if derived != nil {
+		derived.FieldValueKinds = kinds
+	}
+	// Effects and triggers are read from the game's own script_docs and live on
+	// c.Schema alone; the corpus never contributes one. Inferring them by
+	// position elected every $PARAM$ substitution site as an effect: on CK3 that
+	// turned 1,905 real effects into 10,337 completion entries, 82% of them
+	// noise like `$CHARACTER$.culture`. Data functions are harvested in the
+	// first corpus pass, where the source text is already in hand.
+	var locSites map[string]LocEntry
+	if vloc != nil {
+		locSites = vloc.Sites
+	}
+
 	c := &VanillaCache{
 		FormatVersion:    CacheFormatVersion,
 		InstallID:        req.InstallID,
@@ -94,9 +114,16 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		Defs:             dropEphemeralDefs(acc.defs),
 		Edges:            acc.edges,
 		LocRefs:          append(locKindRefs(acc.refs), locKindRefs(locFileRefs)...),
-		CallRefs:         callKindRefs(acc.refs),
+		CallRefs:         macroCallRefs(acc.refs),
 		FieldValueKinds:  kinds,
-		FieldEnumsByKind: VoteFieldEnums(acc.fieldRHSByKind, kinds),
+		FieldEnumsByKind: deriveFieldEnums(acc.fieldRHSByKind, kinds),
+		PrefixKinds:      derived.PrefixKinds,
+		KindScope:        derived.KindScope,
+		FireKeys:         derived.FireKeys,
+		NestedShapes:     derived.NestedShapes,
+		Wrappers:         sortedKeys(derived.Wrappers),
+		LocConventions:   deriveLocConventions(acc.defs, locKeySet(locSites)),
+		KindInfo:         kindInfo,
 		FieldInfo:        fieldInfo,
 		FieldInfoByKind:  fieldByKind,
 		Structures:       keysByCount(acc.structures),
@@ -104,29 +131,44 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		Vocabulary:       sortedKeys(acc.vocab),
 		GUITypes:         sortedKeys(acc.guiTypes),
 		GUIProps:         sortedKeys(acc.guiProps),
+		DataFunctions:    sortedKeys(dataFns),
 		MetaKeys:         readMetaKeys(req.InstallPath, inv.meta),
 	}
 
 	progress(onProgress, 90, "reading script_docs")
-	docsDir := scriptDocsDir(req.GameID, req.InstallPath)
-	enrichScriptDocs(docsDir, c)
-	enrichDataTypes(docsDir, c)
+	c.Schema = schema
+	for _, dir := range docDirs {
+		enrichDataTypes(dir, c)
+	}
 	PrepareCache(c)
 
 	progress(onProgress, 100, "done")
 	return c, vloc, nil
 }
 
-func scriptDocsDir(gameID, installPath string) string {
+func scriptDocsDirs(gameID, installPath string) []string {
 	info := game.Get(gameID)
 	if info == nil {
-		return ""
+		return nil
 	}
 	ud := game.UserDataDir(gameID, installPath)
 	if ud == "" {
-		return ""
+		return nil
 	}
-	return filepath.Join(ud, info.ScriptDocsSubdir)
+	seen := map[string]bool{}
+	var out []string
+	for _, sub := range []string{info.ScriptDocsSubdir, "docs", "logs"} {
+		if sub == "" {
+			continue
+		}
+		p := filepath.Join(ud, sub)
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
 }
 
 func scriptRoots(info *game.GameInfo, installPath string) []string {
@@ -167,6 +209,13 @@ func ClassifyRel(rel, name string) string {
 	case lower == "metadata.json":
 		return "meta"
 	case strings.HasSuffix(lower, ".txt") && !strings.HasPrefix(name, "_"):
+		if !strings.Contains(slash, "/") {
+			// Loose .txt at the script root is engine bookkeeping, not script:
+			// checksum_manifest.txt, credits.txt, compound_settings.txt. Parsing
+			// the manifest as Jomini produced fire edges for "common", "events"
+			// and "history". Real script always sits in a content folder.
+			return ""
+		}
 		return "script"
 	}
 	return ""
@@ -291,35 +340,263 @@ func (a *accum) merge(ex FileExtract) {
 	a.cands = append(a.cands, ex.Cands...)
 }
 
-func walkFiles(ctx context.Context, files []fileRef, fn func(fileRef) error) error {
+// walkN runs fn(0..n-1) with scanConcurrency, cancelling siblings on error.
+func walkN(ctx context.Context, n int, fn func(i int) error) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(scanConcurrency)
-	for _, f := range files {
+	for i := range n {
 		g.Go(func() error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			return fn(f)
+			return fn(i)
 		})
 	}
 	return g.Wait()
 }
 
+func walkFiles(ctx context.Context, files []fileRef, fn func(fileRef) error) error {
+	return walkN(ctx, len(files), func(i int) error {
+		return fn(files[i])
+	})
+}
+
+// collectExtracts parses files and derives the install-only facts. schema is the
+// game's declared type system, used to bind prefixes to databases; it comes from
+// the cache for mods and is read up front for a vanilla scan.
+// collectExtracts harvests a whole corpus in two streaming passes.
+//
+// The first pass needs no global knowledge and produces the defs; the second
+// needs the derived facts, which need every def, so it cannot be folded into the
+// first. Neither retains a parse tree: holding all 4,551 CK3 trees at once cost
+// 4.30 GB and drove a scan to an 8.06 GB peak, while re-reading and re-parsing
+// the whole install costs about half a second. Memory here is bounded by what is
+// kept — defs, refs, edges — not by the size of the install.
 func collectExtracts(
-	ctx context.Context, gameID string, files []fileRef, bodies bool, cache *VanillaCache,
-) (*accum, error) {
+	ctx context.Context, gameID string, files []fileRef, bodies bool,
+	cache *VanillaCache, schema *Schema,
+) (*accum, *Derived, map[string]bool, error) {
+	corp := corpus{ctx: ctx, gameID: gameID, files: files}
+	dataFns := map[string]bool{}
+	fieldRHS := map[string]map[string]bool{}
+	var baseDefs []Def
+	var mu sync.Mutex
+
+	// First pass gathers only what the derivations need: every def key, the
+	// values each field takes, and the data functions in the source text.
+	if err := corp.walk(func(f fileRef, res jomini.Result) error {
+		ex := extractForms(gameID, f.abs, f.rel, f.origin, res, bodies)
+		fns := harvestGetSet(res.Src)
+		mu.Lock()
+		defer mu.Unlock()
+		baseDefs = append(baseDefs, ex.Defs...)
+		maps.Copy(dataFns, fns)
+		for field, vals := range ex.FieldRHS {
+			m := fieldRHS[field]
+			if m == nil {
+				m = map[string]bool{}
+				fieldRHS[field] = m
+			}
+			maps.Copy(m, vals)
+		}
+		return nil
+	}); err != nil {
+		return nil, nil, dataFns, err
+	}
+
+	derived := derivedFromCache(cache)
+	local, cites := deriveAll(gameID, corp, baseDefs, schema, fieldRHS)
+	derived.mergeLocal(local)
+	if derived.FieldValueKinds == nil {
+		derived.FieldValueKinds = map[string]string{}
+	}
+	for k, v := range deriveFieldValueKinds(fieldRHS, baseDefs) {
+		if derived.FieldValueKinds[k] == "" {
+			derived.FieldValueKinds[k] = v
+		}
+	}
+	baseDefs = nil
+
+	// Second pass builds the model. The derived facts are complete now, so
+	// wrapper defs drop, nested defs appear, and refs and edges resolve. The
+	// citations are indexed once, corpus-wide: a nested database is routinely
+	// declared in one file and cited from another.
+	citedByKind := citedIDsByKind(derived.NestedShapes, cites, derived.PrefixKinds)
 	acc := newAccum()
-	err := walkFiles(ctx, files, func(f fileRef) error {
-		acc.merge(ingestFile(gameID, f, bodies))
+	if err := corp.walk(func(f fileRef, res jomini.Result) error {
+		ex := extractForms(gameID, f.abs, f.rel, f.origin, res, bodies)
+		ex.Defs = applyDerivedDefs(gameID, f.abs, f.origin, f.rel, res, ex.Defs, derived, citedByKind)
+		ex.Refs = append(ex.Refs, conventionLocRefs(res.Lines(), f.abs, ex.Defs, derived)...)
+		bodyRefs, edges, cands := extractRefsAndEdges(
+			gameID, res.Root, res.Lines(), f.abs, ex.Defs, derived,
+		)
+		ex.Refs = append(ex.Refs, bodyRefs...)
+		ex.Edges, ex.Cands = edges, cands
+		acc.merge(ex)
+		return nil
+	}); err != nil {
+		return acc, derived, dataFns, err
+	}
+
+	// Nested databases (CK3 faiths under religions, sub-tier landed titles) only
+	// exist as defs after applyDerivedDefs, so the first bind could not see them.
+	// Re-bind against the complete set now that it does.
+	rebind(derived, schema, acc.defs, cites)
+
+	if err := harvestLocFiles(ctx, gameID, files, bodies, acc); err != nil {
+		return acc, derived, dataFns, err
+	}
+	kinds := macroDefKinds(acc.defs, cache)
+	acc.refs = append(acc.refs, ApplyCallRefs(acc.cands, kinds)...)
+	acc.edges = append(acc.edges, ApplyCallEdges(acc.cands, macroDefKeys(acc.defs, cache))...)
+	return acc, derived, dataFns, nil
+}
+
+// harvestLocFiles merges loc YAML that loadParsed skipped (not Jomini).
+func harvestLocFiles(
+	ctx context.Context, gameID string, files []fileRef, bodies bool, acc *accum,
+) error {
+	return walkFiles(ctx, files, func(f fileRef) error {
+		if game.MatchExtract(gameID, f.rel).Mode != game.ModeLocKey {
+			return nil
+		}
+		raw, err := os.ReadFile(f.abs)
+		if err != nil {
+			return nil
+		}
+		text, _ := jomini.Decode(raw)
+		acc.merge(ExtractFile(gameID, f.abs, f.rel, f.origin, text, bodies))
 		return nil
 	})
-	kinds := CallKindSet(acc.defs, cache)
-	acc.refs = append(acc.refs, ApplyCallRefs(acc.cands, kinds)...)
-	acc.edges = append(acc.edges, ApplyCallEdges(acc.cands, EffectSet(acc.defs, cache))...)
-	return acc, err
+}
+
+// corpus is a set of script files that can be walked repeatedly. Each walk
+// re-reads and re-parses; nothing is kept between them, and fn must not retain
+// the tree it is handed. That is the whole point: a derivation that needs the
+// corpus twice costs another half-second of parsing rather than gigabytes of
+// retained syntax trees.
+//
+// inline replaces the disk walk with already-parsed files, for the live reindex
+// of a single open buffer.
+type corpus struct {
+	ctx    context.Context
+	gameID string
+	files  []fileRef
+	inline []parsedScript
+}
+
+// oneFile is a corpus of a single already-parsed file.
+func oneFile(gameID, rel string, res jomini.Result) corpus {
+	return corpus{
+		gameID: gameID,
+		inline: []parsedScript{{f: fileRef{rel: rel}, res: res}},
+	}
+}
+
+func (c corpus) walk(fn func(fileRef, jomini.Result) error) error {
+	if c.inline != nil {
+		for _, p := range c.inline {
+			if err := fn(p.f, p.res); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return walkFiles(c.ctx, c.files, func(f fileRef) error {
+		if game.MatchExtract(c.gameID, f.rel).Mode == game.ModeLocKey {
+			return nil
+		}
+		raw, err := os.ReadFile(f.abs)
+		if err != nil {
+			return nil
+		}
+		text, _ := jomini.Decode(raw)
+		return fn(f, jomini.Parse(jomini.Normalize(text)))
+	})
+}
+
+// deriveAll derives the four things no dump states: fire keys, nested databases,
+// setup wrappers and loc conventions. The prefix table is not among them — it
+// comes from bindKinds, a join against declared types, so without a schema there
+// is no prefix table at all rather than a guessed one.
+func deriveAll(
+	gameID string, corp corpus, defs []Def, s *Schema,
+	fieldRHS map[string]map[string]bool,
+) (*Derived, []typedCite) {
+	ev, oa := eventOnActionIDs(defs)
+	var cites, fieldCites []typedCite
+	fireCounts := map[string]*fireCount{}
+	wrappers := map[string]bool{}
+	owners := map[optionOwner]*ownerKeys{}
+	defKeys := defKeySet(defs)
+	var mu sync.Mutex
+	// One walk for every fact that depends only on a single file. Each corpus
+	// walk re-parses the whole install, so folding these together is worth more
+	// than any micro-optimisation inside them.
+	_ = corp.walk(func(f fileRef, res jomini.Result) error {
+		c := collectTypedCites(res.Root)
+		fc := collectFieldCites(res.Root)
+		fire := deriveFireKeys(res.Root, ev, oa)
+		wraps := deriveWrappers(gameID, f.rel, res.Root, defKeys)
+		mu.Lock()
+		defer mu.Unlock()
+		cites = append(cites, c...)
+		fieldCites = append(fieldCites, fc...)
+		fireCounts = mergeFireCounts(fireCounts, fire)
+		for _, w := range wraps {
+			wrappers[w] = true
+		}
+		addOptionOwners(gameID, f.rel, res.Root, owners)
+		return nil
+	})
+	prefix, kindScope := bindPrefixes(s, defs, cites)
+	shapes := deriveNestedShapes(gameID, corp, defs, prefix, s, cites, fieldCites)
+	// Option databases are found through fields rather than typed cites, so they
+	// are a separate join, but they harvest through the same NestedShape path.
+	shapes = append(shapes, deriveNestedOptions(gameID, defs, fieldRHS, owners)...)
+	return &Derived{
+		PrefixKinds:  prefix,
+		KindScope:    kindScope,
+		FireKeys:     resolveFireKinds(fireCounts),
+		Wrappers:     wrappers,
+		NestedShapes: shapes,
+	}, cites
+}
+
+// bindPrefixes resolves the typed-prefix table from the game's declared links.
+// Without script_docs there is no table: inferring one from usage on CK3 missed
+// every prefix that matters (culture, title, trait, character, province) while
+// inventing thirteen that are not prefixes at all, which is what made hover
+// report the wrong kind.
+func bindPrefixes(s *Schema, defs []Def, cites []typedCite) (prefixKind, kindScope map[string]string) {
+	if s.Empty() {
+		return nil, nil
+	}
+	prefixKind, kindScope, _ = bindKinds(s, defs, cites)
+	return prefixKind, kindScope
+}
+
+// rebind re-runs the type join once nested defs exist, keeping whichever
+// binding explains more of the citations.
+func rebind(v *Derived, s *Schema, defs []Def, cites []typedCite) {
+	if v == nil || s.Empty() || len(defs) == 0 {
+		return
+	}
+	prefixKind, kindScope, _ := bindKinds(s, defs, cites)
+	if len(prefixKind) == 0 {
+		return
+	}
+	if v.PrefixKinds == nil {
+		v.PrefixKinds = map[string]string{}
+	}
+	if v.KindScope == nil {
+		v.KindScope = map[string]string{}
+	}
+	maps.Copy(v.PrefixKinds, prefixKind)
+	maps.Copy(v.KindScope, kindScope)
 }
 
 func harvestLoc(
@@ -333,11 +610,17 @@ func harvestLoc(
 		}
 		refs = append(refs, fileRef{abs: f})
 	}
+	// Harvest only the workspace language and english. A CK3 install ships
+	// eleven, and writing them all cost ~790 MB of sidecars and most of the loc
+	// pass. English is kept because coverage compares against it. Any other
+	// language is harvested on first use by loadVanillaLoc.
+	want := map[string]bool{locLang: true, "english": true}
+
 	var mu sync.Mutex
 	var locRefs []Ref
 	err := walkFiles(ctx, refs, func(f fileRef) error {
 		lang := loc.LanguageFromRel(f.abs)
-		if lang == "" {
+		if lang == "" || !want[lang] {
 			return nil
 		}
 		raw, err := os.ReadFile(f.abs)
@@ -345,7 +628,7 @@ func harvestLoc(
 			return nil
 		}
 		text, _ := jomini.Decode(raw)
-		_, locd, fileRefs := ExtractLoc(f.abs, text, "")
+		_, locd, fileRefs := extractLoc(f.abs, text, "")
 		mu.Lock()
 		out := byLang[lang]
 		if out == nil {
@@ -401,15 +684,22 @@ func HarvestLoc(ctx context.Context, gameID, installPath, locLang string) (*Vani
 func harvestGameInfo(gameID string, docs []fileRef) (
 	fieldDocs map[string]string,
 	byKind map[string]map[string]string,
+	kindInfo map[string]string,
 	structs map[string]map[string]bool,
 ) {
 	fieldDocs, byKind, structs = map[string]string{}, map[string]map[string]string{}, map[string]map[string]bool{}
+	kindInfo = map[string]string{}
 	for _, f := range docs {
 		raw, err := os.ReadFile(f.abs)
 		if err != nil {
 			continue
 		}
 		kind := game.MatchExtract(gameID, f.rel).Kind
+		if kind != "" && kindInfo[kind] == "" {
+			if prose := leadingKindProse(string(raw)); prose != "" {
+				kindInfo[kind] = prose
+			}
+		}
 		for key, doc := range harvestDocFile(string(raw)) {
 			if doc != "" && fieldDocs[key] == "" {
 				fieldDocs[key] = doc
@@ -432,7 +722,7 @@ func harvestGameInfo(gameID string, docs []fileRef) (
 			}
 		}
 	}
-	return fieldDocs, byKind, structs
+	return fieldDocs, byKind, kindInfo, structs
 }
 
 // harvestDocFile extracts field prose from `_*.info`, markdown, and commented
@@ -656,208 +946,6 @@ func progress(fn func(pct int, msg string), pct int, msg string) {
 	}
 }
 
-func enrichScriptDocs(dir string, c *VanillaCache) {
-	if dir == "" {
-		return
-	}
-	entries := parseScriptDocs(dir)
-	if len(entries) == 0 {
-		return
-	}
-	effects, triggers, vocab := map[string]bool{}, map[string]bool{}, map[string]bool{}
-	for _, v := range c.Vocabulary {
-		vocab[v] = true
-	}
-	if c.TokenDoc == nil {
-		c.TokenDoc = map[string]string{}
-	}
-	if c.TokenUsage == nil {
-		c.TokenUsage = map[string]string{}
-	}
-	if c.TokenScopes == nil {
-		c.TokenScopes = map[string]string{}
-	}
-	for _, e := range entries {
-		vocab[e.name] = true
-		lk := strings.ToLower(e.name)
-		if e.doc != "" && c.TokenDoc[lk] == "" {
-			c.TokenDoc[lk] = e.doc
-		}
-		if e.usage != "" {
-			c.TokenUsage[lk] = e.usage
-		}
-		if e.scopes != "" {
-			c.TokenScopes[lk] = e.scopes
-		}
-		switch e.kind {
-		case "effect":
-			effects[e.name] = true
-		case "trigger":
-			triggers[e.name] = true
-		}
-	}
-	c.Vocabulary, c.Effects, c.Triggers = sortedKeys(vocab), sortedKeys(effects), sortedKeys(triggers)
-}
-
-type docToken struct{ name, kind, doc, usage, scopes string }
-
-func parseScriptDocs(dir string) []docToken {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	var out []docToken
-	for _, de := range entries {
-		if de.IsDir() {
-			continue
-		}
-		name := strings.ToLower(de.Name())
-		if !strings.HasSuffix(name, ".log") && !strings.HasSuffix(name, ".md") {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(dir, de.Name()))
-		if err != nil {
-			continue
-		}
-		text := string(raw)
-		kind := kindFromDocFilename(name)
-		if looksMarkdownDocs(text) {
-			out = append(out, parseMarkdownDocs(text, kind)...)
-		} else {
-			out = append(out, parseClassicDocs(text, kind)...)
-		}
-	}
-	return out
-}
-
-func looksMarkdownDocs(text string) bool {
-	for _, line := range strings.Split(text, "\n") {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "## ") {
-			return true
-		}
-		if strings.HasPrefix(t, "----") {
-			return false
-		}
-	}
-	return false
-}
-
-func kindFromDocFilename(name string) string {
-	switch {
-	case strings.Contains(name, "event_target"):
-		return "event_target"
-	case strings.Contains(name, "event_scope"):
-		return "scope_type"
-	case strings.Contains(name, "effect"):
-		return "effect"
-	case strings.Contains(name, "trigger"):
-		return "trigger"
-	case strings.Contains(name, "modif"):
-		return "modifier"
-	default:
-		return ""
-	}
-}
-
 func prose(parts []string) string {
 	return strings.TrimSpace(strings.Join(strings.Fields(strings.Join(parts, " ")), " "))
-}
-
-func stripDocMarkup(s string) string {
-	s = strings.ReplaceAll(s, "**", "")
-	s = strings.ReplaceAll(s, "*", "")
-	return strings.TrimSpace(s)
-}
-
-func splitDocMeta(parts []string) (doc, usage, scopes string) {
-	var body []string
-	var targets string
-	for _, p := range parts {
-		t := stripDocMarkup(strings.TrimSpace(p))
-		low := strings.ToLower(t)
-		switch {
-		case strings.HasPrefix(low, "usage:"):
-			usage = strings.TrimSpace(t[len("usage:"):])
-		case strings.HasPrefix(low, "supported scopes:"):
-			scopes = strings.TrimSpace(t[len("supported scopes:"):])
-		case strings.HasPrefix(low, "supported targets:"):
-			targets = strings.TrimSpace(t[len("supported targets:"):])
-		default:
-			body = append(body, p)
-		}
-	}
-	if targets != "" {
-		if scopes != "" {
-			scopes = scopes + "; targets: " + targets
-		} else {
-			scopes = targets
-		}
-	}
-	return prose(body), usage, scopes
-}
-
-func parseMarkdownDocs(text, kind string) []docToken {
-	var out []docToken
-	var cur *docToken
-	var body []string
-	flush := func() {
-		if cur == nil {
-			return
-		}
-		cur.doc, cur.usage, cur.scopes = splitDocMeta(body)
-		out = append(out, *cur)
-		cur, body = nil, body[:0]
-	}
-	for _, line := range strings.Split(text, "\n") {
-		if h := strings.TrimSpace(line); strings.HasPrefix(h, "## ") {
-			flush()
-			if m := tokenRe.FindString(strings.TrimSpace(strings.TrimLeft(h, "# "))); m != "" {
-				cur = &docToken{name: m, kind: kind}
-			}
-			continue
-		}
-		if cur != nil {
-			body = append(body, line)
-		}
-	}
-	flush()
-	return out
-}
-
-func parseClassicDocs(text, kind string) []docToken {
-	var out []docToken
-	var cur *docToken
-	var parts []string
-	flush := func() {
-		if cur == nil {
-			return
-		}
-		cur.doc, cur.usage, cur.scopes = splitDocMeta(parts)
-		out = append(out, *cur)
-		cur, parts = nil, nil
-	}
-	for _, raw := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
-		trimmed := strings.TrimSpace(raw)
-		switch {
-		case strings.HasPrefix(trimmed, "----"):
-			flush()
-		case trimmed == "":
-		case strings.Contains(strings.ToLower(trimmed), "documentation"):
-			continue
-		case cur == nil:
-			name := tokenRe.FindString(trimmed)
-			if name == "" {
-				continue
-			}
-			cur = &docToken{name: name, kind: kind}
-			if i := strings.Index(trimmed, " - "); i >= 0 {
-				parts = append(parts, trimmed[i+3:])
-			}
-		default:
-			parts = append(parts, trimmed)
-		}
-	}
-	flush()
-	return out
 }

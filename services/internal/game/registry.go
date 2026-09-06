@@ -1,6 +1,24 @@
-// registry.go holds the GameInfo identity table for the supported games and Get.
+// registry.go is the one file in the backend that knows the games apart.
+//
+// Everything per-game lives in the GameInfo table below — script root, stage
+// roots, descriptor format, docs folder, entry-mode prefixes, which kinds
+// resolve first-in-order — and the handful of functions under it read that
+// table rather than switching on a game id. The shared Clausewitz/Jomini
+// grammar those functions build on is in parser/jomini, which knows nothing
+// about any game; install discovery is in detect.go, which reads this table.
+//
+// The membership test for anything added here: does its behaviour differ
+// between CK3, Victoria 3 and EU5? If not, it is language or filesystem work
+// and belongs elsewhere, whatever parameters it happens to take.
 
 package game
+
+import (
+	"slices"
+	"strings"
+
+	"paradox-modding-tools/services/internal/parser/jomini"
+)
 
 // OriginVanilla is the session/IDE origin id for game files (not a cache filename).
 const OriginVanilla = "vanilla"
@@ -35,8 +53,11 @@ type GameInfo struct {
 
 	SteamAppID int `json:"steamAppId,omitempty"`
 
-	// FirstWins is the FIOS sentence for Conflicts / Settings load-order copy.
-	FirstWins string `json:"firstWins,omitempty"`
+	// FIOSKinds are the kinds this game resolves first-in-order; every other
+	// kind is last-in-order. Backend-only — FirstWins is the same fact as the
+	// sentence the Conflicts and Settings pages show.
+	FIOSKinds []string `json:"-"`
+	FirstWins string   `json:"firstWins,omitempty"`
 }
 
 // GameList is the Wails payload for ListGames (consts are not exported).
@@ -57,6 +78,7 @@ var registry = map[string]*GameInfo{
 		DocsFolderName:   "Crusader Kings III",
 		ScriptDocsSubdir: "logs",
 		SteamAppID:       1158310,
+		FIOSKinds:        []string{"gui_type"},
 		FirstWins:        "GUI types and templates are first-wins.",
 	},
 	"vic3": {
@@ -70,6 +92,7 @@ var registry = map[string]*GameInfo{
 		ScriptDocsSubdir: "docs",
 		EntryModes:       []string{"INJECT", "REPLACE"},
 		SteamAppID:       529340,
+		FIOSKinds:        []string{"gui_type", "event"},
 		FirstWins:        "GUI types, templates, and events are first-wins.",
 	},
 	"eu5": {
@@ -84,6 +107,7 @@ var registry = map[string]*GameInfo{
 		ScriptDocsSubdir: "docs",
 		EntryModes:       []string{"INJECT", "REPLACE", "TRY_INJECT", "TRY_REPLACE", "INJECT_OR_CREATE", "REPLACE_OR_CREATE"},
 		SteamAppID:       3450310,
+		FIOSKinds:        []string{"event"},
 		FirstWins:        "Events are first-wins; GUI types last-wins.",
 	},
 }
@@ -96,4 +120,147 @@ func Get(id string) *GameInfo {
 // All returns supported games in UI order (ck3, eu5, vic3).
 func All() []*GameInfo {
 	return []*GameInfo{registry["ck3"], registry["eu5"], registry["vic3"]}
+}
+
+// ExtractMode names how definition keys are read out of a file.
+type ExtractMode string
+
+const (
+	ModeTopLevelKey ExtractMode = "top-level-key" // root `key = { ... }`
+	ModeEventID     ExtractMode = "event-id"      // `namespace.1 = { ... }`
+	ModeGUIType     ExtractMode = "gui-type"      // GUI `type X = ...` / `template X { }`
+	ModeLocKey      ExtractMode = "loc-key"       // localization `key: "..."`
+)
+
+// ExtractRule says what kind of definitions a file yields and how to read them.
+type ExtractRule struct {
+	Kind string
+	Mode ExtractMode
+}
+
+// MatchExtract maps a file path (relative to the game/mod script root) to its
+// extract rule. The default is "parent folder name => kind, top-level-key";
+// events/gui/localization override that. EU5 stage-root prefixes are ignored.
+func MatchExtract(gameID, relPath string) ExtractRule {
+	segs := stripStageRoot(gameID, pathSegments(relPath))
+	if slices.Contains(segs, "localization") {
+		return ExtractRule{Kind: "loc_key", Mode: ModeLocKey}
+	}
+	if isModFile(relPath) {
+		return ExtractRule{Kind: "mod_descriptor", Mode: ModeTopLevelKey}
+	}
+	parent := parentFolder(segs)
+	switch {
+	case parent == "events" || slices.Contains(segs, "events"):
+		return ExtractRule{Kind: "event", Mode: ModeEventID}
+	case parent == "on_action" || parent == "on_actions" ||
+		slices.Contains(segs, "on_action") || slices.Contains(segs, "on_actions"):
+		return ExtractRule{Kind: "on_action", Mode: ModeTopLevelKey}
+	case parent == "gui" || strings.HasSuffix(strings.ToLower(relPath), ".gui"):
+		return ExtractRule{Kind: "gui_type", Mode: ModeGUIType}
+	default:
+		return ExtractRule{Kind: jomini.CanonicalKind(parent), Mode: ModeTopLevelKey}
+	}
+}
+
+// isModFile reports whether relPath is a Paradox .mod descriptor.
+func isModFile(relPath string) bool {
+	p := strings.ReplaceAll(relPath, "\\", "/")
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		p = p[i+1:]
+	}
+	return strings.HasSuffix(strings.ToLower(p), ".mod")
+}
+
+// IsFIOS reports whether kind resolves first-in-order for this game.
+// Empty/unknown gameID keeps the historical gui_type-only default.
+func IsFIOS(gameID, kind string) bool {
+	if g := Get(gameID); g != nil {
+		return slices.Contains(g.FIOSKinds, kind)
+	}
+	return kind == "gui_type"
+}
+
+// ParseTyped splits `culture:english` into a harvested kind and id, rejecting
+// the prefixes this game spends on entry modes. Callers with a game id should
+// use this rather than jomini.ParseTyped, or EU5's `INJECT:foo` harvests a
+// database named "inject".
+func ParseTyped(gameID, text string) (kind, id string, ok bool) {
+	if i := strings.IndexByte(text, ':'); i > 0 && isEntryMode(gameID, text[:i]) {
+		return "", "", false
+	}
+	return jomini.ParseTyped(text)
+}
+
+// KeyIdentity canonicalizes a raw key for matching/merge: trims whitespace and
+// surrounding quotes, and strips an EU5 entry-mode prefix (INJECT:foo -> foo).
+// gameID "" (e.g. merge, which is game-agnostic) strips any known EU5 mode.
+func KeyIdentity(gameID, key string) string {
+	key = trimQuotes(strings.TrimSpace(key))
+	if i := strings.IndexByte(key, ':'); i > 0 && isEntryMode(gameID, key[:i]) {
+		return key[i+1:]
+	}
+	return key
+}
+
+// anyEntryMode is the union of entry-mode prefixes across the registry, used
+// when the game is unknown (merge passes gameID "").
+var anyEntryMode = func() map[string]bool {
+	m := map[string]bool{}
+	for _, g := range registry {
+		for _, mode := range g.EntryModes {
+			m[mode] = true
+		}
+	}
+	return m
+}()
+
+func isEntryMode(gameID, tok string) bool {
+	if g := Get(gameID); g != nil {
+		return slices.Contains(g.EntryModes, tok)
+	}
+	return anyEntryMode[tok]
+}
+
+// trimQuotes removes a single pair of surrounding single or double quotes.
+func trimQuotes(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
+// pathSegments splits a slash- or backslash-separated path into non-empty segments.
+func pathSegments(p string) []string {
+	raw := strings.Split(strings.ReplaceAll(p, "\\", "/"), "/")
+	out := make([]string, 0, len(raw))
+	for _, s := range raw {
+		if s != "" && s != "." {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// parentFolder returns the directory segment immediately containing the file.
+func parentFolder(segs []string) string {
+	if len(segs) >= 2 {
+		return segs[len(segs)-2]
+	}
+	return ""
+}
+
+// stripStageRoot drops a leading EU5 stage-root segment (in_game, etc.) so extract
+// rules see the same folder layout across games.
+func stripStageRoot(gameID string, segs []string) []string {
+	g := Get(gameID)
+	if g == nil || len(segs) == 0 {
+		return segs
+	}
+	if slices.Contains(g.StageRoots, segs[0]) {
+		return segs[1:]
+	}
+	return segs
 }

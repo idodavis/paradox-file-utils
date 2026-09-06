@@ -114,8 +114,10 @@ func TestQueries(t *testing.T) {
 		InstallPath: "/game", GameVersion: "1.16",
 		Structures: map[string][]string{"event": {"immediate"}},
 		Vocabulary: []string{"add_gold"},
-		Effects:    []string{"add_gold"},
-		FieldInfo:  map[string]string{"immediate": "runs first"},
+		Schema: &catalog.Schema{
+			Effects: map[string]catalog.EngineToken{"add_gold": {}},
+		},
+		FieldInfo: map[string]string{"immediate": "runs first"},
 	}
 	s := NewWithLoc("ws", "ck3", "english", cache, nil, []catalog.ModInput{
 		{Origin: "mod", Root: root, Name: "M", Order: 0},
@@ -132,8 +134,9 @@ func TestQueries(t *testing.T) {
 	v, locValOK := s.DefaultLoc("k.t")
 	_, locFileOK := s.LocFile("mod", "english")
 	must(t, locOK && locValOK && v == "Hi" && locFileOK, "loc site/default/file")
-	must(t, len(s.LocKeys()) > 0 && s.LocByLang()["english"]["k.t"].Value == "Hi",
-		"LocKeys/LocByLang")
+	must(t, len(s.LocKeys("", 80)) > 0 && len(s.LocKeys("k.", 80)) > 0 &&
+		len(s.LocKeys("zzz", 80)) == 0 &&
+		s.LocByLang()["english"]["k.t"].Value == "Hi", "LocKeys/LocByLang")
 	must(t, len(s.RefsTo("k.t")) > 0 && len(s.RefsInFile(ev)) > 0 && len(s.LocRefs()) > 0, "refs")
 	must(t, len(s.EdgesFrom("t.1")) > 0 && len(s.EdgesTo("t.2")) > 0, "edges")
 	must(t, s.FileText(ev) != "" && s.Parsed(ev).Root != nil, "FileText/Parsed")
@@ -227,4 +230,27 @@ func TestEdgesFromConcurrent(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// The three games phrase a modifier's category list differently: CK3 joins with
+// "and", EU5 with commas plus a blanket "all" on every one of its 2,436
+// modifiers, Vic3 uses a Mask value.
+func TestModifierAreas(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"location, all", "location"},
+		{"character and province", "character or province"},
+		{"Country, , All,", "country"},
+		{"all", ""},
+		{"", ""},
+		{"state/state_region", "state or state region"},
+		{"country, country", "country"},
+	}
+	for _, c := range cases {
+		if got := strings.Join(modifierAreas(c.in), " or "); got != c.want {
+			t.Errorf("modifierAreas(%q) = %q want %q", c.in, got, c.want)
+		}
+	}
 }

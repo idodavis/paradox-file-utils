@@ -36,6 +36,7 @@ export type {
     Listing,
     PathStat,
     PublishResult,
+    ScriptDocsHealth,
     TextSearchFolder,
     TextSearchHit,
     TextSearchQuery,

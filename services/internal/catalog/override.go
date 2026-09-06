@@ -3,7 +3,10 @@
 
 package catalog
 
-import "paradox-modding-tools/services/internal/game"
+import (
+	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/parser/jomini"
+)
 
 // Contest is one contested (kind, key) without UI display fields.
 type Contest struct {
@@ -51,7 +54,7 @@ func Winner(gameID string, defs []Def, order map[string]int) *Def {
 
 func skipOverrideKind(t string) bool {
 	return t == "loc_key" || t == "mod_descriptor" || t == "namespace" ||
-		game.IsEphemeral(t)
+		jomini.IsEphemeral(t)
 }
 
 // Contests returns override rows from workspace and vanilla defs.

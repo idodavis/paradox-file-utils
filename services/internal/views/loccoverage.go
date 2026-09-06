@@ -103,7 +103,7 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 			}
 		}
 		for key, site := range entries {
-			if used[key] || inheritedKeys[key] || skipOrphanLocFile(site.file) {
+			if used[key] || inheritedKeys[key] {
 				continue
 			}
 			addIssue(lang, "orphaned", site)
@@ -183,15 +183,6 @@ func skipLocIssueFile(s *session.Session, path string) bool {
 	default:
 		return false
 	}
-}
-
-func skipOrphanLocFile(path string) bool {
-	p := strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
-	return strings.Contains(p, "game_rules") ||
-		strings.Contains(p, "game_rule") ||
-		strings.Contains(p, "message_filter") ||
-		strings.Contains(p, "/messages/") ||
-		strings.Contains(p, "messages_l_")
 }
 
 // Lookup returns the default-lang loc text and winning site for key, or nil.

@@ -1,11 +1,12 @@
 // listing.go reads and patches descriptor.mod / metadata.json and listing descriptions.
 
-package game
+package modfile
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"paradox-modding-tools/services/internal/game"
 	"path/filepath"
 	"strings"
 )
@@ -23,12 +24,12 @@ type ListingFields struct {
 
 // ReadListingFields loads CK3 .mod or Vic3/EU5 metadata.json under root.
 func ReadListingFields(gameID, root string) (ListingFields, error) {
-	path := DescriptorPath(gameID, root)
+	path := game.DescriptorPath(gameID, root)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return ListingFields{}, err
 	}
-	info := Get(gameID)
+	info := game.Get(gameID)
 	if info != nil && info.Descriptor == "metadata" {
 		return readMetadataJSON(raw)
 	}
@@ -37,12 +38,12 @@ func ReadListingFields(gameID, root string) (ListingFields, error) {
 
 // WriteListingFields patches known keys and preserves the rest of the file.
 func WriteListingFields(gameID, root string, f ListingFields) error {
-	path := DescriptorPath(gameID, root)
+	path := game.DescriptorPath(gameID, root)
 	raw, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	info := Get(gameID)
+	info := game.Get(gameID)
 	var next []byte
 	if info != nil && info.Descriptor == "metadata" {
 		next, err = patchMetadataJSON(raw, f)
@@ -85,7 +86,7 @@ func EnsureDescriptions(root, name, description string) error {
 
 // ThumbnailRel is the on-disk thumb path relative to the mod root.
 func ThumbnailRel(gameID string) string {
-	info := Get(gameID)
+	info := game.Get(gameID)
 	if info != nil && info.Descriptor == "metadata" {
 		return filepath.Join(".metadata", "thumbnail.png")
 	}
@@ -343,4 +344,12 @@ func bumpAt(v string, idx int) string {
 		}
 	}
 	return strings.Join(parts, ".")
+}
+
+// DescriptorModKeys is the descriptor.mod key list, offered as completion
+// inside a .mod file. It describes the packaging format, not the script
+// language, which is why it lives here rather than with the game rules.
+var DescriptorModKeys = []string{
+	"name", "version", "tags", "supported_version", "path",
+	"remote_file_id", "picture", "dependencies",
 }

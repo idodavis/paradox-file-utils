@@ -26,6 +26,31 @@ func extractCK3(rel, content, origin string) FileExtract {
 	return ExtractFile("ck3", filepath.FromSlash(rel), rel, origin, content, false)
 }
 
+func extractCK3Overlay(rel, content, origin string, overlay *VanillaCache) FileExtract {
+	return ExtractParsed("ck3", filepath.FromSlash(rel), rel, origin,
+		jomini.Parse(jomini.Normalize(content)), false, overlay)
+}
+
+// ck3Schema declares the scope types and links these tests rely on, matching
+// what CK3's event_scopes.log / event_targets.log actually state. Nested
+// databases are only harvested for a declared child kind, so a fixture without
+// a schema harvests none.
+func ck3Schema() *Schema {
+	return &Schema{
+		Scopes: map[string]ScopeType{
+			"faith": {}, "culture": {}, "trait": {}, "character": {},
+		},
+		Links: map[string]ScopeLink{
+			"title": {Out: "landed_title", Global: true, Data: true},
+			"faith": {Out: "faith", Global: true, Data: true},
+		},
+	}
+}
+
+func extractCK3Typed(rel, content, origin string) FileExtract {
+	return extractCK3Overlay(rel, content, origin, &VanillaCache{Schema: ck3Schema()})
+}
+
 func TestEventTitleSingleLocRef(t *testing.T) {
 	body := "namespace = test\n\ntest.1 = {\n\ttitle = k.t\n}\n"
 	ex := extractCK3("events/x.txt", body, "mod")
@@ -37,6 +62,48 @@ func TestEventTitleSingleLocRef(t *testing.T) {
 	}
 	if len(kt) != 1 {
 		t.Fatalf("k.t refs=%v", kt)
+	}
+}
+
+func TestDeriveFireKeysSkipsLocProps(t *testing.T) {
+	src := `namespace = ns
+ns.1 = {
+	title = ns.1
+	desc = ns.1.t
+	immediate = { trigger_event = ns.2 }
+}
+ns.2 = { title = ns.2.t }
+`
+	res := jomini.Parse(jomini.Normalize(src))
+	got := resolveFireKinds(deriveFireKeys(res.Root, map[string]bool{
+		"ns.1": true, "ns.2": true,
+	}, nil))
+	if got["title"] != "" || got["desc"] != "" {
+		t.Fatalf("loc props voted as fire: %v", got)
+	}
+	if got["trigger_event"] != "event" {
+		t.Fatalf("trigger_event: %v", got)
+	}
+}
+
+func TestTitleIsNotAnEventRefDespiteFireKey(t *testing.T) {
+	ex := extractCK3Overlay("events/x.txt",
+		"namespace = ns\nns.1 = {\n\ttitle = ns.1.t\n"+
+			"\tdesc = ns.1.councillor_liege_opening\n"+
+			"\timmediate = { trigger_event = ns.2 }\n}\n",
+		"mod", &VanillaCache{FireKeys: map[string]string{
+			"title": "event", "desc": "event", "trigger_event": "event",
+		}})
+	if hasRef(ex.Refs, "event", "ns.1.t") ||
+		hasRef(ex.Refs, "event", "ns.1.councillor_liege_opening") {
+		t.Fatalf("loc harvested as event: %v", ex.Refs)
+	}
+	if !hasRef(ex.Refs, "loc", "ns.1.t") ||
+		!hasRef(ex.Refs, "loc", "ns.1.councillor_liege_opening") {
+		t.Fatalf("missing loc refs: %v", ex.Refs)
+	}
+	if !hasRef(ex.Refs, "event", "ns.2") {
+		t.Fatalf("missing fire: %v", ex.Refs)
 	}
 }
 
@@ -87,6 +154,9 @@ test.1 = {
 		if !hasRef(ex.Refs, "loc", "test.1.t") || !hasRef(ex.Refs, "event", "test.2") {
 			t.Fatalf("refs=%v", ex.Refs)
 		}
+		if hasRef(ex.Refs, "event", "test.1.t") {
+			t.Fatalf("title loc harvested as event: %v", ex.Refs)
+		}
 		if !hasEdge(ex.Edges, "test.1", "test.2", "trigger_event") {
 			t.Fatalf("edges=%v", ex.Edges)
 		}
@@ -119,49 +189,47 @@ test.1 = {
 			t.Fatalf("missing loc ref: %v", ex.Refs)
 		}
 	})
-	t.Run("character flag and variable", func(t *testing.T) {
+	t.Run("variable and flag prefix", func(t *testing.T) {
 		src := `test.1 = {
 	immediate = {
 		add_character_flag = used_life
-		has_character_flag = used_life
 		set_variable = { name = foo value = 3 }
 		has_variable = foo
 		exists = var:foo
+		exists = flag:used_life
 	}
 }
 `
 		ex := extractCK3("events/x.txt", src, "modA")
-		if !findDef(ex.Defs, "character_flag", "used_life") {
-			t.Fatalf("missing character_flag def: %v", ex.Defs)
+		if findDef(ex.Defs, "character_flag", "used_life") ||
+			findDef(ex.Defs, "flag", "used_life") {
+			t.Fatalf("add_character_flag must not harvest a def: %v", ex.Defs)
 		}
-		if !hasRef(ex.Refs, "character_flag", "used_life") {
-			t.Fatalf("missing character_flag ref: %v", ex.Refs)
+		if !hasRef(ex.Refs, "flag", "used_life") {
+			t.Fatalf("missing flag: ref: %v", ex.Refs)
 		}
-		if !findDef(ex.Defs, "variable", "foo") {
-			t.Fatalf("missing variable def: %v", ex.Defs)
+		if !findDef(ex.Defs, "var", "foo") {
+			t.Fatalf("missing var def: %v", ex.Defs)
 		}
 		for _, d := range ex.Defs {
-			if d.Kind == "variable" && d.Key == "foo" && d.Value != "3" {
-				t.Fatalf("variable Value=%q want 3", d.Value)
-			}
-			if d.Kind == "character_flag" && d.Key == "used_life" && d.Value != "yes" {
-				t.Fatalf("flag Value=%q want yes", d.Value)
+			if d.Kind == "var" && d.Key == "foo" && d.Value != "3" {
+				t.Fatalf("var Value=%q want 3", d.Value)
 			}
 		}
-		if !hasRef(ex.Refs, "variable", "foo") {
-			t.Fatalf("missing variable ref: %v", ex.Refs)
+		if !hasRef(ex.Refs, "var", "foo") {
+			t.Fatalf("missing var ref: %v", ex.Refs)
 		}
 	})
-	t.Run("vic3 has no character_flag", func(t *testing.T) {
+	t.Run("add_character_flag is not ScriptName", func(t *testing.T) {
 		src := "e = { immediate = { add_character_flag = x set_variable = y } }\n"
 		ex := ExtractFile("vic3", "events/x.txt", "events/x.txt", "m", src, false)
 		for _, d := range ex.Defs {
-			if d.Kind == "character_flag" {
-				t.Fatalf("vic3 must not harvest character_flag: %+v", d)
+			if d.Kind == "character_flag" || d.Kind == "flag" {
+				t.Fatalf("must not harvest flag from add_character_flag: %+v", d)
 			}
 		}
-		if !findDef(ex.Defs, "variable", "y") {
-			t.Fatalf("vic3 must still harvest variable: %v", ex.Defs)
+		if !findDef(ex.Defs, "var", "y") {
+			t.Fatalf("must still harvest var: %v", ex.Defs)
 		}
 	})
 	t.Run("coa and flag_definition kinds", func(t *testing.T) {
@@ -228,7 +296,7 @@ real_effect = {
 `
 		rel := "common/scripted_effects/e.txt"
 		ex := extractCK3(rel, content, "modA")
-		edges := append(append([]Edge{}, ex.Edges...), ApplyCallEdges(ex.Cands, EffectSet(ex.Defs, nil))...)
+		edges := append(append([]Edge{}, ex.Edges...), ApplyCallEdges(ex.Cands, macroDefKeys(ex.Defs, nil))...)
 		var call, fake, fire bool
 		for _, e := range edges {
 			call = call || (e.Kind == EdgeKindCall && e.From == "test.1" && e.To == "real_effect")
@@ -238,11 +306,11 @@ real_effect = {
 		if !call || fake || !fire {
 			t.Fatalf("call=%v fake=%v fire=%v edges=%v", call, fake, fire, edges)
 		}
-		refs := ApplyCallRefs(ex.Cands, CallKindSet(ex.Defs, nil))
-		if !hasRef(refs, "scripted_effect", "real_effect") {
+		refs := ApplyCallRefs(ex.Cands, macroDefKinds(ex.Defs, nil))
+		if !hasRef(refs, "scripted_effects", "real_effect") {
 			t.Fatalf("call refs=%v want real_effect", refs)
 		}
-		if hasRef(refs, "scripted_effect", "not_an_effect") {
+		if hasRef(refs, "scripted_effects", "not_an_effect") {
 			t.Fatalf("engine-like key must not be a call ref: %v", refs)
 		}
 		for _, e := range ex.Edges {
@@ -273,7 +341,9 @@ real_effect = {
 	}
 }
 `
-		ex := extractCK3("events/x.txt", src, "mod")
+		ex := extractCK3Overlay("events/x.txt", src, "mod", &VanillaCache{
+			FieldValueKinds: map[string]string{"culture": "culture"},
+		})
 		if !hasRef(ex.Refs, "culture", "english") {
 			t.Fatalf("bare culture = english: %v", ex.Refs)
 		}
@@ -300,25 +370,25 @@ real_effect = {
 		}
 	})
 	t.Run("nested faiths and target_titles", func(t *testing.T) {
-		rel := extractCK3("common/religion/religion_types/r.txt",
-			"christianity_religion = {\n\tfaiths = {\n\t\tcatholic = { color = { 1 1 1 } }\n\t}\n}\n",
+		rel := extractCK3Typed("common/religion/religion_types/r.txt",
+			"christianity_religion = {\n\tfaiths = {\n\t\tcatholic = { color = { 1 1 1 } exists = faith:catholic }\n\t}\n}\n",
 			"mod")
-		if !findDef(rel.Defs, "religion", "christianity_religion") ||
+		if !findDef(rel.Defs, "religion_types", "christianity_religion") ||
 			!findDef(rel.Defs, "faith", "catholic") {
 			t.Fatalf("religion tree: %v", rel.Defs)
 		}
 		if findDef(rel.Defs, "faith", "color") {
 			t.Fatal("color must not be a faith")
 		}
-		oldRel := extractCK3("common/religion/religions/r.txt",
-			"christianity_religion = {\n\tfaiths = {\n\t\torthodox = { color = { 1 1 1 } }\n\t}\n}\n",
+		oldRel := extractCK3Typed("common/religion/religions/r.txt",
+			"christianity_religion = {\n\tfaiths = {\n\t\torthodox = { color = { 1 1 1 } exists = faith:orthodox }\n\t}\n}\n",
 			"mod")
 		if !findDef(oldRel.Defs, "faith", "orthodox") {
 			t.Fatalf("legacy religions folder: %v", oldRel.Defs)
 		}
-		ex := extractCK3("events/x.txt",
+		ex := extractCK3Overlay("events/x.txt",
 			"e.1 = { immediate = { faith = catholic faith = faith:orthodox } }\n",
-			"mod")
+			"mod", &VanillaCache{FieldValueKinds: map[string]string{"faith": "faith"}})
 		if !hasRef(ex.Refs, "faith", "catholic") || !hasRef(ex.Refs, "faith", "orthodox") {
 			t.Fatalf("faith cites: %v", ex.Refs)
 		}
@@ -326,13 +396,13 @@ real_effect = {
 			t.Fatalf("typed faith stored raw: %v", ex.Refs)
 		}
 		cb := extractCK3("common/casus_belli_types/c.txt",
-			"my_cb = { titles = target_titles titles = e_hre "+
+			"my_cb = { titles = target_titles titles = titles:e_hre "+
 				"war_name = \"HRE_WAR\" cb_name = \"HRE_CB\" }\n",
 			"mod")
-		if hasRef(cb.Refs, "title", "target_titles") {
+		if hasRef(cb.Refs, "title", "target_titles") || hasRef(cb.Refs, "titles", "target_titles") {
 			t.Fatalf("target_titles harvested: %v", cb.Refs)
 		}
-		if !hasRef(cb.Refs, "title", "e_hre") {
+		if !hasRef(cb.Refs, "titles", "e_hre") {
 			t.Fatalf("missing title cite: %v", cb.Refs)
 		}
 		if !hasRef(cb.Refs, "loc", "HRE_WAR") {
@@ -348,13 +418,13 @@ real_effect = {
 		if hasRef(ex.Refs, "title", "titles:e_x") {
 			t.Fatalf("typed title cite stored raw: %v", ex.Refs)
 		}
-		if !hasRef(ex.Refs, "title", "e_x") {
-			t.Fatalf("want titles:e_x as title id: %v", ex.Refs)
+		if !hasRef(ex.Refs, "titles", "e_x") {
+			t.Fatalf("want titles:e_x as titles id: %v", ex.Refs)
 		}
-		tree := extractCK3("common/landed_titles/t.txt",
-			"e_x = {\n\tcolor = { 1 2 3 }\n\tk_x = {\n\t\tc_x = { }\n\t}\n}\n",
+		tree := extractCK3Typed("common/landed_titles/t.txt",
+			"e_x = {\n\tcolor = { 1 2 3 }\n\texists = title:k_x\n\tk_x = {\n\t\tc_x = { exists = title:c_x }\n\t}\n}\n",
 			"mod")
-		if !findDef(tree.Defs, "title", "e_x") ||
+		if !findDef(tree.Defs, "landed_titles", "e_x") ||
 			!findDef(tree.Defs, "title", "k_x") ||
 			!findDef(tree.Defs, "title", "c_x") {
 			t.Fatalf("nested titles: %v", tree.Defs)
@@ -382,37 +452,51 @@ real_effect = {
 			t.Fatalf("script_value:my_val: %v", ex.Refs)
 		}
 	})
-	t.Run("game_rule_setting defs", func(t *testing.T) {
-		ex := extractCK3("common/game_rules/x.txt",
-			"my_rule = {\n\tdefault = a\n\tsuf_quieter = { }\n}\n", "mod")
-		if !findDef(ex.Defs, "game_rule_setting", "suf_quieter") {
-			t.Fatalf("missing setting def: %v", ex.Defs)
+	// `game_rule_setting:` parses as a typed cite only because the lexer accepts
+	// any `word:word`; CK3 declares no such scope type or link. Harvesting a
+	// nested database on that basis is what minted 342,138 phantom defs across
+	// kinds like `SKILL` and `$SKILL$`, so an undeclared child kind is not
+	// harvested — and on the real CK3 install this shape produced zero defs
+	// anyway, so nothing real is lost.
+	t.Run("undeclared child kind is not a nested database", func(t *testing.T) {
+		ex := extractCK3Typed("common/game_rules/x.txt",
+			"my_rule = {\n\tdefault = a\n\tsuf_quieter = { }\n\texists = game_rule_setting:suf_quieter\n}\n", "mod")
+		if findDef(ex.Defs, "game_rule_setting", "suf_quieter") {
+			t.Fatalf("undeclared child kind harvested: %v", ex.Defs)
+		}
+		if !findDef(ex.Defs, "game_rules", "my_rule") {
+			t.Fatalf("the rule itself must still be a def: %v", ex.Defs)
 		}
 	})
 	t.Run("decision convention keys", func(t *testing.T) {
-		ex := extractCK3("common/decisions/x.txt",
-			"ai_mogyer_adopt_christianity = {\n"+
-				"\tselection_tooltip = ai_mogyer_adopt_christianity_tooltip\n}\n",
-			"mod")
-		if !hasRef(ex.Refs, "loc-convention", "ai_mogyer_adopt_christianity_tooltip") ||
-			!hasRef(ex.Refs, "loc-convention", "ai_mogyer_adopt_christianity_confirm") {
+		id := "ai_mogyer_adopt_christianity"
+		ex := extractCK3Overlay("common/decisions/x.txt",
+			id+" = {\n\tselection_tooltip = "+id+"_tooltip\n}\n",
+			"mod", &VanillaCache{LocConventions: map[string]string{"decisions": "id_desc"}})
+		if !hasRef(ex.Refs, "loc-convention", id) ||
+			!hasRef(ex.Refs, "loc-convention", id+"_desc") {
 			t.Fatalf("missing decision convention loc: %v", ex.Refs)
+		}
+		if hasRef(ex.Refs, "loc-convention", id+"_confirm") {
+			t.Fatalf("encyclopedia extra convention: %v", ex.Refs)
 		}
 		if !hasRef(ex.Refs, "loc", "ai_mogyer_adopt_christianity_tooltip") {
 			t.Fatalf("selection_tooltip not harvested: %v", ex.Refs)
 		}
 	})
 	t.Run("game_rules convention keys", func(t *testing.T) {
-		ex := extractCK3("common/game_rules/x.txt",
-			"my_rule = {\n\tdefault = a\n\ta = { }\n}\n", "mod")
+		ex := extractCK3Overlay("common/game_rules/x.txt",
+			"my_rule = {\n\tdefault = a\n\ta = { }\n}\n", "mod",
+			&VanillaCache{LocConventions: map[string]string{"game_rules": "kind_id"}})
 		if hasRef(ex.Refs, "loc", "my_rule") || hasRef(ex.Refs, "loc-convention", "my_rule") {
 			t.Fatalf("bare rule id: %v", ex.Refs)
 		}
-		if !hasRef(ex.Refs, "loc-convention", "rule_my_rule") {
-			t.Fatalf("missing rule_ key: %v", ex.Refs)
+		if !hasRef(ex.Refs, "loc-convention", "game_rules_my_rule") &&
+			!hasRef(ex.Refs, "loc-convention", "game_rule_my_rule") {
+			t.Fatalf("missing kind_id convention: %v", ex.Refs)
 		}
-		if !hasRef(ex.Refs, "loc-convention", "setting_a") {
-			t.Fatalf("missing setting_ key: %v", ex.Refs)
+		if hasRef(ex.Refs, "loc-convention", "setting_a") {
+			t.Fatalf("encyclopedia setting_ key: %v", ex.Refs)
 		}
 	})
 	t.Run("trigger localization slots are loc refs", func(t *testing.T) {
@@ -501,45 +585,6 @@ func TestBuildIndex(t *testing.T) {
 	}
 }
 
-func TestVoteFieldValueKinds(t *testing.T) {
-	defs := []Def{
-		{Kind: "event_theme", Key: "seduction"},
-		{Kind: "trait", Key: "brave"},
-	}
-	ok := VoteFieldValueKinds(map[string]map[string]bool{
-		"theme": {"seduction": true},
-	}, defs)
-	if ok["theme"] != "event_theme" {
-		t.Fatalf("theme = %v", ok)
-	}
-	conflict := VoteFieldValueKinds(map[string]map[string]bool{
-		"theme": {"seduction": true, "brave": true},
-	}, defs)
-	if _, hit := conflict["theme"]; hit {
-		t.Fatalf("conflict should omit theme: %v", conflict)
-	}
-}
-
-func TestVoteFieldEnums(t *testing.T) {
-	voted := map[string]string{"theme": "event_theme"}
-	got := VoteFieldEnums(map[string]map[string]map[string]bool{
-		"event": {
-			"type":  {"character_event": true, "letter_event": true},
-			"theme": {"seduction": true, "default": true},
-			"id":    {"a": true},
-		},
-	}, voted)
-	if len(got["event"]["type"]) != 2 {
-		t.Fatalf("type enums: %v", got)
-	}
-	if _, hit := got["event"]["theme"]; hit {
-		t.Fatalf("voted field should be omitted: %v", got)
-	}
-	if _, hit := got["event"]["id"]; hit {
-		t.Fatalf("single value should be omitted: %v", got)
-	}
-}
-
 func TestCK3InstallReligionTypesFaiths(t *testing.T) {
 	const rel = "common/religion/religion_types/00_christianity.txt"
 	p := filepath.Join(`C:\Program Files (x86)\Steam\steamapps\common\Crusader Kings III`,
@@ -549,8 +594,77 @@ func TestCK3InstallReligionTypesFaiths(t *testing.T) {
 		t.Skip(err)
 	}
 	text, _ := jomini.Decode(raw)
-	ex := ExtractFile("ck3", p, rel, "", text, false)
+	ex := ExtractParsed("ck3", p, rel, "", jomini.Parse(text), false, &VanillaCache{
+		NestedShapes: []NestedShape{{
+			ParentKind: "religion_types", ChildKind: "faith", GroupKey: "faiths",
+		}},
+	})
 	if !findDef(ex.Defs, "faith", "catholic") {
 		t.Fatalf("catholic missing from religion_types (%d defs)", len(ex.Defs))
 	}
+}
+
+// A nested database is only harvested when the game declares its child kind as
+// a type. `faith` is a CK3 scope type, so religions yield faiths; `SKILL` is a
+// script-parameter name that happens to repeat inside event blocks, and
+// harvesting it minted 51,674 defs of a kind that does not exist.
+func TestDeriveNestedShapesNeedsDeclaredChild(t *testing.T) {
+	tree := jomini.Parse(jomini.Normalize(
+		"christianity_religion = {\n\tfaiths = {\n\t\tcatholic = { color = { 1 1 1 } }\n\t}\n}\n"))
+	cite := jomini.Parse(jomini.Normalize(
+		"e.1 = { immediate = { exists = faith:catholic } }\n"))
+	files := []parsedScript{
+		{f: fileRef{rel: "common/religion/religion_types/r.txt"}, res: tree},
+		{f: fileRef{rel: "events/x.txt"}, res: cite},
+	}
+	defs := []Def{{Kind: "religion_types", Key: "christianity_religion"}}
+	schema := &Schema{Scopes: map[string]ScopeType{"faith": {}}}
+
+	got := deriveNestedShapes("ck3", corpus{gameID: "ck3", inline: files}, defs, nil, schema, citesOf(files), nil)
+	if len(got) != 1 || got[0].ParentKind != "religion_types" ||
+		got[0].ChildKind != "faith" || got[0].GroupKey != "faiths" {
+		t.Fatalf("declared child kind should be harvested; shapes=%+v", got)
+	}
+	if got := deriveNestedShapes("ck3", corpus{gameID: "ck3", inline: files}, defs, nil, &Schema{}, citesOf(files), nil); len(got) != 0 {
+		t.Errorf("undeclared child kind harvested anyway: %+v", got)
+	}
+	if got := deriveNestedShapes("ck3", corpus{gameID: "ck3", inline: files}, defs, nil, nil, citesOf(files), nil); len(got) != 0 {
+		t.Errorf("no schema must yield no nested databases: %+v", got)
+	}
+}
+
+// citesOf collects the typed cites the shared derive walk would gather.
+func citesOf(files []parsedScript) []typedCite {
+	var out []typedCite
+	for _, f := range files {
+		out = append(out, collectTypedCites(f.res.Root)...)
+	}
+	return out
+}
+
+// A fire key needs coverage too, but only once there is enough evidence to read
+// it. For fire keys a low hit rate is often the defect worth reporting — a mod
+// whose trigger_event targets mostly do not exist — so coverage may veto a key
+// only when it carries at least minFireNames names. Without the floor, Vic3 keys
+// like `alert` became on_action fire sites and produced 4,033 false dangling
+// rows on one real mod.
+func TestResolveFireKindsCoverage(t *testing.T) {
+	events := map[string]bool{"ns.1": true}
+	// Many names, one hit: not a fire key.
+	noisy := &fireCount{kinds: map[string]int{"event": 1}, named: 40}
+	if got := resolveFireKinds(map[string]*fireCount{"alert": noisy}); got["alert"] != "" {
+		t.Errorf("1 of 40 names typed a fire key: %v", got)
+	}
+	// Few names: coverage is noise, so unanimity still decides. This is what
+	// keeps a small mod's broken trigger_event targets reportable.
+	thin := &fireCount{kinds: map[string]int{"event": 1}, named: 3}
+	if got := resolveFireKinds(map[string]*fireCount{"trigger_event": thin}); got["trigger_event"] != "event" {
+		t.Errorf("small sample must fall back to unanimity: %v", got)
+	}
+	// Real fire key on real evidence.
+	solid := &fireCount{kinds: map[string]int{"event": 30}, named: 32}
+	if got := resolveFireKinds(map[string]*fireCount{"trigger_event": solid}); got["trigger_event"] != "event" {
+		t.Errorf("30 of 32 must type: %v", got)
+	}
+	_ = events
 }

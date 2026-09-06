@@ -26,10 +26,10 @@ func TestCache(t *testing.T) {
 		},
 		StructureBlocks: map[string][]string{"event": {"immediate"}},
 	}
-	if err := SaveCacheFile(path, in); err != nil {
+	if err := saveCacheFile(path, in); err != nil {
 		t.Fatal(err)
 	}
-	out, err := LoadCacheFile(path)
+	out, err := loadCacheFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestCache(t *testing.T) {
 			if err := os.WriteFile(p, []byte(tt.body), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := LoadCacheFile(p); err == nil {
+			if _, err := loadCacheFile(p); err == nil {
 				t.Fatal("expected error")
 			}
 		})
@@ -67,7 +67,7 @@ func TestCache(t *testing.T) {
 	if err := os.WriteFile(thin, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, err := LoadCacheFile(thin)
+	c, err := loadCacheFile(thin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,8 +78,10 @@ func TestCache(t *testing.T) {
 	}
 
 	prep := &VanillaCache{
-		Effects:         []string{"add_gold"},
-		Triggers:        []string{"is_adult"},
+		Schema: &Schema{
+			Effects:  map[string]EngineToken{"add_gold": {}},
+			Triggers: map[string]EngineToken{"is_adult": {}},
+		},
 		Structures:      map[string][]string{"event": {"immediate"}},
 		FieldInfo:       map[string]string{"Type": "global"},
 		FieldInfoByKind: map[string]map[string]string{"event": {"Title": "kind"}},
@@ -122,10 +124,10 @@ func TestCache(t *testing.T) {
 		Sites:         map[string]LocEntry{"k": {Path: "a.yml", Line: 1, Value: "v"}},
 	}
 	locPath := filepath.Join(t.TempDir(), "sidecar.json")
-	if err := SaveJSON(locPath, locIn); err != nil {
+	if err := saveJSON(locPath, locIn); err != nil {
 		t.Fatal(err)
 	}
-	got, err := LoadJSON[VanillaLoc](locPath, LocFormatVersion)
+	got, err := loadJSON[VanillaLoc](locPath, LocFormatVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +139,7 @@ func TestCache(t *testing.T) {
 	if err := os.WriteFile(staleLoc, []byte(`{"formatVersion":2,"sites":{}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadJSON[VanillaLoc](staleLoc, LocFormatVersion); err == nil {
+	if _, err := loadJSON[VanillaLoc](staleLoc, LocFormatVersion); err == nil {
 		t.Fatal("expected format mismatch")
 	} else if err.Error() != fmt.Sprintf("format 2 != %d", LocFormatVersion) {
 		t.Fatalf("mismatch error = %v", err)

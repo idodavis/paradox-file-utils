@@ -5,162 +5,70 @@ import (
 	"strconv"
 
 	"paradox-modding-tools/services/internal/catalog"
-	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/parser/jomini"
-	"paradox-modding-tools/services/internal/parser/loc"
 	"paradox-modding-tools/services/internal/session"
 )
 
 // Definition returns go-to-definition locations for the word at pos.
 func Definition(s *session.Session, path string, line, col int) []Location {
-	sub, ok := subjectAt(s, path, line, col)
-	if !ok || sub.kind == "loc_value" || sub.fieldKey {
+	ins := s.Inspect(path, line, col)
+	if ins == nil || ins.RawKind == "loc_value" || ins.FieldKey {
 		return nil
 	}
-	if sub.kind == "loc_key" && sub.def == nil {
-		if sub.spanEnd > sub.spanStart {
+	if ins.RawKind == "loc_key" && ins.Def == nil {
+		if ins.SpanEnd > ins.SpanStart {
 			return []Location{{
 				URI:   path,
-				Range: byteRange(jomini.NewLineIndex(s.FileText(path)), sub.spanStart, sub.spanEnd),
+				Range: byteRange(jomini.NewLineIndex(s.FileText(path)), ins.SpanStart, ins.SpanEnd),
 			}}
 		}
 		return nil
 	}
-	if sub.local {
-		a := sub.at.assign
-		if a == nil {
+	if ins.Local {
+		if ins.AssignEnd <= ins.AssignStart {
 			return nil
 		}
-		ln := sub.at.res.Lines().PositionAt(a.Key.Range.Start).Line
 		return []Location{defLocation(s, catalog.Def{
-			Kind: sub.kind, Key: a.Key.Text, Path: path, Line: ln,
-			Start: a.Key.Range.Start, End: a.Key.Range.End,
+			Kind: ins.RawKind, Key: ins.Name, Path: path, Line: ins.AssignLine,
+			Start: ins.AssignStart, End: ins.AssignEnd,
 		})}
 	}
-	if sub.def != nil {
-		return definitionSites(s, sub.name, sub.def)
+	if ins.Def != nil {
+		return definitionSites(s, ins.Name, ins.Def)
 	}
 	return nil
 }
 
 // References returns every workspace site of the identifier at pos.
 func References(s *session.Session, path string, line, col int) []Location {
-	sub, ok := subjectAt(s, path, line, col)
-	if !ok || sub.kind == "loc_value" || sub.name == "" {
+	ins := s.Inspect(path, line, col)
+	if ins == nil || ins.RawKind == "loc_value" || ins.Name == "" {
 		return nil
 	}
-	if sub.kind == "script_param" {
-		return identReferencesOwned(s, sub.name, "script_param", sub.owner)
+	if ins.RawKind == "script_param" {
+		return identReferencesOwned(s, ins.Name, "script_param", ins.Owner)
 	}
-	if game.IsEphemeral(sub.kind) {
-		return identReferences(s, sub.name, sub.kind)
+	if jomini.IsEphemeral(ins.RawKind) {
+		return identReferences(s, ins.Name, ins.RawKind)
 	}
-	return identReferences(s, sub.name, "")
-}
-
-// locKeyAt returns the loc key covering off (entry key or `$key$` in a value).
-// A cursor after the last key character still resolves.
-func locKeyAt(src string, off int) string {
-	key, _, _ := locKeySpan(src, off)
-	return key
-}
-
-// locKeySpan is locKeyAt plus the key's byte span in src.
-func locKeySpan(src string, off int) (key string, start, end int) {
-	res := loc.Parse(src)
-	for _, e := range res.Entries {
-		start, end = e.KeyRange.Start, e.KeyRange.End
-		if off >= start && off <= end {
-			return e.Key, start, end
-		}
-		for _, ip := range loc.Interps(e.Value, e.ValueRange.Start) {
-			if off >= ip.WrapRange.Start && off < ip.WrapRange.End {
-				if game.IsLocEngineValue(ip.Key, ip.Filter) {
-					return "", 0, 0
-				}
-				return ip.Key, ip.KeyRange.Start, ip.KeyRange.End
-			}
-		}
-	}
-	if len(res.Entries) > 0 {
-		return "", 0, 0
-	}
-	word, wStart, wEnd := jomini.Result{Src: src}.TokenAt(off)
-	return word, wStart, wEnd
-}
-
-type locInterp struct {
-	Key, Filter string
-}
-
-func locInterpAt(src string, off int) (locInterp, bool) {
-	res := loc.Parse(src)
-	for _, e := range res.Entries {
-		for _, ip := range loc.Interps(e.Value, e.ValueRange.Start) {
-			if off >= ip.WrapRange.Start && off < ip.WrapRange.End {
-				return locInterp{Key: ip.Key, Filter: ip.Filter}, true
-			}
-		}
-	}
-	return locInterp{}, false
-}
-
-// callKindDefAt reports scripted_trigger NAME = (and effect/modifier) at off.
-func callKindDefAt(res jomini.Result, off int) (kind, name string, assign *jomini.Assignment, ok bool) {
-	if res.Root == nil {
-		return "", "", nil, false
-	}
-	var walk func([]jomini.Statement) bool
-	walk = func(stmts []jomini.Statement) bool {
-		var marker string
-		var markStart, markEnd int
-		for _, st := range stmts {
-			if vs, ok := st.(*jomini.ValueStmt); ok {
-				if sc, ok := vs.Value.(*jomini.Scalar); ok && !sc.Quoted &&
-					game.IsCallKind(sc.Text) {
-					marker, markStart, markEnd = sc.Text, sc.Range.Start, sc.Range.End
-				} else {
-					marker = ""
-				}
-				if b := jomini.BlockOf(vs.Value); b != nil && walk(b.Statements) {
-					return true
-				}
-				continue
-			}
-			a, isA := st.(*jomini.Assignment)
-			if !isA {
-				marker = ""
-				continue
-			}
-			if marker != "" && !a.Key.Quoted {
-				onMark := off >= markStart && off < markEnd
-				onName := off >= a.Key.Range.Start && off < a.Key.Range.End
-				if onMark || onName {
-					kind, name, assign, ok = marker, a.Key.Text, a, true
-					return true
-				}
-			}
-			marker = ""
-			if b := jomini.BlockOf(a.Value); b != nil && walk(b.Statements) {
-				return true
-			}
-		}
-		return false
-	}
-	ok = walk(res.Root.Statements)
-	return kind, name, assign, ok
+	return identReferences(s, ins.Name, "")
 }
 
 // definitionSites lists every def of key, FIOS/Resolve winner first.
 func definitionSites(s *session.Session, key string, winner *catalog.Def) []Location {
 	seen := map[string]bool{}
 	var out []Location
+	// An ephemeral winner (saved scope, script param) confines the sites to its
+	// own kind; a real def does not, so this is resolved once up front.
+	ephemeralKind := ""
+	if winner != nil && jomini.IsEphemeral(winner.Kind) {
+		ephemeralKind = jomini.CanonicalKind(winner.Kind)
+	}
 	add := func(d catalog.Def) {
 		if d.Key != key {
 			return
 		}
-		if winner != nil && game.IsEphemeral(winner.Kind) &&
-			game.CanonicalKind(d.Kind) != game.CanonicalKind(winner.Kind) {
+		if ephemeralKind != "" && jomini.CanonicalKind(d.Kind) != ephemeralKind {
 			return
 		}
 		if winner != nil && winner.OwnerKey != "" && d.OwnerKey != "" &&
@@ -168,8 +76,17 @@ func definitionSites(s *session.Session, key string, winner *catalog.Def) []Loca
 			return
 		}
 		loc := defLocation(s, d)
-		id := loc.URI + ":" + strconv.Itoa(loc.Range.Start.Line) +
-			":" + strconv.Itoa(loc.Range.Start.Character)
+		// Canonicalise the path before deduping, exactly as find-references
+		// does. The same definition reaches this function from several sources
+		// and they do not agree on how to spell a Windows path, so comparing
+		// the raw string let one site through twice — and two results for one
+		// place makes the editor open a peek listing the current file instead
+		// of simply jumping.
+		id := session.CanonPath(loc.URI) + ":" +
+			strconv.Itoa(loc.Range.Start.Line) + ":" +
+			strconv.Itoa(loc.Range.Start.Character) + ":" +
+			strconv.Itoa(loc.Range.End.Line) + ":" +
+			strconv.Itoa(loc.Range.End.Character)
 		if seen[id] {
 			return
 		}
@@ -257,8 +174,9 @@ func identReferencesOwned(s *session.Session, word, kind, owner string) []Locati
 		seen[k] = true
 		out = append(out, loc)
 	}
+	wantKind := jomini.CanonicalKind(kind)
 	kindOK := func(k string) bool {
-		return kind == "" || game.CanonicalKind(k) == game.CanonicalKind(kind)
+		return kind == "" || jomini.CanonicalKind(k) == wantKind
 	}
 	ownerOK := func(okey string) bool {
 		return owner == "" || okey == "" || okey == owner
@@ -339,7 +257,7 @@ const maxWorkspaceSymbols = 200
 func DocumentSymbols(s *session.Session, path string) []SymbolInformation {
 	var out []SymbolInformation
 	for _, d := range s.DefsInFile(path) {
-		if game.IsEphemeral(d.Kind) {
+		if jomini.IsEphemeral(d.Kind) {
 			continue
 		}
 		out = append(out, SymbolInformation{Name: d.Key, Location: defLocation(s, d)})

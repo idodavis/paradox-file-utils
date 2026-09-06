@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 
 	"paradox-modding-tools/services/internal/catalog"
@@ -47,18 +46,30 @@ type Session struct {
 	cacheRefsByKey   map[string][]catalog.Ref
 	cacheEdgesByTo   map[string][]catalog.Edge
 	cacheEdgesByFrom map[string][]catalog.Edge
-	effectSet        map[string]bool
-	callKindSet      map[string]string
+	macroKeys        map[string]bool
+	macroDefKinds    map[string]string
+	// kindPrefix reverses PrefixKinds (kind -> citation prefix) so hover does
+	// not scan the whole table per call.
+	kindPrefix map[string]string
+	// scopePrefix and scopeKind answer "a token declares it takes a <scope
+	// type> — how does the user write one?": as `prefix:id`, or as a bare key
+	// of some database. Both reverse a table that is otherwise scanned whole.
+	scopePrefix      map[string]string
+	scopeKind        map[string]string
+	modFireKeys      map[string]string
 	fieldValueKinds  map[string]string
 	modFieldKinds    map[string]string
 	modFieldEnums    map[string]map[string][]string
 	fieldEnumsByKind map[string]map[string][]string
-	viaByTo          map[string][]catalog.Edge
-	viaDirty         bool
-	buffers          map[string]*buffer
-	lastIndexed      map[string]string // path -> last-indexed text, for coalescing
-	watcher          *Watcher
-	onFS             func(path string, deleted bool)
+	// kindsWithDefs is every kind something actually defines, so a reference to a
+	// kind with no definitions anywhere can be recognised as an engine concept.
+	kindsWithDefs map[string]bool
+	viaByTo       map[string][]catalog.Edge
+	viaDirty      bool
+	buffers       map[string]*buffer
+	lastIndexed   map[string]string // path -> last-indexed text, for coalescing
+	watcher       *Watcher
+	onFS          func(path string, deleted bool)
 }
 
 // NewWithLoc is New with loc language and an optional vanilla loc sidecar.
@@ -103,9 +114,10 @@ func NewWithLoc(
 	s.addEdgesLocked(idx.Edges)
 	s.modFieldKinds = idx.FieldValueKinds
 	s.modFieldEnums = idx.FieldEnumsByKind
+	s.modFireKeys = maps.Clone(idx.FireKeys)
 	s.rebuildCacheIndexLocked()
 	s.rebuildFieldKindsLocked()
-	s.rebuildCallSetsLocked()
+	s.rebuildMacroSetsLocked()
 	s.viaDirty = true
 	return s
 }
@@ -119,7 +131,7 @@ func (s *Session) ReplaceCache(c *catalog.VanillaCache) {
 	s.cache = c
 	s.rebuildCacheIndexLocked()
 	s.rebuildFieldKindsLocked()
-	s.rebuildCallSetsLocked()
+	s.rebuildMacroSetsLocked()
 	s.viaDirty = true
 	s.mu.Unlock()
 }
@@ -188,7 +200,7 @@ func (s *Session) DidSave(path string) {
 }
 
 // ExternalChange reindexes a file touched outside the editor (watcher-driven).
-func (s *Session) ExternalChange(path string) {
+func (s *Session) externalChange(path string) {
 	if s.reindexFromDisk(path) {
 		s.mu.Lock()
 		s.dropPathLocked(CanonPath(path))
@@ -249,7 +261,7 @@ func (s *Session) reindexLocked(path, rel, text string, parsed jomini.Result) {
 	s.dropPathLocked(path)
 	var ex catalog.FileExtract
 	if parsed.Root != nil {
-		ex = catalog.ExtractParsed(s.GameID, path, rel, origin, parsed, false)
+		ex = catalog.ExtractParsed(s.GameID, path, rel, origin, parsed, false, s.cache)
 	} else {
 		ex = catalog.ExtractFile(s.GameID, path, rel, origin, text, false)
 	}
@@ -263,9 +275,9 @@ func (s *Session) reindexLocked(path, rel, text string, parsed jomini.Result) {
 	s.addDefsLocked(ex.Defs)
 	s.addRefsLocked(ex.Refs)
 	s.addEdgesLocked(ex.Edges)
-	s.addCallKindsLocked(ex.Defs)
-	s.addRefsLocked(catalog.ApplyCallRefs(ex.Cands, s.callKindSet))
-	s.addEdgesLocked(catalog.ApplyCallEdges(ex.Cands, s.effectSet))
+	s.addMacroDefsLocked(ex.Defs, ex.Cands)
+	s.addRefsLocked(catalog.ApplyCallRefs(ex.Cands, s.macroDefKinds))
+	s.addEdgesLocked(catalog.ApplyCallEdges(ex.Cands, s.macroKeys))
 	s.locByLang = catalog.MergeLoc(s.locByLang, ex.Loc)
 	s.lastIndexed[path] = text
 	s.viaDirty = true
@@ -336,9 +348,8 @@ func (s *Session) dropFileMapsLocked(path string) {
 		if len(s.defsByKey[d.Key]) == 0 {
 			delete(s.defsByKey, d.Key)
 		}
-		if game.CanonicalKind(d.Kind) == "scripted_effect" {
-			delete(s.effectSet, d.Key)
-		}
+		delete(s.macroKeys, d.Key)
+		delete(s.macroDefKinds, d.Key)
 	}
 	delete(s.defsByFile, path)
 	for _, r := range s.refsByFile[path] {
@@ -391,7 +402,7 @@ func (s *Session) VanillaDefs(key string) []catalog.Def {
 		if d.Key != key {
 			return
 		}
-		if game.IsEphemeral(d.Kind) && game.CanonicalKind(d.Kind) != "script_param" {
+		if jomini.IsEphemeral(d.Kind) && jomini.CanonicalKind(d.Kind) != "script_param" {
 			return
 		}
 		id := d.Kind + "\x00" + CanonPath(d.Path) + "\x00" + strconv.Itoa(d.Line)
@@ -419,13 +430,13 @@ func (s *Session) VanillaDefs(key string) []catalog.Def {
 }
 
 // ResolveMatching is Resolve after keep filters defsOf(key). keep nil keeps
-// non-ephemeral defs only (character flags / variables / scopes need a kind filter).
+// non-ephemeral defs only (flags / vars / scopes need a kind filter).
 func (s *Session) ResolveMatching(key string, keep func(catalog.Def) bool) *catalog.Def {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	defs := s.defsOf(key)
 	if keep == nil {
-		keep = func(d catalog.Def) bool { return !game.IsEphemeral(d.Kind) }
+		keep = func(d catalog.Def) bool { return !jomini.IsEphemeral(d.Kind) }
 	}
 	n := 0
 	for _, d := range defs {
@@ -514,7 +525,7 @@ func (s *Session) StartWatch() error {
 		roots = append(roots, m.Root)
 	}
 	s.mu.Unlock()
-	w, err := NewWatcher(roots, s.ExternalChange)
+	w, err := NewWatcher(roots, s.externalChange)
 	if err != nil {
 		return err
 	}
@@ -590,8 +601,41 @@ func (s *Session) rebuildCacheIndexLocked() {
 	s.cacheRefsByKey = map[string][]catalog.Ref{}
 	s.cacheEdgesByTo = map[string][]catalog.Edge{}
 	s.cacheEdgesByFrom = map[string][]catalog.Edge{}
+	s.kindPrefix = map[string]string{}
+	s.scopePrefix = map[string]string{}
+	s.scopeKind = map[string]string{}
+	s.kindsWithDefs = map[string]bool{}
+	for _, defs := range s.defsByFile {
+		for _, d := range defs {
+			s.kindsWithDefs[jomini.CanonicalKind(d.Kind)] = true
+		}
+	}
 	if s.cache == nil {
 		return
+	}
+	for _, d := range s.cache.Defs {
+		s.kindsWithDefs[jomini.CanonicalKind(d.Kind)] = true
+	}
+	// Reverse the prefix table once. Hover used to scan every entry per call to
+	// find the citation form for a kind.
+	for prefix, kind := range s.cache.PrefixKinds {
+		k := jomini.CanonicalKind(kind)
+		if cur, ok := s.kindPrefix[k]; !ok || len(prefix) < len(cur) {
+			s.kindPrefix[k] = prefix
+		}
+	}
+	// scope type -> the database holding its rows, and -> the prefix that cites
+	// one. Completion needs both to turn "Supported Targets: culture_group"
+	// into an offer of `culture_group:turkic_group`.
+	for kind, scope := range s.cache.KindScope {
+		if cur, ok := s.scopeKind[scope]; !ok || len(kind) < len(cur) {
+			s.scopeKind[scope] = jomini.CanonicalKind(kind)
+		}
+	}
+	for prefix, scope := range s.cache.Schema.Prefixes() {
+		if cur, ok := s.scopePrefix[scope]; !ok || len(prefix) < len(cur) {
+			s.scopePrefix[scope] = prefix
+		}
 	}
 	for _, d := range s.cache.Defs {
 		s.cacheByKey[d.Key] = append(s.cacheByKey[d.Key], d)
@@ -649,10 +693,10 @@ func (s *Session) addEdgesLocked(edges []catalog.Edge) {
 	}
 }
 
-// indexVanillaLiveLocked records call-kind and $NAME$ refs from an open
+// indexVanillaLiveLocked records macro-call and  from an open
 // install file without merging defs/edges into workspace harvest.
 func (s *Session) indexVanillaLiveLocked(ex catalog.FileExtract) {
-	s.addRefsLocked(catalog.ApplyCallRefs(ex.Cands, s.callKindSet))
+	s.addRefsLocked(catalog.ApplyCallRefs(ex.Cands, s.macroDefKinds))
 	var prefs []catalog.Ref
 	for _, r := range ex.Refs {
 		if r.Kind == "script_param" {
@@ -662,620 +706,33 @@ func (s *Session) indexVanillaLiveLocked(ex catalog.FileExtract) {
 	s.addRefsLocked(prefs)
 }
 
-func (s *Session) addCallKindsLocked(defs []catalog.Def) {
-	if s.callKindSet == nil {
-		s.callKindSet = map[string]string{}
+func (s *Session) addMacroDefsLocked(defs []catalog.Def, _ []catalog.CallCandidate) {
+	if s.macroDefKinds == nil {
+		s.macroDefKinds = map[string]string{}
 	}
-	if s.effectSet == nil {
-		s.effectSet = map[string]bool{}
+	if s.macroKeys == nil {
+		s.macroKeys = map[string]bool{}
 	}
 	for _, d := range defs {
-		k := game.CanonicalKind(d.Kind)
-		if !game.IsCallKind(k) {
+		k := jomini.CanonicalKind(d.Kind)
+		if !jomini.IsMacroKind(k) {
 			continue
 		}
-		s.callKindSet[d.Key] = k
-		if k == "scripted_effect" {
-			s.effectSet[d.Key] = true
-		}
+		s.macroDefKinds[d.Key] = k
+		s.macroKeys[d.Key] = true
 	}
 }
 
-// DisplayRel is origin-relative, else install-relative, else the path with slashes.
-func (s *Session) DisplayRel(path string) string {
-	if path == "" {
-		return ""
-	}
-	if _, rel, ok := s.Locate(path); ok {
-		return filepath.ToSlash(rel)
-	}
-	if inst, _, _, _ := s.CacheInfo(); inst != "" {
-		if rel, err := filepath.Rel(inst, path); err == nil {
-			return filepath.ToSlash(rel)
-		}
-	}
-	return filepath.ToSlash(path)
-}
-
-// OriginName is the mod display name, or the game title for vanilla.
-func (s *Session) OriginName(origin string) string {
-	if origin == "" || origin == game.OriginVanilla {
-		if g := game.Get(s.GameID); g != nil && g.Name != "" {
-			return g.Name
-		}
-		return "Game"
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, m := range s.mods {
-		if m.Origin == origin && m.Name != "" {
-			return m.Name
-		}
-	}
-	return origin
-}
-
-// ModDefsOf returns workspace-only declarations of key.
-func (s *Session) ModDefsOf(key string) []catalog.Def {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return cloneIf(s.defsByKey[key])
-}
-
-// eachDef walks workspace defs, then vanilla if includeVanilla. fn false stops.
-func (s *Session) eachDef(includeVanilla bool, fn func(catalog.Def) bool) {
-	for _, defs := range s.defsByFile {
-		for _, d := range defs {
-			if !fn(d) {
-				return
-			}
-		}
-	}
-	if includeVanilla && s.cache != nil {
-		for _, d := range s.cache.Defs {
-			if !fn(d) {
-				return
-			}
-		}
-	}
-}
-
-// FindDefs returns defs whose keys contain query (or, if byPrefix, start with it).
-// Ephemeral kinds are omitted (outline / Ctrl+T); use FindDefsOf for those.
-func (s *Session) FindDefs(query string, limit int, byPrefix, includeVanilla bool) []catalog.Def {
-	return s.findDefs(query, "", limit, byPrefix, includeVanilla, false)
-}
-
-// FindDefsOf is FindDefs restricted to CanonicalKind(kind), including ephemeral.
-func (s *Session) FindDefsOf(
-	query, kind string, limit int, byPrefix, includeVanilla bool,
-) []catalog.Def {
-	return s.findDefs(query, kind, limit, byPrefix, includeVanilla, true)
-}
-
-func (s *Session) findDefs(
-	query, kind string, limit int, byPrefix, includeVanilla, allowEphemeral bool,
-) []catalog.Def {
-	if byPrefix && limit <= 0 {
-		return nil
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	q := strings.ToLower(query)
-	want := ""
-	if kind != "" {
-		want = game.CanonicalKind(kind)
-	}
-	var out []catalog.Def
-	s.eachDef(includeVanilla, func(d catalog.Def) bool {
-		if want != "" {
-			if game.CanonicalKind(d.Kind) != want {
-				return true
-			}
-		} else if !allowEphemeral && game.IsEphemeral(d.Kind) {
-			return true
-		}
-		if q != "" {
-			k := strings.ToLower(d.Key)
-			hit := strings.Contains(k, q)
-			if byPrefix {
-				hit = strings.HasPrefix(k, q)
-			}
-			if !hit {
-				return true
-			}
-		}
-		out = append(out, d)
-		return limit <= 0 || len(out) < limit
-	})
-	return out
-}
-
-// GraphCatalog returns event picker entries, node kinds, and scripted_effect keys.
-func (s *Session) GraphCatalog(origins []string) (
-	picker map[string]string, kinds map[string]string, effects map[string]bool,
-) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	picker, kinds = map[string]string{}, map[string]string{}
-	effects = make(map[string]bool, len(s.effectSet))
-	for k, v := range s.effectSet {
-		effects[k] = v
-	}
+func (s *Session) rebuildMacroSetsLocked() {
+	s.macroKeys = map[string]bool{}
+	s.macroDefKinds = map[string]string{}
 	s.eachDef(true, func(d catalog.Def) bool {
-		ck := game.CanonicalKind(d.Kind)
-		if ck != "event" && ck != "on_action" && ck != "decision" {
+		k := jomini.CanonicalKind(d.Kind)
+		if !jomini.IsMacroKind(k) {
 			return true
 		}
-		kinds[d.Key] = ck
-		want := d.Origin
-		if want == "" {
-			want = game.OriginVanilla
-		}
-		if len(origins) == 0 || slices.Contains(origins, want) {
-			if prev, ok := picker[d.Key]; !ok || prev == "" || d.Origin != "" {
-				picker[d.Key] = want
-			}
-		}
-		return true
-	})
-	return picker, kinds, effects
-}
-
-// Contests returns contested override keys for the live workspace.
-func (s *Session) Contests(order []string) []catalog.Contest {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var mods []catalog.Def
-	s.eachDef(false, func(d catalog.Def) bool {
-		mods = append(mods, d)
-		return true
-	})
-	var vanilla []catalog.Def
-	if s.cache != nil {
-		vanilla = s.cache.Defs
-	}
-	return catalog.Contests(s.GameID, mods, vanilla, order)
-}
-
-// LocFile returns a workspace loc file path for origin and lang, if indexed.
-func (s *Session) LocFile(origin, lang string) (string, bool) {
-	marker := "_l_" + strings.ToLower(lang)
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var found string
-	s.eachDef(false, func(d catalog.Def) bool {
-		if d.Kind == "loc_key" && d.Origin == origin &&
-			strings.Contains(strings.ToLower(d.Path), marker) {
-			found = d.Path
-			return false
-		}
-		return true
-	})
-	return found, found != ""
-}
-
-// MemberSets returns pre-built vanilla structure/effect/trigger maps for kind.
-func (s *Session) MemberSets(kind string) (structKeys, effects, triggers map[string]bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.cache == nil {
-		return nil, nil, nil
-	}
-	return s.cache.MemberSets(kind)
-}
-
-// Structures returns vanilla structure keys for kind (frequency order).
-func (s *Session) Structures(kind string) []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.cache == nil {
-		return nil
-	}
-	return s.cache.Structures[kind]
-}
-
-// StructureBlock reports whether key is usually a block field under kind.
-func (s *Session) StructureBlock(kind, key string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.cache == nil {
-		return false
-	}
-	return s.cache.StructureBlock(kind, key)
-}
-
-// Vocab returns a vanilla membership slice: effect, trigger, vocabulary,
-// gui_type, gui_prop, or meta.
-func (s *Session) Vocab(kind string) []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.cache == nil {
-		return nil
-	}
-	switch kind {
-	case "effect":
-		return s.cache.Effects
-	case "trigger":
-		return s.cache.Triggers
-	case "vocabulary":
-		return s.cache.Vocabulary
-	case "gui_type":
-		return s.cache.GUITypes
-	case "gui_prop":
-		return s.cache.GUIProps
-	case "meta":
-		return s.cache.MetaKeys
-	case "datafunction":
-		return s.cache.DataFunctions
-	default:
-		return nil
-	}
-}
-
-// RefsTo returns workspace refs whose key matches. Empty key returns none.
-func (s *Session) RefsTo(key string) []catalog.Ref {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if key == "" {
-		return nil
-	}
-	out := cloneIf(s.refsByKey[key])
-	if extra := s.cacheRefsByKey[key]; len(extra) > 0 {
-		out = append(out, extra...)
-	}
-	return out
-}
-
-// RefsInFile returns workspace refs sourced from path.
-func (s *Session) RefsInFile(path string) []catalog.Ref {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return cloneIf(s.refsByFile[CanonPath(path)])
-}
-
-// WorkspaceRefs returns harvested workspace refs (not vanilla cache refs).
-func (s *Session) WorkspaceRefs() []catalog.Ref {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	n := 0
-	for _, refs := range s.refsByKey {
-		n += len(refs)
-	}
-	out := make([]catalog.Ref, 0, n)
-	for _, refs := range s.refsByKey {
-		out = append(out, refs...)
-	}
-	return out
-}
-
-// DefaultLoc returns the workspace-default-language localization string for key.
-func (s *Session) DefaultLoc(key string) (string, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	lang := s.defaultLang
-	if lang == "" {
-		lang = "english"
-	}
-	if m := s.locByLang[lang]; m != nil {
-		if v, ok := m[key]; ok {
-			return v.Value, true
-		}
-	}
-	if s.vanillaLoc != nil {
-		if site, ok := s.vanillaLoc.Sites[key]; ok && site.Value != "" {
-			return site.Value, true
-		}
-	}
-	return "", false
-}
-
-// DefsInFile returns workspace defs declared in path.
-func (s *Session) DefsInFile(path string) []catalog.Def {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return cloneIf(s.defsByFile[CanonPath(path)])
-}
-
-// FieldDoc returns kind-scoped field-info, then global field-info, then TokenDoc.
-func (s *Session) FieldDoc(key, kind string) string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.cache == nil {
-		return ""
-	}
-	if v := s.fieldDocLocked(key, kind); v != "" {
-		return v
-	}
-	if sib := portraitSibling(key); sib != "" {
-		return s.fieldDocLocked(sib, kind)
-	}
-	return ""
-}
-
-func (s *Session) fieldDocLocked(key, kind string) string {
-	lk := strings.ToLower(key)
-	if kind != "" {
-		if m := s.cache.FieldInfoByKind[kind]; m != nil && m[lk] != "" {
-			return m[lk]
-		}
-	}
-	if v := s.cache.FieldInfo[lk]; v != "" {
-		return v
-	}
-	return s.cache.TokenDoc[lk]
-}
-
-// portraitSibling maps left_foo ↔ right_foo for script_docs pair fallback.
-func portraitSibling(key string) string {
-	k := strings.ToLower(key)
-	switch {
-	case strings.HasPrefix(k, "left_"):
-		return "right_" + k[len("left_"):]
-	case strings.HasPrefix(k, "right_"):
-		return "left_" + k[len("right_"):]
-	default:
-		return ""
-	}
-}
-
-// TokenUsage returns script_docs usage text for an engine token.
-func (s *Session) TokenUsage(key string) string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.cache == nil || s.cache.TokenUsage == nil {
-		return ""
-	}
-	lk := strings.ToLower(key)
-	if u := s.cache.TokenUsage[lk]; u != "" {
-		return u
-	}
-	if s.fieldDocLocked(key, "") != "" {
-		return ""
-	}
-	sib := portraitSibling(key)
-	if sib == "" || s.fieldDocLocked(sib, "") != "" {
-		return ""
-	}
-	return s.cache.TokenUsage[sib]
-}
-
-// TokenScopes returns script_docs supported-scopes text for an engine token.
-func (s *Session) TokenScopes(key string) string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.cache == nil || s.cache.TokenScopes == nil {
-		return ""
-	}
-	return s.cache.TokenScopes[strings.ToLower(key)]
-}
-
-// FieldValueKind returns the harvested unique def type for an assignment field.
-func (s *Session) FieldValueKind(field string) string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if v := s.fieldValueKinds[field]; v != "" {
-		return v
-	}
-	return s.fieldValueKinds[strings.ToLower(field)]
-}
-
-// FieldEnums returns unique harvested scalar values for a kind+field, or nil.
-func (s *Session) FieldEnums(kind, field string) []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	lk := strings.ToLower(field)
-	try := func(k string) []string {
-		if k == "" || s.fieldEnumsByKind == nil {
-			return nil
-		}
-		if m := s.fieldEnumsByKind[k]; m != nil {
-			return m[lk]
-		}
-		return nil
-	}
-	if v := try(kind); len(v) > 0 {
-		return v
-	}
-	return try(game.CanonicalKind(kind))
-}
-
-// CacheInfo returns vanilla install path, scan timestamp, game version, and install id.
-func (s *Session) CacheInfo() (installPath, scannedAt, gameVersion, installID string) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.cache == nil {
-		return "", "", "", ""
-	}
-	return s.cache.InstallPath, s.cache.ScannedAt, s.cache.GameVersion, s.cache.InstallID
-}
-
-// Parsed returns the buffer Result if open, else parses FileText.
-func (s *Session) Parsed(path string) jomini.Result {
-	src := s.FileText(path)
-	if src == "" {
-		return jomini.Result{}
-	}
-	if r, ok := s.Result(path); ok && r.Src == src {
-		return r
-	}
-	if _, rel, ok := s.Locate(path); ok && game.MatchExtract(s.GameID, rel).Mode == game.ModeLocKey {
-		return jomini.Result{Src: src}
-	}
-	return jomini.Parse(src)
-}
-
-// DefCount is the number of workspace definitions.
-func (s *Session) DefCount() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	n := 0
-	s.eachDef(false, func(d catalog.Def) bool {
-		n++
-		return true
-	})
-	return n
-}
-
-// LocRefs returns workspace loc and loc-broad refs.
-func (s *Session) LocRefs() []catalog.Ref {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return cloneIf(s.locRefs)
-}
-
-func addLocKeys(seen map[string]bool, out *[]string, k string) {
-	if k == "" || seen[k] {
-		return
-	}
-	seen[k] = true
-	*out = append(*out, k)
-}
-
-// LocKeys returns workspace plus vanilla loc keys for completions.
-func (s *Session) LocKeys() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	seen := map[string]bool{}
-	var out []string
-	for _, m := range s.locByLang {
-		for k := range m {
-			addLocKeys(seen, &out, k)
-		}
-	}
-	if s.vanillaLoc != nil {
-		for k := range s.vanillaLoc.Sites {
-			addLocKeys(seen, &out, k)
-		}
-	}
-	s.eachDef(false, func(d catalog.Def) bool {
-		if d.Kind != "loc_key" {
-			return true
-		}
-		addLocKeys(seen, &out, d.Key)
-		return true
-	})
-	return out
-}
-
-// InheritedLocKeys returns vanilla loc keys for lang (sidecar + vanilla loc_key defs).
-func (s *Session) InheritedLocKeys(lang string) []string {
-	s.mu.RLock()
-	defLang := s.defaultLang
-	var sites map[string]catalog.LocEntry
-	if s.vanillaLoc != nil && (lang == "" || lang == defLang) {
-		sites = s.vanillaLoc.Sites
-	}
-	installID, version := "", ""
-	if s.cache != nil {
-		installID, version = s.cache.InstallID, s.cache.GameVersion
-	}
-	s.mu.RUnlock()
-
-	seen := map[string]bool{}
-	var out []string
-	if sites != nil {
-		for k := range sites {
-			addLocKeys(seen, &out, k)
-		}
-	} else if lang != "" && lang != defLang && installID != "" {
-		if version == "" {
-			version = "latest"
-		}
-		if vl, err := catalog.LoadVanillaLoc(installID, version, lang); err == nil && vl != nil {
-			for k := range vl.Sites {
-				addLocKeys(seen, &out, k)
-			}
-		}
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	s.eachDef(true, func(d catalog.Def) bool {
-		if d.Kind != "loc_key" || d.Origin != "" {
-			return true
-		}
-		addLocKeys(seen, &out, d.Key)
-		return true
-	})
-	return out
-}
-
-// UsedLocKeys is loc / loc-broad / loc-convention keys from workspace and vanilla.
-func (s *Session) UsedLocKeys() map[string]bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := map[string]bool{}
-	add := func(refs []catalog.Ref) {
-		for _, r := range refs {
-			switch r.Kind {
-			case "loc", "loc-broad", "loc-convention":
-				out[r.Key] = true
-			}
-		}
-	}
-	add(s.locRefs)
-	if s.cache != nil {
-		add(s.cache.LocRefs)
-	}
-	return out
-}
-
-// LocByLang returns a copy of workspace loc entries keyed by language then key.
-func (s *Session) LocByLang() map[string]map[string]catalog.LocEntry {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.locByLang == nil {
-		return nil
-	}
-	out := make(map[string]map[string]catalog.LocEntry, len(s.locByLang))
-	for lang, m := range s.locByLang {
-		out[lang] = maps.Clone(m)
-	}
-	return out
-}
-
-// EdgesFrom returns stored call+fire edges leaving id. Empty id returns every edge.
-func (s *Session) EdgesFrom(id string) []catalog.Edge {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if id == "" {
-		return s.allEdgesLocked()
-	}
-	out := append(append([]catalog.Edge{}, s.edgesByFrom[id]...), s.cacheEdgesByFrom[id]...)
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// EdgesTo returns stored call+fire/via edges arriving at id.
-func (s *Session) EdgesTo(id string) []catalog.Edge {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if id == "" {
-		return nil
-	}
-	s.ensureViaLocked()
-	out := append(append(append([]catalog.Edge{}, s.edgesByTo[id]...),
-		s.cacheEdgesByTo[id]...), s.viaByTo[id]...)
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func (s *Session) rebuildCallSetsLocked() {
-	s.effectSet = map[string]bool{}
-	s.callKindSet = map[string]string{}
-	s.eachDef(true, func(d catalog.Def) bool {
-		k := game.CanonicalKind(d.Kind)
-		if !game.IsCallKind(k) {
-			return true
-		}
-		s.callKindSet[d.Key] = k
-		if k == "scripted_effect" {
-			s.effectSet[d.Key] = true
-		}
+		s.macroDefKinds[d.Key] = k
+		s.macroKeys[d.Key] = true
 		return true
 	})
 }
@@ -1289,12 +746,7 @@ func (s *Session) ensureViaLocked() {
 		stored = append(stored, edges...)
 	}
 	s.viaByTo = map[string][]catalog.Edge{}
-	var mods []catalog.Def
-	s.eachDef(false, func(d catalog.Def) bool {
-		mods = append(mods, d)
-		return true
-	})
-	for _, e := range catalog.DeriveVia(stored, s.cache, s.effectSet, mods) {
+	for _, e := range catalog.DeriveVia(stored, s.cache, s.macroKeys) {
 		s.viaByTo[e.To] = append(s.viaByTo[e.To], e)
 	}
 	s.viaDirty = false

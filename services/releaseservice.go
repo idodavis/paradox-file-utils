@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/modfile"
 	"paradox-modding-tools/services/internal/release"
 	"paradox-modding-tools/services/internal/steamugc"
 	"paradox-modding-tools/services/internal/steamugc/binembed"
@@ -112,20 +113,20 @@ func (r *ReleaseService) SaveListing(in Listing) (*Listing, error) {
 	if err != nil {
 		return nil, err
 	}
-	if mdRel == game.DescMdName && bbRel == game.DescBbName {
-		if err := game.EnsureDescriptions(root, in.Name, in.ShortDescription); err != nil {
+	if mdRel == modfile.DescMdName && bbRel == modfile.DescBbName {
+		if err := modfile.EnsureDescriptions(root, in.Name, in.ShortDescription); err != nil {
 			return nil, err
 		}
 	}
-	fields := game.ListingFields{
+	fields := modfile.ListingFields{
 		Name: in.Name, Version: in.Version, SupportedVersion: in.SupportedVersion,
 		Tags: in.Tags, RemoteFileID: in.RemoteFileID, Picture: filepath.Base(in.ThumbnailRel),
 		ShortDescription: in.ShortDescription,
 	}
 	if fields.ShortDescription == "" {
-		fields.ShortDescription = game.FirstParagraph(in.ReadmeMd)
+		fields.ShortDescription = modfile.FirstParagraph(in.ReadmeMd)
 	}
-	if err := game.WriteListingFields(ws.GameID, root, fields); err != nil {
+	if err := modfile.WriteListingFields(ws.GameID, root, fields); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(mdAbs, []byte(in.ReadmeMd), 0o644); err != nil {
@@ -223,9 +224,9 @@ func (r *ReleaseService) DraftChangelog(workspaceID, modID, version string) (str
 func (r *ReleaseService) BumpVersion(current, kind string) string {
 	switch kind {
 	case "minor":
-		return game.BumpMinor(current)
+		return modfile.BumpMinor(current)
 	default:
-		return game.BumpPatch(current)
+		return modfile.BumpPatch(current)
 	}
 }
 
@@ -235,7 +236,7 @@ func (r *ReleaseService) CopyThumbnail(workspaceID, modID, src string) (string, 
 	if err != nil {
 		return "", err
 	}
-	rel := game.ThumbnailRel(ws.GameID)
+	rel := modfile.ThumbnailRel(ws.GameID)
 	dest := filepath.Join(mod.Path, rel)
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err
@@ -381,7 +382,7 @@ func (r *ReleaseService) workspaceMod(workspaceID, modID string) (*Workspace, *W
 
 func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, error) {
 	root := mod.Path
-	fields, err := game.ReadListingFields(ws.GameID, root)
+	fields, err := modfile.ReadListingFields(ws.GameID, root)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -392,8 +393,8 @@ func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, e
 	if err != nil {
 		return nil, err
 	}
-	if mdRel == game.DescMdName && bbRel == game.DescBbName {
-		if err := game.EnsureDescriptions(root, fields.Name, fields.ShortDescription); err != nil {
+	if mdRel == modfile.DescMdName && bbRel == modfile.DescBbName {
+		if err := modfile.EnsureDescriptions(root, fields.Name, fields.ShortDescription); err != nil {
 			return nil, err
 		}
 	}
@@ -435,15 +436,15 @@ func (r *ReleaseService) loadFrom(ws *Workspace, mod *WorkspaceMod) (*Listing, e
 func descFiles(mod *WorkspaceMod) (mdRel, bbRel, mdAbs, bbAbs string, err error) {
 	mdRel = strings.TrimSpace(mod.DescMdRel)
 	if mdRel == "" {
-		mdRel = game.DescMdName
+		mdRel = modfile.DescMdName
 	}
 	bbRel = strings.TrimSpace(mod.DescBbRel)
 	if bbRel == "" {
-		bbRel = game.DescBbName
+		bbRel = modfile.DescBbName
 	}
 	mdAbs = filepath.Join(mod.Path, filepath.FromSlash(mdRel))
 	bbAbs = filepath.Join(mod.Path, filepath.FromSlash(bbRel))
-	custom := mdRel != game.DescMdName || bbRel != game.DescBbName
+	custom := mdRel != modfile.DescMdName || bbRel != modfile.DescBbName
 	if custom {
 		if _, err := os.Stat(mdAbs); err != nil {
 			return "", "", "", "", fmt.Errorf("description markdown: %w", err)
@@ -474,7 +475,7 @@ func releasePreviews(previews []WorkshopPreview) []release.Preview {
 
 // listingThumb is the on-disk listing thumb (thumbnail.png / .metadata/thumbnail.png).
 func listingThumb(gameID, root, picture string) (rel, abs string) {
-	rel = filepath.ToSlash(game.ThumbnailRel(gameID))
+	rel = filepath.ToSlash(modfile.ThumbnailRel(gameID))
 	abs = filepath.Join(root, filepath.FromSlash(rel))
 	if _, err := os.Stat(abs); err == nil {
 		return rel, abs

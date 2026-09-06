@@ -10,6 +10,7 @@ import (
 
 	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
+	"paradox-modding-tools/services/internal/parser/jomini"
 	"paradox-modding-tools/services/internal/session"
 )
 
@@ -161,7 +162,7 @@ func skipCompatRef(r catalog.Ref) bool {
 	case "loc", "loc-broad", "loc-convention", "namespace":
 		return true
 	}
-	return game.IsEphemeral(r.Kind)
+	return jomini.IsEphemeral(r.Kind)
 }
 
 func refRows(s *session.Session) (depends, dangling []HealthRow) {
@@ -184,6 +185,23 @@ func refRows(s *session.Session) (depends, dangling []HealthRow) {
 		fillSnippet(s, &site)
 		d := s.Resolve(r.Key)
 		if d == nil {
+			if s.DeclaresEngineName(r.Key) {
+				// The game's own API, not a missing object.
+				continue
+			}
+			// Nothing anywhere defines this kind, so the reference names an
+			// engine concept rather than a row that has gone missing: Vic3's
+			// `relations_threshold:cordial` is a declared scope link with no
+			// database behind it.
+			if !s.KindHasDefs(r.Kind) {
+				continue
+			}
+			// The kind's own definitions use this word as a value, so it is a
+			// member of that kind's vocabulary — `role = admiral` against the
+			// archetypes listed inside character_roles.
+			if s.IsEnumValue(r.Kind, r.Key) {
+				continue
+			}
 			id := dangID{r.Kind, r.Key, from}
 			if g := dangMap[id]; g != nil {
 				g.Sites = append(g.Sites, site)
