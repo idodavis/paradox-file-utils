@@ -17,6 +17,11 @@ import (
 const compatRefCap = 500
 const snippetPad = 4
 
+// maxRowSites caps how many example sites one Health row carries. Each site
+// costs a file read and a full line split, and a row citing a thousand places
+// tells a user no more than one citing a handful.
+const maxRowSites = 20
+
 const (
 	compatConflict = "conflict"
 	compatOverride = "override"
@@ -178,11 +183,20 @@ func refRows(s *session.Session) (depends, dangling []HealthRow) {
 		if !ok || from == "" || from == game.OriginVanilla {
 			continue
 		}
-		site := OverrideSite{
-			Origin: from, OriginName: s.OriginName(from),
-			Path: r.Path, Rel: s.DisplayRel(r.Path), Line: r.Line,
+		// Deliberately lazy. Building a site reads the file off disk and splits
+		// it into lines, and almost every reference in a workspace resolves
+		// fine — so doing it up front meant one disk read and a full line split
+		// per reference, for a row that was then thrown away. On a total
+		// conversion that is hundreds of thousands of reads and it dominated
+		// the whole of Workspace Health.
+		siteOnce := func() OverrideSite {
+			os := OverrideSite{
+				Origin: from, OriginName: s.OriginName(from),
+				Path: r.Path, Rel: s.DisplayRel(r.Path), Line: r.Line,
+			}
+			fillSnippet(s, &os)
+			return os
 		}
-		fillSnippet(s, &site)
 		d := s.Resolve(r.Key)
 		if d == nil {
 			if s.DeclaresEngineName(r.Key) {
@@ -204,10 +218,13 @@ func refRows(s *session.Session) (depends, dangling []HealthRow) {
 			}
 			id := dangID{r.Kind, r.Key, from}
 			if g := dangMap[id]; g != nil {
-				g.Sites = append(g.Sites, site)
+				if len(g.Sites) < maxRowSites {
+					g.Sites = append(g.Sites, siteOnce())
+				}
 				g.Refs++
 				continue
 			}
+			site := siteOnce()
 			dangMap[id] = &HealthRow{
 				Type: compatDangling, Kind: r.Kind, Name: r.Key,
 				Sites: []OverrideSite{site}, From: from, FromName: s.OriginName(from),
@@ -229,7 +246,7 @@ func refRows(s *session.Session) (depends, dangling []HealthRow) {
 		seenDep[id] = true
 		depends = append(depends, HealthRow{
 			Type: compatDepends, Kind: r.Kind, Name: r.Key,
-			Sites: []OverrideSite{site}, Refs: 1,
+			Sites: []OverrideSite{siteOnce()}, Refs: 1,
 			From: from, FromName: s.OriginName(from),
 			To: to, ToName: s.OriginName(to),
 		})

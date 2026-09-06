@@ -64,11 +64,18 @@ func definitionSites(s *session.Session, key string, winner *catalog.Def) []Loca
 	if winner != nil && jomini.IsEphemeral(winner.Kind) {
 		ephemeralKind = jomini.CanonicalKind(winner.Kind)
 	}
+	// Same reasoning, one kind further: `namespace = conqueror` is not where the
+	// `conqueror` trait is defined. Left in, F12 on the trait returned two
+	// places and the editor opened a peek listing instead of jumping.
+	wantNamespace := winner != nil && jomini.CanonicalKind(winner.Kind) == "namespace"
 	add := func(d catalog.Def) {
 		if d.Key != key {
 			return
 		}
 		if ephemeralKind != "" && jomini.CanonicalKind(d.Kind) != ephemeralKind {
+			return
+		}
+		if !wantNamespace && jomini.CanonicalKind(d.Kind) == "namespace" {
 			return
 		}
 		if winner != nil && winner.OwnerKey != "" && d.OwnerKey != "" &&

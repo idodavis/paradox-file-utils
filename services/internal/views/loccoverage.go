@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"paradox-modding-tools/services/internal/catalog"
 	"paradox-modding-tools/services/internal/game"
 	"paradox-modding-tools/services/internal/session"
 )
@@ -27,14 +28,19 @@ type locGID struct{ lang, kind, name, origin string }
 
 // Coverage returns per-language loc KPIs and grouped Health rows.
 func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
+	// Reshape in one pass rather than through LocByLang, which hands back a deep
+	// copy of every language. Copying it and then building this map held three
+	// copies of the whole loc corpus, which on a total conversion is most of the
+	// memory this function uses.
 	byLang := map[string]map[string]locSite{}
-	for lang, m := range s.LocByLang() {
-		entries := map[string]locSite{}
-		for k, v := range m {
-			entries[k] = locSite{key: k, value: v.Value, file: v.Path, line: v.Line}
+	s.EachLoc(func(lang, k string, v catalog.LocEntry) {
+		entries := byLang[lang]
+		if entries == nil {
+			entries = map[string]locSite{}
+			byLang[lang] = entries
 		}
-		byLang[lang] = entries
-	}
+		entries[k] = locSite{key: k, value: v.Value, file: v.Path, line: v.Line}
+	})
 	if len(byLang) == 0 {
 		return nil, nil
 	}
@@ -66,20 +72,47 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 
 	groups := map[locGID]*HealthRow{}
 	var order []locGID
+	// KPI counts every distinct issue; only the first healthLocCap per language
+	// become rows. Counting separately from materialising is what lets the row
+	// budget stop the file reads — before, the cap was applied at the end, so a
+	// conversion paid for every issue and then threw nearly all of them away.
+	seenID := map[locGID]bool{}
+	kpi := map[locGID]int{}
+	kept := map[string]int{}
+	// Building a site reads the file and splits it into lines, so it happens
+	// only for sites actually kept. A total conversion produces tens of
+	// thousands of issues across a dozen languages, of which healthLocCap keeps
+	// 500 per language — doing the read up front meant paying for every one of
+	// the rest, and it was most of the cost of Workspace Health.
 	addIssue := func(lang, kind string, site locSite) {
 		origin, _, _ := s.Locate(site.file)
 		origin = originID(origin)
-		os := OverrideSite{
-			Origin: origin, OriginName: s.OriginName(origin),
-			Path: site.file, Rel: s.DisplayRel(site.file), Line: site.line,
+		makeSite := func() OverrideSite {
+			os := OverrideSite{
+				Origin: origin, OriginName: s.OriginName(origin),
+				Path: site.file, Rel: s.DisplayRel(site.file), Line: site.line,
+			}
+			fillSnippet(s, &os)
+			return os
 		}
-		fillSnippet(s, &os)
 		id := locGID{lang, kind, site.key, origin}
 		if g := groups[id]; g != nil {
-			g.Sites = append(g.Sites, os)
+			if len(g.Sites) < maxRowSites {
+				g.Sites = append(g.Sites, makeSite())
+			}
 			g.Refs++
 			return
 		}
+		if seenID[id] {
+			return // counted already; this language is past its row budget
+		}
+		seenID[id] = true
+		kpi[locGID{lang: lang, kind: kind}]++
+		if kept[lang] >= healthLocCap {
+			return
+		}
+		kept[lang]++
+		os := makeSite()
 		groups[id] = &HealthRow{
 			Type: kind, Name: site.key, Language: lang,
 			Origin: origin, OriginName: s.OriginName(origin),
@@ -89,11 +122,29 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 		order = append(order, id)
 	}
 
+	// Memoised across languages: a key's owner does not depend on which
+	// language file it sits in, and a mod shipping a dozen translations would
+	// otherwise decompose every key a dozen times.
+	byConvention := map[string]bool{}
+	hasOwner := func(key string) bool {
+		if v, done := byConvention[key]; done {
+			return v
+		}
+		_, _, ok := s.LocConventionOwner(key)
+		byConvention[key] = ok
+		return ok
+	}
+
 	outLangs := make([]HealthLang, 0, len(langs))
 	for _, lang := range langs {
 		inheritedKeys := inheritKeys(s, lang)
 		entries := byLang[lang]
 		outLangs = append(outLangs, HealthLang{Language: lang, Defined: len(entries)})
+		// Per language deliberately: a translator wants to see which keys they
+		// have not done yet, which is what TestCoverageMissingNotSuppressedBy-
+		// DefaultLang pins. What must not happen is reporting a key vanilla
+		// already provides — that is inheritedKeys' job, and it was failing for
+		// every non-default language.
 		for key, sites := range referenced {
 			if _, ok := entries[key]; ok || inheritedKeys[key] {
 				continue
@@ -104,6 +155,15 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 		}
 		for key, site := range entries {
 			if used[key] || inheritedKeys[key] {
+				continue
+			}
+			// A key nothing cites can still be consumed by name: the engine
+			// reads `ACHIEVEMENT_DESC_<id>` for an achievement and
+			// `notification_<id>_tooltip` for a message without either
+			// appearing in script. Asked here rather than expanded into stored
+			// references, because it is only ever asked of the few keys that
+			// got this far.
+			if hasOwner(key) {
 				continue
 			}
 			addIssue(lang, "orphaned", site)
@@ -129,18 +189,20 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 	for i := range outLangs {
 		byKPI[outLangs[i].Language] = &outLangs[i]
 	}
-	for _, id := range order {
+	// From the counter, not from order: order is capped to the row budget, so
+	// counting it would report "500 missing" for a mod that has thousands.
+	for id, n := range kpi {
 		hl := byKPI[id.lang]
 		if hl == nil {
 			continue
 		}
 		switch id.kind {
 		case "missing":
-			hl.Missing++
+			hl.Missing += n
 		case "orphaned":
-			hl.Orphaned++
+			hl.Orphaned += n
 		case "untranslated":
-			hl.Untranslated++
+			hl.Untranslated += n
 		}
 	}
 	slices.SortFunc(order, func(a, b locGID) int {
@@ -152,13 +214,10 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 		}
 		return cmp.Compare(a.kind, b.kind)
 	})
+	// order is already within budget — addIssue stopped materialising groups
+	// once a language hit healthLocCap.
 	rows := make([]HealthRow, 0, len(order))
-	kept := map[string]int{}
 	for _, id := range order {
-		if kept[id.lang] >= healthLocCap {
-			continue
-		}
-		kept[id.lang]++
 		rows = append(rows, *groups[id])
 	}
 	slices.SortFunc(rows, healthRowLess)

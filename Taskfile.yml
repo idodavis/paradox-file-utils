@@ -93,3 +93,14 @@ tasks:
     dir: services
     cmds:
       - go test ./... -timeout 1800s
+
+  test:sweep:
+    summary: >
+      Engine scoreboard: every Workspace Health check against every workshop mod
+      (~9min). Not part of test or test:full. Needs PMT_TEST_INSTALL_{CK3,VIC3,EU5}.
+      Counts are for investigation, not targets — see the baseline file. Runs the
+      determinism guard alongside, because a count that moves between runs cannot
+      be read as a regression either way.
+    dir: services
+    cmds:
+      - go test ./internal/views/ -run 'TestSweep|TestHealthIsDeterministic' -v -timeout 3600s

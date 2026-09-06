@@ -6,7 +6,6 @@
 package session
 
 import (
-	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -647,8 +646,15 @@ func (s *Session) LocKeys(prefix string, limit int) []string {
 func (s *Session) InheritedLocKeys(lang string) []string {
 	s.mu.RLock()
 	defLang := s.defaultLang
+	// The default-language sidecar is inherited by every language, not only its
+	// own. The games fall back to the source language for any key a translation
+	// omits, so a vanilla key present there is available in french too — and
+	// gating this on lang == defLang meant a mod that ships eight translations
+	// had every vanilla key it referenced reported missing eight times, once
+	// per language and never in english. A per-language sidecar, when one has
+	// been harvested, is unioned with it below rather than replacing it.
 	var sites map[string]catalog.LocEntry
-	if s.vanillaLoc != nil && (lang == "" || lang == defLang) {
+	if s.vanillaLoc != nil {
 		sites = s.vanillaLoc.Sites
 	}
 	installID, version := "", ""
@@ -659,11 +665,13 @@ func (s *Session) InheritedLocKeys(lang string) []string {
 
 	seen := map[string]bool{}
 	var out []string
-	if sites != nil {
-		for k := range sites {
-			addLocKeys(seen, &out, k)
-		}
-	} else if lang != "" && lang != defLang && installID != "" {
+	for k := range sites {
+		addLocKeys(seen, &out, k)
+	}
+	// A harvested sidecar for this language too, when there is one: it can hold
+	// keys the source language does not. Both are inherited, so this unions
+	// rather than replaces.
+	if lang != "" && lang != defLang && installID != "" {
 		if version == "" {
 			version = "latest"
 		}
@@ -705,18 +713,22 @@ func (s *Session) UsedLocKeys() map[string]bool {
 	return out
 }
 
-// LocByLang returns a copy of workspace loc entries keyed by language then key.
-func (s *Session) LocByLang() map[string]map[string]catalog.LocEntry {
+// EachLoc calls fn for every workspace loc entry, under the read lock.
+//
+// Prefer this to LocByLang when the caller is only going to read or reshape the
+// entries. LocByLang deep-copies every language, and a caller that then builds
+// its own map holds three copies of the whole loc corpus at once — which on a
+// total conversion is most of the memory Workspace Health uses.
+//
+// fn must not call back into the session.
+func (s *Session) EachLoc(fn func(lang, key string, e catalog.LocEntry)) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.locByLang == nil {
-		return nil
-	}
-	out := make(map[string]map[string]catalog.LocEntry, len(s.locByLang))
 	for lang, m := range s.locByLang {
-		out[lang] = maps.Clone(m)
+		for k, e := range m {
+			fn(lang, k, e)
+		}
 	}
-	return out
 }
 
 // EdgesFrom returns stored call+fire edges leaving id. Empty id returns every edge.

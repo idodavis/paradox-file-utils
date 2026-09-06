@@ -51,6 +51,26 @@ export interface EngineToken {
 }
 
 /**
+ * LocAffix is one derived localization naming convention for a kind: the key
+ * for a definition of that kind is Pre + <def id> + Suf. Both halves may be
+ * empty, which is the convention that a definition's key is simply its id.
+ */
+export interface LocAffix {
+    "pre"?: string;
+    "suf"?: string;
+
+    /**
+     * definitions of the kind that carry this key
+     */
+    "defs": number;
+
+    /**
+     * definitions of the kind in the install
+     */
+    "of": number;
+}
+
+/**
  * Modifier is one modifier token. Area is CK3 "Use areas" / Vic3 "Mask".
  */
 export interface Modifier {
@@ -226,9 +246,25 @@ export interface VanillaCache {
     "fireKeys"?: { [_ in string]?: string } | null;
     "nestedShapes"?: NestedShape[] | null;
     "wrappers"?: string[] | null;
-    "locConventions"?: { [_ in string]?: string } | null;
+    "locAffixes"?: { [_ in string]?: LocAffix[] | null } | null;
+    "locFields"?: string[] | null;
+    "locMemberAffixes"?: { [_ in string]?: LocAffix[] | null } | null;
     "kindInfo"?: { [_ in string]?: string } | null;
     "dataFunctions"?: string[] | null;
+
+    /**
+     * LocEngineSlots are `$NAME$` interpolations the game's own localization
+     * uses but never defines as a key — `$EFFECT_LIST_BULLET$`, `$ACTION$`,
+     * `$AGE$`. The engine fills them in; they are not loc keys anyone can
+     * write, so demanding one from a mod is a false "missing localization".
+     * 
+     * Derived from the install, never listed: 354 of the 1,138 distinct
+     * ALL-CAPS interpolations in CK3's english loc are of this kind, and a game
+     * update changes the set. `isLocEngineToken` guesses at the same thing from
+     * shape (a single ALL-CAPS word) and is right about 80% of the time; this
+     * is the measured version.
+     */
+    "locEngineSlots"?: string[] | null;
 
     /**
      * Schema is the type system the game declares in script_docs: scope types,

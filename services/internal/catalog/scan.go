@@ -61,15 +61,22 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	docDirs := scriptDocsDirs(req.GameID, req.InstallPath)
 	schema, _ := loadSchema(req.InstallID, version, docDirs)
 
-	progress(onProgress, 15, "parsing script")
-	files := append(append([]fileRef{}, inv.script...), inv.gui...)
-	acc, derived, dataFns, err := collectExtracts(ctx, req.GameID, files, true, nil, schema)
+	// Localization is read before the script walk, not after, because
+	// deriveLocFields needs the key set to decide which script properties hold
+	// a key — and that decision has to be made between the walk's two passes,
+	// while the second one is still emitting references.
+	progress(onProgress, 15, "reading localization")
+	vloc, locFileRefs, err := harvestLoc(ctx, inv.loc, locLang, req.InstallID, version)
 	if err != nil {
 		return nil, nil, err
 	}
+	engineSlots := locEngineSlots(vloc.Sites, locFileRefs)
+	locKeys := locKeySet(vloc.Sites)
 
-	progress(onProgress, 70, "reading localization")
-	vloc, locFileRefs, err := harvestLoc(ctx, inv.loc, locLang, req.InstallID, version)
+	progress(onProgress, 30, "parsing script")
+	files := append(append([]fileRef{}, inv.script...), inv.gui...)
+	acc, derived, dataFns, err := collectExtracts(
+		ctx, req.GameID, files, true, nil, schema, locKeys)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -89,6 +96,7 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		}
 	}
 
+	structures := keysByCount(acc.structures)
 	kinds := deriveFieldValueKinds(acc.fieldRHS, acc.defs)
 	if derived != nil {
 		derived.FieldValueKinds = kinds
@@ -99,11 +107,6 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 	// turned 1,905 real effects into 10,337 completion entries, 82% of them
 	// noise like `$CHARACTER$.culture`. Data functions are harvested in the
 	// first corpus pass, where the source text is already in hand.
-	var locSites map[string]LocEntry
-	if vloc != nil {
-		locSites = vloc.Sites
-	}
-
 	c := &VanillaCache{
 		FormatVersion:    CacheFormatVersion,
 		InstallID:        req.InstallID,
@@ -122,16 +125,19 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		FireKeys:         derived.FireKeys,
 		NestedShapes:     derived.NestedShapes,
 		Wrappers:         sortedKeys(derived.Wrappers),
-		LocConventions:   deriveLocConventions(acc.defs, locKeySet(locSites)),
+		LocAffixes:       deriveLocAffixes(acc.defs, locKeys),
+		LocFields:        sortedKeys(derived.LocFields),
+		LocMemberAffixes: deriveLocMemberAffixes(structures, locKeys),
 		KindInfo:         kindInfo,
 		FieldInfo:        fieldInfo,
 		FieldInfoByKind:  fieldByKind,
-		Structures:       keysByCount(acc.structures),
+		Structures:       structures,
 		StructureBlocks:  blockKeys(acc.structures, acc.structBlocks),
 		Vocabulary:       sortedKeys(acc.vocab),
 		GUITypes:         sortedKeys(acc.guiTypes),
 		GUIProps:         sortedKeys(acc.guiProps),
 		DataFunctions:    sortedKeys(dataFns),
+		LocEngineSlots:   engineSlots,
 		MetaKeys:         readMetaKeys(req.InstallPath, inv.meta),
 	}
 
@@ -279,6 +285,7 @@ type accum struct {
 	edges          []Edge
 	cands          []CallCandidate
 	loc            map[string]map[string]LocEntry
+	locOrder       map[string]map[string]int
 	structures     map[string]map[string]int
 	structBlocks   map[string]map[string]int
 	vocab          map[string]bool
@@ -291,6 +298,7 @@ type accum struct {
 func newAccum() *accum {
 	return &accum{
 		loc:            map[string]map[string]LocEntry{},
+		locOrder:       map[string]map[string]int{},
 		structures:     map[string]map[string]int{},
 		structBlocks:   map[string]map[string]int{},
 		vocab:          map[string]bool{},
@@ -307,9 +315,11 @@ func (a *accum) merge(ex FileExtract) {
 	a.defs = append(a.defs, ex.Defs...)
 	a.refs = append(a.refs, ex.Refs...)
 	a.edges = append(a.edges, ex.Edges...)
-	a.loc = MergeLoc(a.loc, ex.Loc)
+	a.mergeLocOrdered(ex.LocOrder, ex.Loc)
+	if ex.MemberKind != "" {
+		addCounts(&a.structures, ex.MemberKind, ex.StructCounts)
+	}
 	if ex.StructKind != "" {
-		addCounts(&a.structures, ex.StructKind, ex.StructCounts)
 		addCounts(&a.structBlocks, ex.StructKind, ex.StructBlocks)
 	}
 	maps.Copy(a.vocab, ex.Vocab)
@@ -375,9 +385,12 @@ func walkFiles(ctx context.Context, files []fileRef, fn func(fileRef) error) err
 // 4.30 GB and drove a scan to an 8.06 GB peak, while re-reading and re-parsing
 // the whole install costs about half a second. Memory here is bounded by what is
 // kept — defs, refs, edges — not by the size of the install.
+// locKeys is the install's localization key set, used between the two passes to
+// derive which script properties hold a key. Nil for a mod walk, which inherits
+// the install's answer from the cache.
 func collectExtracts(
 	ctx context.Context, gameID string, files []fileRef, bodies bool,
-	cache *VanillaCache, schema *Schema,
+	cache *VanillaCache, schema *Schema, locKeys map[string]bool,
 ) (*accum, *Derived, map[string]bool, error) {
 	corp := corpus{ctx: ctx, gameID: gameID, files: files}
 	dataFns := map[string]bool{}
@@ -418,6 +431,12 @@ func collectExtracts(
 			derived.FieldValueKinds[k] = v
 		}
 	}
+	// The install derives its own; a mod walk keeps what the cache carried, so
+	// a mod's `last_name` is read as localization for the same reason vanilla's
+	// is.
+	if len(locKeys) > 0 {
+		derived.LocFields = deriveLocFields(fieldRHS, locKeys, defKeySet(baseDefs), schema)
+	}
 	baseDefs = nil
 
 	// Second pass builds the model. The derived facts are complete now, so
@@ -449,6 +468,7 @@ func collectExtracts(
 	if err := harvestLocFiles(ctx, gameID, files, bodies, acc); err != nil {
 		return acc, derived, dataFns, err
 	}
+	dropEngineSlotRefs(acc, cache)
 	kinds := macroDefKinds(acc.defs, cache)
 	acc.refs = append(acc.refs, ApplyCallRefs(acc.cands, kinds)...)
 	acc.edges = append(acc.edges, ApplyCallEdges(acc.cands, macroDefKeys(acc.defs, cache))...)
@@ -459,7 +479,10 @@ func collectExtracts(
 func harvestLocFiles(
 	ctx context.Context, gameID string, files []fileRef, bodies bool, acc *accum,
 ) error {
-	return walkFiles(ctx, files, func(f fileRef) error {
+	// walkN rather than walkFiles: the index is the file's load order, and the
+	// merge needs it to decide which value wins when two files define one key.
+	return walkN(ctx, len(files), func(i int) error {
+		f := files[i]
 		if game.MatchExtract(gameID, f.rel).Mode != game.ModeLocKey {
 			return nil
 		}
@@ -468,7 +491,9 @@ func harvestLocFiles(
 			return nil
 		}
 		text, _ := jomini.Decode(raw)
-		acc.merge(ExtractFile(gameID, f.abs, f.rel, f.origin, text, bodies))
+		ex := ExtractFile(gameID, f.abs, f.rel, f.origin, text, bodies)
+		ex.LocOrder = i
+		acc.merge(ex)
 		return nil
 	})
 }
@@ -658,6 +683,31 @@ func harvestLoc(
 		return out, locRefs, nil
 	}
 	return &VanillaLoc{FormatVersion: LocFormatVersion, Sites: map[string]LocEntry{}}, locRefs, nil
+}
+
+// locEngineSlots are the `$NAME$` interpolations the game's own localization
+// uses but never defines. The engine substitutes those; no mod can write them,
+// so they must never be demanded as a missing loc key.
+//
+// This is evidence, not a guess: vanilla's usage is the declaration. On CK3 it
+// yields 354 names out of 1,138 distinct ALL-CAPS interpolations, and
+// `$EFFECT_LIST_BULLET$` alone accounted for the largest false "missing"
+// cluster in the whole workshop corpus.
+func locEngineSlots(defined map[string]LocEntry, refs []Ref) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range refs {
+		if r.Kind != "loc" || r.Key == "" || seen[r.Key] {
+			continue
+		}
+		if _, isKey := defined[r.Key]; isKey {
+			continue
+		}
+		seen[r.Key] = true
+		out = append(out, r.Key)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // HarvestLoc gathers install loc files for locLang without opening other languages.
@@ -948,4 +998,62 @@ func progress(fn func(pct int, msg string), pct int, msg string) {
 
 func prose(parts []string) string {
 	return strings.TrimSpace(strings.Join(strings.Fields(strings.Join(parts, " ")), " "))
+}
+
+// dropEngineSlotRefs removes loc references to interpolations the engine fills
+// in — `$EFFECT_LIST_BULLET$`, `$ACTION$` — which no mod can define.
+//
+// This is the harvest site, not the view: the decision needs the vanilla slot
+// set, which only exists once the install has been scanned, and the earliest
+// point that has it is here. Filtering the row later would leave a wrong
+// reference in the model for hover and find-references to trip over too.
+func dropEngineSlotRefs(acc *accum, cache *VanillaCache) {
+	if acc == nil || cache == nil || len(cache.LocEngineSlots) == 0 {
+		return
+	}
+	slots := make(map[string]bool, len(cache.LocEngineSlots))
+	for _, k := range cache.LocEngineSlots {
+		slots[k] = true
+	}
+	kept := acc.refs[:0]
+	for _, r := range acc.refs {
+		if r.Kind == "loc" && slots[r.Key] {
+			continue
+		}
+		kept = append(kept, r)
+	}
+	acc.refs = kept
+}
+
+// mergeLocOrdered merges one file's localization under LOAD order rather than
+// completion order.
+//
+// The corpus walk is parallel, so when two files of one language define the same
+// key, whichever worker happened to finish last decided which value survived.
+// That is wrong twice over: load order decides every other override, and the
+// answer changed between runs of the same workspace — Workspace Health's
+// untranslated count moved by one or two across identical sweeps, which makes it
+// useless as a threshold. order is the file's index in the walk list, which is
+// mod load order and then walk order within a mod.
+func (a *accum) mergeLocOrdered(order int, d LocDelta) {
+	if d.Lang == "" || len(d.Vals) == 0 {
+		return
+	}
+	m := a.loc[d.Lang]
+	if m == nil {
+		m = map[string]LocEntry{}
+		a.loc[d.Lang] = m
+	}
+	ord := a.locOrder[d.Lang]
+	if ord == nil {
+		ord = map[string]int{}
+		a.locOrder[d.Lang] = ord
+	}
+	for k, v := range d.Vals {
+		if prev, seen := ord[k]; seen && prev > order {
+			continue
+		}
+		m[k] = v
+		ord[k] = order
+	}
 }

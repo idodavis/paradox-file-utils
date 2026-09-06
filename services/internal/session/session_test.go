@@ -134,9 +134,15 @@ func TestQueries(t *testing.T) {
 	v, locValOK := s.DefaultLoc("k.t")
 	_, locFileOK := s.LocFile("mod", "english")
 	must(t, locOK && locValOK && v == "Hi" && locFileOK, "loc site/default/file")
+	eachSaw := ""
+	s.EachLoc(func(lang, k string, e catalog.LocEntry) {
+		if lang == "english" && k == "k.t" {
+			eachSaw = e.Value
+		}
+	})
 	must(t, len(s.LocKeys("", 80)) > 0 && len(s.LocKeys("k.", 80)) > 0 &&
 		len(s.LocKeys("zzz", 80)) == 0 &&
-		s.LocByLang()["english"]["k.t"].Value == "Hi", "LocKeys/LocByLang")
+		eachSaw == "Hi", "LocKeys/EachLoc")
 	must(t, len(s.RefsTo("k.t")) > 0 && len(s.RefsInFile(ev)) > 0 && len(s.LocRefs()) > 0, "refs")
 	must(t, len(s.EdgesFrom("t.1")) > 0 && len(s.EdgesTo("t.2")) > 0, "edges")
 	must(t, s.FileText(ev) != "" && s.Parsed(ev).Root != nil, "FileText/Parsed")

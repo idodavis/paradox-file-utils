@@ -4,6 +4,7 @@ package session
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 
 	"paradox-modding-tools/services/internal/catalog"
@@ -44,10 +45,13 @@ type Inspect struct {
 
 type identity struct {
 	path, name, kind, owner, locFilter, extractKind string
-	def                                             *catalog.Def
-	fieldKey, local                                 bool
-	spanStart, spanEnd                              int
-	assignStart, assignEnd, assignLine              int
+	// docs is prose the identify step worked out itself, for the cards whose
+	// content is computed from the cursor's surroundings rather than looked up.
+	docs                               string
+	def                                *catalog.Def
+	fieldKey, local                    bool
+	spanStart, spanEnd                 int
+	assignStart, assignEnd, assignLine int
 }
 
 // PrettyKind is the Kind line: CanonicalKind, then underscores to spaces.
@@ -132,8 +136,11 @@ func (s *Session) composeHint(kind, _ string) string {
 				break
 			}
 		}
-		if loc := s.cache.LocConventions[ck]; loc != "" {
-			parts = append(parts, "loc "+loc)
+		// The convention as a template rather than a label: "loc
+		// `ACHIEVEMENT_<id>`" teaches the shape, where the old "loc kind_id"
+		// only named PMT's own vocabulary.
+		if a := s.locAffixesLocked(ck); len(a) > 0 {
+			parts = append(parts, "loc `"+a[0].Key("<id>")+"`")
 		}
 		if jomini.IsMacroKind(ck) {
 			// The real signature, when the macro takes parameters, is built by
@@ -189,18 +196,97 @@ func (s *Session) FireKind(key string) string {
 	return s.modFireKeys[strings.ToLower(key)]
 }
 
-// ConventionLocKeys expands the derived loc pattern for one def.
-func (s *Session) ConventionLocKeys(kind, id string) []string {
+// ConventionLocKeys expands the derived loc conventions for one def, keeping
+// those that hold for at least minCoverage percent of the kind. Callers pass
+// catalog.LocConventionUsed to ask what the engine may read, or
+// LocConventionRequired to ask what it demands.
+func (s *Session) ConventionLocKeys(kind, id string, minCoverage int) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return catalog.ConventionKeys(id, s.locAffixesLocked(kind), minCoverage)
+}
+
+func (s *Session) locAffixesLocked(kind string) []catalog.LocAffix {
 	if s.cache == nil {
 		return nil
 	}
-	pat := s.cache.LocConventions[kind]
-	if pat == "" {
-		pat = s.cache.LocConventions[jomini.CanonicalKind(kind)]
+	if a := s.cache.LocAffixes[kind]; len(a) > 0 {
+		return a
 	}
-	return catalog.ConventionKeys(kind, id, pat)
+	return s.cache.LocAffixes[jomini.CanonicalKind(kind)]
+}
+
+// LocConventionOwner reports the definition a loc key names by convention —
+// `ACHIEVEMENT_DESC_<id>` naming the achievement, `notification_<id>_tooltip`
+// naming the message. A key with an owner is consumed by the engine even though
+// nothing cites it, which is what stops it reading as orphaned.
+// Takes the write lock, not the read lock: isMemberLocked fills a per-kind set
+// on first use, and building a cache under a read lock is a race.
+func (s *Session) LocConventionOwner(key string) (id, kind string, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cache == nil || len(s.cache.LocAffixes) == 0 {
+		return "", "", false
+	}
+	if id, kind, ok := catalog.ConventionOwner(
+		s.cache.LocAffixes, key, s.defKindsLocked); ok {
+		return id, kind, true
+	}
+	// Then the names that are members of a definition rather than definitions
+	// themselves. A CK3 game rule is a definition and gets `rule_<id>`, but its
+	// options are nested inside it and never become definitions — and vanilla
+	// writes 590 `setting_<option>` keys for its 380 options.
+	return catalog.MemberConventionOwner(
+		s.cache.LocMemberAffixes, key, s.isMemberLocked)
+}
+
+// isMemberLocked reports name as a block-member key of kind, across the install
+// and the mods. The per-kind set is built on first use and only for the kinds
+// that carry a member convention, which is a handful.
+func (s *Session) isMemberLocked(kind, name string) bool {
+	if kind == "" || name == "" {
+		return false
+	}
+	// Member names are stored lowercased by harvestStructVocab; the stem comes
+	// off a localization key verbatim.
+	name = strings.ToLower(name)
+	set, built := s.memberSets[kind]
+	if !built {
+		set = map[string]bool{}
+		if s.cache != nil {
+			for _, k := range s.cache.Structures[kind] {
+				set[k] = true
+			}
+		}
+		for _, k := range s.modMembers[kind] {
+			set[k] = true
+		}
+		if s.memberSets == nil {
+			s.memberSets = map[string]map[string]bool{}
+		}
+		s.memberSets[kind] = set
+	}
+	return set[name]
+}
+
+// defKindsLocked visits the kinds that define id, stopping when visit returns
+// false. ConventionOwner calls it for every span of every candidate key, so it
+// reads the indexes in place — no defsOf copy, and no result slice.
+func (s *Session) defKindsLocked(id string, visit func(kind string) bool) {
+	if id == "" {
+		return
+	}
+	for _, defs := range [2][]catalog.Def{s.defsByKey[id], s.cacheByKey[id]} {
+		for _, d := range defs {
+			k := jomini.CanonicalKind(d.Kind)
+			if !jomini.IsObjectKind(k) {
+				continue
+			}
+			if !visit(k) {
+				return
+			}
+		}
+	}
 }
 
 func (s *Session) identify(path string, line, col int) (identity, bool) {
@@ -254,6 +340,23 @@ func (s *Session) identify(path string, line, col int) (identity, bool) {
 				assignStart: a.Key.Range.Start, assignEnd: a.Key.Range.End,
 				assignLine: at.res.Lines().PositionAt(a.Key.Range.Start).Line,
 			}, true
+		}
+		// A bare number on the left of an `=` is a weight, not a name.
+		// `random_list = { 95 = {…} 5 = {…} }` is a 95% branch, but CK3 also
+		// keys map positions by province id, so `95` resolves to a map_data
+		// definition and the card offered "Amiens" for a probability. The files
+		// that genuinely define numeric-keyed rows are claimed by
+		// isLocalDefFile above, so past this point a numeric key is a weight.
+		if isWeightKey(a.Key.Text) {
+			if share := weightShare(at.slotAssign, at.slotKey, a.Key.Text); share != "" {
+				return identity{
+					path: path, name: a.Key.Text, kind: "weight", docs: share,
+				}, true
+			}
+			// Numeric but not a distribution — a Vic3 gene block writes
+			// `20 = empty`, an index rather than a probability. Saying nothing
+			// is the honest answer; it is the wrong answer that was the bug.
+			return identity{}, false
 		}
 		docs := s.kindFieldDoc(a.Key.Text, at.kind)
 		if docs != "" || s.isStructKey(at.kind, a.Key.Text) ||
@@ -329,7 +432,19 @@ func (s *Session) identify(path string, line, col int) (identity, bool) {
 			}
 		}
 	}
-	if d := s.Resolve(at.word); d != nil {
+	// resolveNonLoc, not Resolve: every localization entry is a `loc_key`
+	// definition in the index, and Resolve's default filter drops only
+	// ephemerals — so a word the game localizes resolved here, as loc_key,
+	// before ever reaching the vocabulary check below that is supposed to beat
+	// it. That is how a check macro or a field came up as a quoted player-facing
+	// string instead of its own documentation. Real loc-key references are
+	// served by the locDefined branch further down, which builds the same card.
+	// resolveNonLoc, not Resolve: every localization entry is a `loc_key`
+	// definition in the index, and Resolve's default filter drops only
+	// ephemerals. Every object in these games has a key named after it, so a
+	// value that names an object matched both, and which one came back was
+	// decided by load order rather than by kind.
+	if d := s.resolveNonLoc(at.word); d != nil {
 		return identity{path: path, name: d.Key, kind: d.Kind, def: d}, true
 	}
 	// What the game declares wins over a localization entry that merely shares
@@ -341,7 +456,13 @@ func (s *Session) identify(path string, line, col int) (identity, bool) {
 	if ck := s.vocabRole(at.word); ck != "" {
 		return identity{path: path, name: at.word, kind: ck}, true
 	}
-	if s.locDefined(at.word) {
+	// Never on the left of an `=`. A key is a property name — a field, an
+	// effect, a check macro — and the games localize a great many of those
+	// words, so an unrecognised key came back as a localization entry and the
+	// card showed the player-facing string. Not knowing what a key is is the
+	// honest answer; claiming it is loc is not. Localization files themselves
+	// go through identifyLoc, above, and are unaffected.
+	if !at.inKey && s.locDefined(at.word) {
 		if file, ln, origin, ok := s.LocSite(at.word); ok {
 			d := &catalog.Def{
 				Kind: "loc_key", Key: at.word, Path: file, Line: ln, Origin: origin,
@@ -448,6 +569,11 @@ func (s *Session) fillCard(id identity) *Inspect {
 			s.attachSite(ins, id.def.Path, id.def.Line, id.def.Origin, id.def.Start)
 		}
 		return ins
+	case id.kind == "weight":
+		return &Inspect{
+			Kind: "weight", Key: id.name, Docs: id.docs,
+			RawKind: id.kind, Name: id.name,
+		}
 	case jomini.IsEphemeral(id.kind):
 		return s.ephemeralCard(id.name, id.kind, id.def)
 	case id.local:
@@ -723,7 +849,7 @@ func (s *Session) conventionLocBody(d *catalog.Def) string {
 	if d == nil {
 		return ""
 	}
-	for _, key := range s.ConventionLocKeys(d.Kind, d.Key) {
+	for _, key := range s.ConventionLocKeys(d.Kind, d.Key, catalog.LocConventionUsed) {
 		if text, ok := s.DefaultLoc(key); ok && text != "" {
 			return unescapeLocDisplay(text)
 		}
@@ -910,10 +1036,25 @@ func (s *Session) attachSite(ins *Inspect, path string, line int, origin string,
 	}
 }
 
+// resolveNonLoc resolves a word to a scripted object, preferring one that can
+// actually be referenced over a localization entry or an event namespace.
+//
+// A namespace declares an id prefix for events; nothing points at one. But it is
+// a definition like any other in the index, so load order decided the tie: a mod
+// writing `namespace = conqueror` outranked vanilla's `conqueror` trait, and
+// `add_trait = conqueror` hovered as the namespace. What kind of thing a name
+// denotes is not something override order gets to decide. A namespace still
+// resolves when nothing else of that name does, so hovering one still works.
 func (s *Session) resolveNonLoc(word string) *catalog.Def {
-	return s.ResolveMatching(word, func(d catalog.Def) bool {
+	keep := func(d catalog.Def) bool {
 		return d.Kind != "loc_key" && !jomini.IsEphemeral(d.Kind)
-	})
+	}
+	if d := s.ResolveMatching(word, func(d catalog.Def) bool {
+		return jomini.IsObjectKind(d.Kind)
+	}); d != nil {
+		return d
+	}
+	return s.ResolveMatching(word, keep)
 }
 
 func (s *Session) resolveOfKind(word, kind string) *catalog.Def {
@@ -1044,4 +1185,69 @@ func firstProse(s string) string {
 		s = s[:i]
 	}
 	return strings.TrimSpace(s)
+}
+
+// isWeightKey reports a bare non-negative number used as an assignment key.
+// Dates (`1066.1.1`) and event ids (`ns.1`) are not bare numbers and are
+// unaffected.
+func isWeightKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		if key[i] < '0' || key[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// weightShare explains a weight as its share of the list it sits in. The
+// denominator is the sum of the sibling weights, which is not always 100 —
+// `random_list = { 10 = {…} 30 = {…} }` is a quarter and three quarters — so it
+// is computed rather than assumed, and the list is named from the file rather
+// than from any list of known weighted effects.
+func weightShare(parent *jomini.Assignment, listName, weight string) string {
+	if parent == nil {
+		return ""
+	}
+	b := jomini.ChildBlock(parent)
+	if b == nil {
+		return ""
+	}
+	var total, self float64
+	n := 0
+	for _, st := range b.Statements {
+		a, ok := st.(*jomini.Assignment)
+		if !ok || a.Key.Quoted || !isWeightKey(a.Key.Text) {
+			continue
+		}
+		// Each branch of a weighted list is a body. Requiring that separates a
+		// distribution from a numeric lookup table, whose entries are scalars.
+		if jomini.ChildBlock(a) == nil {
+			continue
+		}
+		v, err := strconv.ParseFloat(a.Key.Text, 64)
+		if err != nil {
+			continue
+		}
+		total += v
+		n++
+		if a.Key.Text == weight {
+			self = v
+		}
+	}
+	// One number is not a distribution, and a block of zeroes has no share.
+	if n < 2 || total <= 0 {
+		return ""
+	}
+	out := trimFloat(self) + " of " + trimFloat(total)
+	if listName != "" {
+		out += " in `" + listName + "`"
+	}
+	return out + " — a " + trimFloat(self*100/total) + "% chance"
+}
+
+func trimFloat(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
 }

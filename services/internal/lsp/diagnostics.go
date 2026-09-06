@@ -165,7 +165,11 @@ func (f diagFile) requiredLocDiags() []Diagnostic {
 	}
 	var out []Diagnostic
 	for _, d := range f.s.DefsInFile(f.path) {
-		for _, key := range f.s.ConventionLocKeys(d.Kind, d.Key) {
+		// Required-grade conventions only. Telling a modder a key is missing
+		// asserts the game demands it, and a shape most of a kind happens to
+		// share is a habit — it belongs in the orphan check, not in a warning.
+		for _, key := range f.s.ConventionLocKeys(
+			d.Kind, d.Key, catalog.LocConventionRequired) {
 			if locDefined(f.s, key) {
 				continue
 			}

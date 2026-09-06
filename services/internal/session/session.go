@@ -54,9 +54,14 @@ type Session struct {
 	// scopePrefix and scopeKind answer "a token declares it takes a <scope
 	// type> — how does the user write one?": as `prefix:id`, or as a bare key
 	// of some database. Both reverse a table that is otherwise scanned whole.
-	scopePrefix      map[string]string
-	scopeKind        map[string]string
-	modFireKeys      map[string]string
+	scopePrefix map[string]string
+	scopeKind   map[string]string
+	modFireKeys map[string]string
+	// modMembers are block-member key names per kind from the mods, and
+	// memberSets is the lazily built per-kind set the orphan check probes. Only
+	// kinds that actually carry a member convention are ever built.
+	modMembers       map[string][]string
+	memberSets       map[string]map[string]bool
 	fieldValueKinds  map[string]string
 	modFieldKinds    map[string]string
 	modFieldEnums    map[string]map[string][]string
@@ -115,6 +120,8 @@ func NewWithLoc(
 	s.modFieldKinds = idx.FieldValueKinds
 	s.modFieldEnums = idx.FieldEnumsByKind
 	s.modFireKeys = maps.Clone(idx.FireKeys)
+	s.modMembers = idx.Structures
+	s.memberSets = nil
 	s.rebuildCacheIndexLocked()
 	s.rebuildFieldKindsLocked()
 	s.rebuildMacroSetsLocked()

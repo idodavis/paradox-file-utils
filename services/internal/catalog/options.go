@@ -8,6 +8,7 @@
 package catalog
 
 import (
+	"maps"
 	"slices"
 	"strings"
 
@@ -197,6 +198,8 @@ func deriveNestedOptions(
 		if len(unresolved) < minOptionRefs {
 			continue
 		}
+		// Sorted, because the greedy loop consumes this slice in order.
+		slices.Sort(unresolved)
 		byField[field] = unresolved
 		for _, v := range unresolved {
 			wanted[v] = true
@@ -219,7 +222,16 @@ func deriveNestedOptions(
 	}
 
 	best := map[optionOwner]claim{}
-	for field, unresolved := range byField {
+	// In field-name order, not map order. The greedy loop below consumes values
+	// as it assigns owners, so which field is processed first changes how much
+	// is left for the next one — and that decided which field named the
+	// database. Two scans of one CK3 install disagreed on whether the `genes`
+	// option database was `template` or `positive_mirror`, which moved 352 defs
+	// to a different kind and made Workspace Health's counts differ between runs
+	// of the same workspace. Scheduling must not decide what anything is called.
+	fields := slices.Sorted(maps.Keys(byField))
+	for _, field := range fields {
+		unresolved := byField[field]
 		// A field may reference more than one database: CK3's `template` names
 		// morph templates, grouped one level down per gene, and accessory
 		// templates two levels down. Owners are taken greedily until the field's
@@ -268,7 +280,16 @@ func deriveNestedOptions(
 		if explained*100 < len(unresolved)*optionCoverage {
 			continue
 		}
-		for owner, hits := range claimed {
+		// Sorted for the same reason: these writes are order-sensitive because a
+		// losing field still contributes its names.
+		for _, owner := range slices.SortedFunc(maps.Keys(claimed),
+			func(a, b optionOwner) int {
+				if a.parentKind != b.parentKind {
+					return strings.Compare(a.parentKind, b.parentKind)
+				}
+				return strings.Compare(a.groupKey, b.groupKey)
+			}) {
+			hits := claimed[owner]
 			if cur, ok := best[owner]; !ok ||
 				betterOptionField(field, len(hits), cur.field, len(cur.names)) {
 				if ok {

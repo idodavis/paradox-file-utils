@@ -13,6 +13,7 @@
 package catalog
 
 import (
+	"cmp"
 	"maps"
 	"slices"
 	"strings"
@@ -34,7 +35,8 @@ type Derived struct {
 	NestedShapes    []NestedShape
 	Wrappers        map[string]bool
 	FieldValueKinds map[string]string
-	LocConventions  map[string]string
+	LocAffixes      map[string][]LocAffix
+	LocFields       map[string]bool
 }
 
 // derivedFromCache copies the persisted derived maps so a live reindex can
@@ -46,7 +48,8 @@ func derivedFromCache(c *VanillaCache) *Derived {
 		FireKeys:        map[string]string{},
 		Wrappers:        map[string]bool{},
 		FieldValueKinds: map[string]string{},
-		LocConventions:  map[string]string{},
+		LocAffixes:      map[string][]LocAffix{},
+		LocFields:       map[string]bool{},
 	}
 	if c == nil {
 		return v
@@ -55,7 +58,10 @@ func derivedFromCache(c *VanillaCache) *Derived {
 	maps.Copy(v.PrefixKinds, c.PrefixKinds)
 	maps.Copy(v.FireKeys, c.FireKeys)
 	maps.Copy(v.FieldValueKinds, c.FieldValueKinds)
-	maps.Copy(v.LocConventions, c.LocConventions)
+	maps.Copy(v.LocAffixes, c.LocAffixes)
+	for _, f := range c.LocFields {
+		v.LocFields[f] = true
+	}
 	for _, w := range c.Wrappers {
 		v.Wrappers[w] = true
 	}
@@ -83,36 +89,140 @@ func (v *Derived) fieldKind(key string) string {
 	return v.FieldValueKinds[strings.ToLower(key)]
 }
 
-func (v *Derived) locConvention(kind string) string {
+func (v *Derived) locAffixes(kind string) []LocAffix {
 	if v == nil {
-		return ""
+		return nil
 	}
-	if p := v.LocConventions[kind]; p != "" {
-		return p
+	if a := v.LocAffixes[kind]; len(a) > 0 {
+		return a
 	}
-	return v.LocConventions[jomini.CanonicalKind(kind)]
+	return v.LocAffixes[jomini.CanonicalKind(kind)]
 }
 
-// ConventionKeys expands a derived loc pattern (id / id_desc / kind_id) for one def.
-func ConventionKeys(kind, id, pattern string) []string {
-	if id == "" || pattern == "" {
+// LocAffix is one derived localization naming convention for a kind: the key
+// for a definition of that kind is Pre + <def id> + Suf. Both halves may be
+// empty, which is the convention that a definition's key is simply its id.
+type LocAffix struct {
+	Pre  string `json:"pre,omitempty"`
+	Suf  string `json:"suf,omitempty"`
+	Defs int    `json:"defs"` // definitions of the kind that carry this key
+	Of   int    `json:"of"`   // definitions of the kind in the install
+}
+
+// Coverage is the share of the kind's definitions carrying this key, percent.
+//
+// Consumers pick their own floor, because the two questions asked of a
+// convention are not equally demanding: deciding a key is not orphaned only
+// needs the convention to be plausible, while telling a modder a key is missing
+// asserts the game requires it.
+func (a LocAffix) Coverage() int {
+	if a.Of == 0 {
+		return 0
+	}
+	return a.Defs * 100 / a.Of
+}
+
+// Key applies the convention to a definition id.
+func (a LocAffix) Key(id string) string { return a.Pre + id + a.Suf }
+
+const (
+	// minAffixDefs is how many definitions must share a shape before it is a
+	// convention rather than a coincidence. Same rule as minFieldHits and
+	// minOptionRefs: a ratio with no floor lets one accident decide.
+	minAffixDefs = 8
+	// minAffixCoverage is the share of a kind that must carry it.
+	minAffixCoverage = 20
+	// maxAffixesPerKind bounds what one kind contributes. State regions alone
+	// produce a convention per hub type, and the tail is not worth storing.
+	maxAffixesPerKind = 8
+	// affixKeyTokens caps span enumeration per key. Spans are quadratic in
+	// tokens and a twenty-token key is a sentence, not a naming convention.
+	affixKeyTokens = 10
+
+	// LocConventionUsed is the floor for "the engine may consume this key" —
+	// what suppressing a false "orphaned" row needs.
+	LocConventionUsed = minAffixCoverage
+	// LocConventionRequired is the floor for "the game expects this key", which
+	// is a claim strong enough to put a warning in a modder's editor. A shape
+	// four fifths of a kind happens to share is a habit, not a requirement.
+	LocConventionRequired = 90
+)
+
+// ConventionKeys expands a kind's derived conventions for one definition,
+// keeping those that hold for at least minCoverage percent of the kind.
+func ConventionKeys(id string, affixes []LocAffix, minCoverage int) []string {
+	if id == "" || len(affixes) == 0 {
 		return nil
 	}
-	switch pattern {
-	case "id":
-		return []string{id}
-	case "id_desc":
-		return []string{id, id + "_desc"}
-	case "kind_id":
-		stem := strings.TrimSuffix(kind, "s")
-		out := []string{kind + "_" + id}
-		if stem != kind {
-			out = append(out, stem+"_"+id)
+	out := make([]string, 0, len(affixes))
+	for _, a := range affixes {
+		if a.Coverage() >= minCoverage {
+			out = append(out, a.Key(id))
 		}
-		return out
-	default:
+	}
+	if len(out) == 0 {
 		return nil
 	}
+	return out
+}
+
+// ConventionOwner reports the definition a convention key names: the key
+// decomposes as <pre><id><suf> where pre/suf is a convention of a kind that
+// defines id. eachDefKind visits the kinds that define a given id.
+//
+// This is the reverse of ConventionKeys and it is a lookup rather than stored
+// references on purpose. Expanding forwards would mean storing one reference
+// per definition per convention — hundreds of thousands on a large install — to
+// answer a question that is only ever asked of the few keys that look orphaned.
+// Cheap discriminator first: decide before you materialise.
+//
+// eachDefKind is a visitor rather than a `[]string` return because it is called
+// for every span of every candidate key. Handing back a slice would allocate
+// once per definition found, on a path that runs tens of thousands of times
+// during one Workspace Health pass.
+func ConventionOwner(
+	affixes map[string][]LocAffix, key string,
+	eachDefKind func(id string, visit func(kind string) bool),
+) (id, kind string, ok bool) {
+	if key == "" || len(affixes) == 0 {
+		return "", "", false
+	}
+	// A key past the token cap is rejected anyway, so the offsets of one that is
+	// not fit in a fixed buffer and cost nothing.
+	var buf [affixKeyTokens + 2]int
+	offs := tokenOffsets(key, buf[:0])
+	if len(offs) > affixKeyTokens+1 {
+		return "", "", false
+	}
+	// One closure for the whole call, reading pre/suf/hit rather than capturing
+	// them fresh. Built inside the span loop it was allocated once per span —
+	// twenty-odd allocations to answer one key, on a path that runs for every
+	// key that survived every other orphan filter.
+	var pre, suf, hit string
+	visit := func(k string) bool {
+		for _, a := range affixes[jomini.CanonicalKind(k)] {
+			if a.Pre == pre && a.Suf == suf {
+				hit = k
+				return false
+			}
+		}
+		return true
+	}
+	// Longest span first: the definition id is the largest part of the key, and
+	// a shorter span that also happens to name something would be the wrong
+	// owner to report.
+	for n := len(offs) - 1; n > 0; n-- {
+		for i := 0; i+n < len(offs); i++ {
+			j := i + n
+			span := key[offs[i] : offs[j]-1]
+			pre, suf, hit = key[:offs[i]], key[offs[j]-1:], ""
+			eachDefKind(span, visit)
+			if hit != "" {
+				return span, hit, true
+			}
+		}
+	}
+	return "", "", false
 }
 
 // IsStop reports a grammar/logic word that is never an object key.
@@ -127,7 +237,14 @@ func (v *Derived) mergeLocal(local *Derived) {
 	v.PrefixKinds = mergeStringMap(v.PrefixKinds, local.PrefixKinds)
 	v.FireKeys = mergeStringMap(v.FireKeys, local.FireKeys)
 	v.FieldValueKinds = mergeStringMap(v.FieldValueKinds, local.FieldValueKinds)
-	v.LocConventions = mergeStringMap(v.LocConventions, local.LocConventions)
+	for kind, list := range local.LocAffixes {
+		if len(list) > 0 {
+			v.LocAffixes[kind] = list
+		}
+	}
+	for f := range local.LocFields {
+		v.LocFields[f] = true
+	}
 	for k, ok := range local.Wrappers {
 		if ok {
 			v.Wrappers[k] = true
@@ -802,55 +919,186 @@ func dropWrapperDefs(defs []Def, wrappers map[string]bool) []Def {
 	return out
 }
 
-// deriveLocConventions picks id / id_desc / kind_id when a majority of defs of
-// one kind have that loc key in the sidecar.
-func deriveLocConventions(defs []Def, locKeys map[string]bool) map[string]string {
-	if len(locKeys) == 0 {
+// deriveLocAffixes reads the install's own localization to work out how each
+// kind names its keys.
+//
+// It replaced a three-way vote between `id`, `id_desc` and `kind_id`. Those are
+// three real conventions, but they are three of many — Victoria 3 alone writes
+// `ACHIEVEMENT_<id>`, `ACHIEVEMENT_DESC_<id>`, `notification_<id>_tooltip`,
+// `HUB_NAME_<state>_farm`, `SINGULAR_DEMONYM_<culture>` — and picking one
+// winner per kind left every other key for that kind looking defined-but-unused.
+// Nothing about those shapes is guessable, which is exactly why they are read
+// from the corpus rather than listed in code: a game update that invents a new
+// one is picked up by the next scan.
+//
+// The method is the same as every other derivation here. Take each localization
+// key, find the spans of it that name a definition, and record the surrounding
+// prefix and suffix as a candidate convention for that definition's kind. A
+// candidate becomes a convention when enough distinct definitions share it.
+func deriveLocAffixes(defs []Def, locKeys map[string]bool) map[string][]LocAffix {
+	if len(locKeys) == 0 || len(defs) == 0 {
 		return nil
 	}
-	type counts struct{ n, id, desc, kindID int }
-	byKind := map[string]*counts{}
+	kindsOf := make(map[string][]string, len(defs))
+	seen := map[string]map[string]bool{}
+	total := map[string]int{}
 	for _, d := range defs {
 		k := jomini.CanonicalKind(d.Kind)
-		if k == "" || jomini.IsEphemeral(k) || k == "loc_key" || k == "namespace" {
+		if d.Key == "" || !jomini.IsObjectKind(k) {
 			continue
 		}
-		c := byKind[k]
-		if c == nil {
-			c = &counts{}
-			byKind[k] = c
+		ids := seen[k]
+		if ids == nil {
+			ids = map[string]bool{}
+			seen[k] = ids
 		}
-		c.n++
-		if locKeys[d.Key] {
-			c.id++
+		if !ids[d.Key] {
+			ids[d.Key] = true
+			total[k]++
 		}
-		if locKeys[d.Key+"_desc"] {
-			c.desc++
-		}
-		stem := strings.TrimSuffix(k, "s")
-		if locKeys[k+"_"+d.Key] || locKeys[stem+"_"+d.Key] {
-			c.kindID++
+		if !slices.Contains(kindsOf[d.Key], k) {
+			kindsOf[d.Key] = append(kindsOf[d.Key], k)
 		}
 	}
-	out := map[string]string{}
-	for kind, c := range byKind {
-		if c.n < 2 {
+	return affixesFrom(kindsOf, total, locKeys)
+}
+
+// affixesFrom is the derivation itself: given names that belong to a kind, and
+// how many names each kind has, find the prefix/suffix shapes that turn enough
+// of them into real localization keys.
+func affixesFrom(
+	kindsOf map[string][]string, total map[string]int, locKeys map[string]bool,
+) map[string][]LocAffix {
+	if len(kindsOf) == 0 {
+		return nil
+	}
+	// Cheap discriminator first: a span can only be one of these names if its
+	// first token starts one. Without this, every key pays for every span of
+	// itself.
+	firstTok := make(map[string]bool, len(kindsOf))
+	for id := range kindsOf {
+		if i := strings.IndexByte(id, '_'); i > 0 {
+			firstTok[id[:i]] = true
+		} else {
+			firstTok[id] = true
+		}
+	}
+
+	// One count, not a set of ids: pre+id+suf reconstructs the key, so a given
+	// key can contribute to one convention at most once.
+	type candidate struct{ kind, pre, suf string }
+	hits := map[candidate]int{}
+	var offs []int
+	for key := range locKeys {
+		offs = tokenOffsets(key, offs[:0])
+		if len(offs) > affixKeyTokens+1 {
 			continue
 		}
-		need := c.n/2 + 1
-		switch {
-		case c.kindID >= need && c.kindID >= c.id && c.kindID >= c.desc:
-			out[kind] = "kind_id"
-		case c.desc >= need && c.desc >= c.id:
-			out[kind] = "id_desc"
-		case c.id >= need:
-			out[kind] = "id"
+		for i := 0; i+1 < len(offs); i++ {
+			if !firstTok[key[offs[i]:offs[i+1]-1]] {
+				continue
+			}
+			for j := len(offs) - 1; j > i; j-- {
+				span := key[offs[i] : offs[j]-1]
+				kinds := kindsOf[span]
+				if len(kinds) == 0 {
+					continue
+				}
+				pre, suf := key[:offs[i]], key[offs[j]-1:]
+				for _, k := range kinds {
+					hits[candidate{k, pre, suf}]++
+				}
+			}
 		}
+	}
+
+	out := map[string][]LocAffix{}
+	for c, n := range hits {
+		of := total[c.kind]
+		if n < minAffixDefs || of == 0 || n*100 < of*minAffixCoverage {
+			continue
+		}
+		out[c.kind] = append(out[c.kind], LocAffix{Pre: c.pre, Suf: c.suf, Defs: n, Of: of})
+	}
+	for kind, list := range out {
+		slices.SortFunc(list, func(a, b LocAffix) int {
+			if c := cmp.Compare(b.Defs, a.Defs); c != 0 {
+				return c // best evidence first
+			}
+			// Then the plainest shape, so a hover reading the first hit gets
+			// the definition's name rather than one of its decorations.
+			if c := cmp.Compare(len(a.Pre)+len(a.Suf), len(b.Pre)+len(b.Suf)); c != 0 {
+				return c
+			}
+			if c := cmp.Compare(a.Pre, b.Pre); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.Suf, b.Suf)
+		})
+		if len(list) > maxAffixesPerKind {
+			list = list[:maxAffixesPerKind]
+		}
+		out[kind] = list
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+// deriveLocMemberAffixes is deriveLocAffixes for names that are block members of
+// a definition rather than definitions themselves.
+//
+// CK3 game rules are the case that forces it. A rule is a definition and gets
+// `rule_<id>`, which the definition-keyed pass already covers — 77 of vanilla's
+// 78 rules. But a rule's *options* are nested one level inside it and are never
+// harvested as definitions, and vanilla writes 590 `setting_<option>` /
+// `setting_<option>_desc` keys for its 380 options. Nothing owned any of them,
+// so every one read as an orphaned key, in vanilla and in every mod that adds a
+// rule.
+//
+// Kept in its own map rather than merged into LocAffixes, because the two must
+// not cross-apply. Member names include ordinary field names — `default`,
+// `name`, `trigger` — and letting a definition-keyed convention like
+// `<id>_desc` match one of those would explain away real orphans.
+func deriveLocMemberAffixes(
+	structures map[string][]string, locKeys map[string]bool,
+) map[string][]LocAffix {
+	if len(locKeys) == 0 || len(structures) == 0 {
+		return nil
+	}
+	names := make(map[string][]string, len(structures))
+	total := make(map[string]int, len(structures))
+	for kind, keys := range structures {
+		k := jomini.CanonicalKind(kind)
+		if k == "" {
+			continue
+		}
+		total[k] += len(keys)
+		for _, key := range keys {
+			if key == "" {
+				continue
+			}
+			if !slices.Contains(names[key], k) {
+				names[key] = append(names[key], k)
+			}
+		}
+	}
+	return affixesFrom(names, total, locKeys)
+}
+
+// tokenOffsets records where each underscore-delimited token of key starts,
+// plus a sentinel one past the end, so a span of tokens i..j-1 is
+// key[offs[i]:offs[j]-1] with no allocation. Reusing the caller's slice matters:
+// this runs over every localization key in the install.
+func tokenOffsets(key string, offs []int) []int {
+	offs = append(offs, 0)
+	for i := 0; i < len(key); i++ {
+		if key[i] == '_' {
+			offs = append(offs, i+1)
+		}
+	}
+	return append(offs, len(key)+1)
 }
 
 func locKeySet(sites map[string]LocEntry) map[string]bool {
@@ -922,4 +1170,42 @@ func leadingKindProse(text string) string {
 		}
 	}
 	return prose(lines)
+}
+
+// locField reports a script property the corpus shows holds localization keys,
+// beyond the engine property names parser/loc lists outright.
+func (v *Derived) locField(key string) bool {
+	if v == nil {
+		return false
+	}
+	return v.LocFields[key] || v.LocFields[strings.ToLower(key)]
+}
+
+// MemberConventionOwner is ConventionOwner for names that are block members of a
+// definition rather than definitions themselves — `setting_normal_difficulty`
+// naming an option inside a CK3 game rule.
+//
+// It does not enumerate spans. A member convention is always a whole-key match:
+// strip the prefix and suffix, and ask whether what is left is a member of that
+// kind. That is a handful of string comparisons per convention, against a set of
+// conventions that is small because few kinds have one at all.
+func MemberConventionOwner(
+	affixes map[string][]LocAffix, key string, isMember func(kind, name string) bool,
+) (name, kind string, ok bool) {
+	if key == "" || len(affixes) == 0 {
+		return "", "", false
+	}
+	for k, list := range affixes {
+		for _, a := range list {
+			if len(key) <= len(a.Pre)+len(a.Suf) ||
+				!strings.HasPrefix(key, a.Pre) || !strings.HasSuffix(key, a.Suf) {
+				continue
+			}
+			stem := key[len(a.Pre) : len(key)-len(a.Suf)]
+			if isMember(k, stem) {
+				return stem, k, true
+			}
+		}
+	}
+	return "", "", false
 }

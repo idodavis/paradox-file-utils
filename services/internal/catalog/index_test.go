@@ -472,7 +472,9 @@ real_effect = {
 		id := "ai_mogyer_adopt_christianity"
 		ex := extractCK3Overlay("common/decisions/x.txt",
 			id+" = {\n\tselection_tooltip = "+id+"_tooltip\n}\n",
-			"mod", &VanillaCache{LocConventions: map[string]string{"decisions": "id_desc"}})
+			"mod", &VanillaCache{LocAffixes: map[string][]LocAffix{
+				"decisions": {{Defs: 10, Of: 10}, {Suf: "_desc", Defs: 10, Of: 10}},
+			}})
 		if !hasRef(ex.Refs, "loc-convention", id) ||
 			!hasRef(ex.Refs, "loc-convention", id+"_desc") {
 			t.Fatalf("missing decision convention loc: %v", ex.Refs)
@@ -487,7 +489,9 @@ real_effect = {
 	t.Run("game_rules convention keys", func(t *testing.T) {
 		ex := extractCK3Overlay("common/game_rules/x.txt",
 			"my_rule = {\n\tdefault = a\n\ta = { }\n}\n", "mod",
-			&VanillaCache{LocConventions: map[string]string{"game_rules": "kind_id"}})
+			&VanillaCache{LocAffixes: map[string][]LocAffix{
+				"game_rules": {{Pre: "game_rule_", Defs: 10, Of: 10}},
+			}})
 		if hasRef(ex.Refs, "loc", "my_rule") || hasRef(ex.Refs, "loc-convention", "my_rule") {
 			t.Fatalf("bare rule id: %v", ex.Refs)
 		}
@@ -522,12 +526,20 @@ real_effect = {
 			t.Fatalf("missing effect loc refs: %v", ex.Refs)
 		}
 	})
-	t.Run("customizable localization_key is loc", func(t *testing.T) {
+	// Still harvested, so the key counts as used and hovers with its text —
+	// but broad, not strict. Customizable localization completes the stem at
+	// runtime (`localization_key = CustomLoc_BR_male_`), and demanding those
+	// produced 46,481 false "missing localization" findings on EU5 vanilla
+	// alone. See TestLocalizationKeyIsBroadNotStrict.
+	t.Run("customizable localization_key is a broad loc ref", func(t *testing.T) {
 		ex := extractCK3("common/customizable_localization/x.txt",
 			"LifestyleFocus = {\n\ttext = {\n\t\tlocalization_key = LifestyleFocus_martial\n\t}\n}\n",
 			"mod")
-		if !hasRef(ex.Refs, "loc", "LifestyleFocus_martial") {
+		if !hasRef(ex.Refs, "loc-broad", "LifestyleFocus_martial") {
 			t.Fatalf("missing localization_key ref: %v", ex.Refs)
+		}
+		if hasRef(ex.Refs, "loc", "LifestyleFocus_martial") {
+			t.Fatalf("localization_key must not demand a key: %v", ex.Refs)
 		}
 	})
 	t.Run("loc file interpolations", func(t *testing.T) {

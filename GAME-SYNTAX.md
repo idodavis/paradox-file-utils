@@ -192,6 +192,10 @@ resolve. Measured on vanilla:
 | `resolveFireKinds` | Vic3 `alert`, `character` became on_action fire sites — **4,033** false rows on one mod | `fireKeyCoverage` 50%, but only once a key carries `minFireNames` (8) names |
 | `deriveNestedShapes` | 342,138 phantom defs (§3b) | `Schema.Declares` |
 
+`minAffixDefs` (8 definitions must share a localization naming shape) and
+`minLocFieldHits` (8 values of a property must be keys, at 80% coverage) are the
+same rule applied to the two localization derivations.
+
 The fire-key floor needs the extra minimum because there a *low* hit rate is
 often the defect worth reporting: a mod whose `trigger_event` targets mostly do
 not exist has broken references, and vetoing the key would hide exactly what
@@ -204,6 +208,81 @@ Effect on real mods, dangling references reported:
 | More Historicity (CK3) | 1,086 | **3** |
 | Fix Trade Companies (EU5) | 86 | **4** |
 | Morgenroete (Vic3) | 698 | 139 |
+
+## 3f. The same spelling means different things in different slots
+
+The games reuse names across unrelated kinds constantly, and the engine is never
+confused because it always knows which slot it is reading. A resolver that looks
+a name up across every index has no such context, and breaking the tie by load
+order silently lets load order decide *what kind of thing a name is*.
+
+Measured 2026-09-06, all four found as wrong hover/peek cards:
+
+| Written | Also spelled the same | Wrong card | What actually decides |
+|---|---|---|---|
+| `has_realm_law = x` | the loc key `has_realm_law` | the caption "Realm Law" | it is **left of an `=`** — `probe.inKey` |
+| `culture = french` | the culture's own loc key | the caption | a value naming an object is the object — `resolveNonLoc` |
+| `add_trait = conqueror` | `namespace = conqueror` in the mod | the namespace, because mod beats vanilla | a namespace is not an object — `jomini.IsObjectKind` |
+| `random_list = { 95 = … }` | province `95` in `map_data/positions.txt` | the town Amiens | the **file** that defines numeric rows — `isLocalDefFile` |
+
+The last one is worth stating plainly because it is a whole class: **a bare
+number on the left of an `=` is a weight** (§3c says the same of fire tables),
+and vanilla CK3 keys map positions the same way. Nothing distinguishes the two
+by name; the file does.
+
+A weight's share is computed from its siblings, never assumed to be out of 100 —
+`{ 10 = {…} 30 = {…} }` is a quarter and three quarters. It is only claimed
+where the branches are **bodies**: `random_events = { 100 = some.event }` (§3c)
+and a Vic3 gene block's `20 = empty` both key scalars, and nothing separates a
+weight from a lookup index there, so the card says nothing rather than guessing.
+
+**The rule:** load order decides which *definition of the same kind* wins,
+nothing else. Every discriminator above is a structural fact from the parse tree
+— left of `=`, which file, whether the branch is a body — so none of them is a
+list of names that a game update can invalidate.
+
+`jomini.IsObjectKind` is the predicate for "a thing script can point at". Its
+complement is three kinds, one per bug above: ephemerals, `loc_key`, and
+`namespace`. Use it when resolving a name to a thing; not when asking whether a
+name is declared at all, because a namespace genuinely is.
+
+## 3g. A property holds a loc key — but a value is not always one
+
+`parser/loc` splits loc-key properties into **strict** (an unresolved value is a
+defect worth a diagnostic) and **broad** (a resolved value gets a hint, an
+unresolved one is silent). Measured over vanilla, where nothing is missing by
+definition, the split was wrong in two ways.
+
+**`localization_key` is not strict.** Its value is a stem that customizable
+localization completes at runtime — `localization_key = CustomLoc_BR_male_`
+ends in an underscore because the engine appends to it. Unresolved values on
+vanilla:
+
+| Game | `localization_key` | All other strict props | `localization_key` share |
+|---|---|---|---|
+| CK3 | 2,607 | 730 | 78% |
+| Vic3 | 11,597 | 271 | 98% |
+| EU5 | **46,481** | 139 | **99.7%** |
+
+Now broad: still harvested, so the key counts as used and hovers with its text;
+it just no longer asserts a key the game builds itself is missing.
+
+**Quoting does not tell you anything.** The obvious guess — quoted means display
+text, bare means a key reference — is wrong. Of quoted strict-property values on
+vanilla, **86% (CK3), 99% (Vic3), 92% (EU5)** resolve to a real key: Paradox
+quotes keys freely (`war_name = "INDEPENDENCE_WAR_NAME"`). Do not use quoting as
+a discriminator.
+
+**Whitespace does.** A localization file is `key:0 "value"`, so a key is a
+single token and can never contain a space. `desc = "Always make coronations!"`
+is display text the game shows verbatim, and demanding a key by that name was
+537 of A Game of Thrones' 618 `missing-required-loc` findings. `LooksLikeKey`
+now rejects any value containing whitespace.
+
+What remains after both fixes is genuinely ambiguous and vanilla shares it:
+`desc = "base"`, `desc = "Pyke"`, `desc = "Cowardly"` are single tokens
+indistinguishable from keys, and CK3 vanilla itself has 233 of them. No
+structural rule separates these; do not invent a heuristic for them.
 
 ## 4. Reference forms
 
@@ -285,16 +364,85 @@ secret_unbeliever_found_rule = {
   `game_rule_setting:suf_quieter`. Nothing in vanilla CK3 or in any mod checked
   writes that prefix, which is why the cite-driven nested pass cannot see them.
 - Localization convention: `rule_<rule_id>` for the rule, `setting_<option_id>`
-  and `setting_<option_id>_desc` for each option — a **prefixed** loc pattern,
-  which `LocConventions` (`id` / `id_desc` / `kind_id`) does not model.
+  and `setting_<option_id>_desc` for each option.
 
-Three things must line up to support these: harvest the options as defs, let
-`has_game_rule` resolve to them via field-value kinds, and teach loc conventions
-the `setting_<id>` prefix form. Tracked in the plan.
+Counted on vanilla CK3: **78 rules, 77 with a `rule_<id>` key** (99%), and **380
+options with 590 `setting_*` keys**.
+
+The loc side is **done**, and it did not need the options to be definitions.
+`deriveLocAffixes` covers `rule_<id>`, because a rule is a def. `setting_<id>`
+is covered by `deriveLocMemberAffixes`, which runs the same derivation over
+**block-member key names** instead of def keys — the option names were already
+harvested into `Structures` and then discarded. `BuildIndex` now carries them
+too, so a mod's *new* option is recognised even though it exists in no install.
+
+The two maps are kept apart on purpose. Member names include ordinary field
+names (`default`, `categories`), and letting a def-keyed convention such as
+`<id>_desc` match one of those would explain away real orphans.
+
+Still open, and unaffected by the above: harvest the options as **defs**, and
+let `has_game_rule` resolve to them via field-value kinds. That is what
+go-to-definition and completion on an option need. Tracked in the plan.
 
 ---
 
-## 6. Where these are asserted
+## 6. Total-conversion scale is the measurement
+
+Everything above is about what the games contain. This section is about what
+that volume does to code that reads it, because the two are the same subject:
+every entry here was correct on vanilla and only wrong on a mod big enough.
+
+Whenever a loop does expensive work and *then* decides whether it was needed,
+that is a bug waiting for a big enough mod. Five instances so far, one shape:
+
+| Where | What it did | Cost at total-conversion scale |
+|---|---|---|
+| `scriptParamItems` | took the first 80 script params, then kept this macro's | returned nothing, across 2,536 CK3 macros |
+| `defsOfType` | `FindDefs` with no kind, then filtered by kind | returned nothing with an empty prefix |
+| `views.refRows` | built a site (file read + line split) per reference, then called `Resolve` | hundreds of thousands of discarded reads |
+| `views.Coverage` | built a site per loc issue per language, then applied `healthLocCap` | ~99% of the work discarded |
+| `catalog.ConventionOwner` | built its visitor closure per *span* of a key rather than per key | 22 allocations and 448ns to answer one key; 4 and 155ns after |
+
+**The rule:** filter before the limit, and decide before you materialise. Where a
+budget exists, spend it on the *expensive* half — count cheaply and uncapped so
+KPIs stay honest, materialise only what is kept. `FindMacroDefs` and
+`Session.FindParamsOf` document the filter-before-limit half; `views.Coverage`
+documents the count-then-materialise half.
+
+The same rule decides where a derived fact is *stored*. A localization naming
+convention could be expanded forwards — one reference per definition per
+convention, hundreds of thousands of rows on CK3 — or applied backwards by
+`ConventionOwner` only to the few keys that still look orphaned. It is applied
+backwards.
+
+### Scheduling must not decide anything
+
+The corpus walk is parallel, and twice that let worker completion order decide a
+fact about the game. Both were found by scanning one install twice and diffing
+the caches, which is now `TestHealthIsDeterministic`:
+
+| Where | What order decided | Symptom |
+|---|---|---|
+| `accum.merge` → `MergeLoc` | which value survives when two files of one language define the same key | `untranslated` moved by 1–2 between identical runs |
+| `deriveNestedOptions` | which field names an option database, because the greedy loop consumes values as it assigns owners | two scans disagreed on whether CK3's `genes` database was `template` or `positive_mirror` — **352 defs under a different kind**, and `orphaned` differed by 30 |
+
+Both are now ordered: localization merges under **load order** (the file's index
+in the walk list, which is mod order then walk order — the same rule that
+decides every other override), and the option pass iterates fields, owners and
+values sorted.
+
+The second one is the one to remember. It was not a display bug: the *kind* of
+352 definitions depended on thread scheduling, so `FieldValueKinds`,
+go-to-definition and every reference to them changed between runs of the same
+workspace. Parallelism may decide when work happens, never what anything is.
+
+**Reproduction:** `task test:sweep`. Every Workspace Health check against every
+workshop mod on the machine, reported per game with hover and completion answer
+rates, diagnostics per code, and live heap. A Game of Thrones (21,499 files) is
+the acceptance case, and the run includes the determinism guard — a count that
+moves between runs cannot be read as a regression either way.
+
+## 7. Where these are asserted
 
 Real-install tests, skipped when the env var is absent:
 

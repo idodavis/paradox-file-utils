@@ -141,13 +141,19 @@ stated threshold, and the doc comment must name which — not "votes".
 |---|---|---|
 | Install-derived facts | `catalog/derive.go`, `Derived`, `derivedFromCache` | `votes.go`, `Votes`, "vote maps" |
 | Fire-key derivation | `deriveFireKeys`, `resolveFireKinds`, `fireTargets` | `VoteFireKeys`, `finishFireVotes`, `voteFireTargets` |
-| Other derivations | `deriveNestedShapes`, `deriveWrappers`, `deriveLocConventions`, `deriveFieldValueKinds`, `deriveFieldEnums` | any `Vote*` name |
+| Other derivations | `deriveNestedShapes`, `deriveWrappers`, `deriveLocAffixes`, `deriveLocFields`, `deriveFieldValueKinds`, `deriveFieldEnums` | any `Vote*` name |
 | Prefix → kind origin | "bound by `bindKinds`" | "voted" |
 
-Only the four derivations above exist, because only they are unstated by every
-dump: fire keys (`event` is not a scope type in any game), nested databases
-(CK3 faiths under religions), setup wrappers, and loc conventions. Adding a
-fifth means first proving no dump declares it.
+Only the derivations above exist, because only they are unstated by every dump:
+fire keys (`event` is not a scope type in any game), nested databases (CK3
+faiths under religions), setup wrappers, and the two localization conventions —
+how a kind names its keys (`deriveLocAffixes`) and which script properties hold
+one (`deriveLocFields`). Adding another means first proving no dump declares it.
+
+Every one carries an **evidence floor** as well as a coverage ratio —
+`minFieldHits`, `minOptionRefs`, `minAffixDefs`, `minLocFieldHits`. What each
+one is and why it is that number is measured in
+[GAME-SYNTAX.md §3e](GAME-SYNTAX.md).
 
 **Keep as different words:** `lsp.Position.character` vs `HoverResult.col`.
 `EventFieldInfo` vs cache `fieldInfo`. `Ref.Kind` vs `Def.Kind`. Disk

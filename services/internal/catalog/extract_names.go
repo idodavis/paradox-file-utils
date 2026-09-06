@@ -305,8 +305,13 @@ func conventionLocRefs(
 	}
 	var out []Ref
 	for _, d := range defs {
-		pat := derived.locConvention(d.Kind)
-		for _, key := range ConventionKeys(d.Kind, d.Key, pat) {
+		// Only the near-universal conventions are stored as references. The
+		// full set is applied in reverse by ConventionOwner, which costs
+		// nothing until a key actually looks orphaned; expanding all of them
+		// forwards would add a reference per definition per convention to
+		// every install cache.
+		affixes := derived.locAffixes(d.Kind)
+		for _, key := range ConventionKeys(d.Key, affixes, LocConventionRequired) {
 			out = append(out, Ref{
 				Key: key, Kind: "loc-convention", Path: path,
 				Line: li.PositionAt(d.Start).Line, Start: d.Start, End: d.End,

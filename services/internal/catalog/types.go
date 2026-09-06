@@ -6,10 +6,15 @@ package catalog
 import (
 	"slices"
 	"strings"
+	"sync"
 )
 
-// CacheFormatVersion is the on-disk schema of VanillaCache.
-const CacheFormatVersion = 22
+// CacheFormatVersion is the on-disk schema of VanillaCache. Bump it when the
+// derived *content* changes too, not only the field layout: a cache written
+// before deriveNestedOptions was made order-independent has 352 CK3 defs under
+// whichever kind that scan's threads happened to pick, and nothing else would
+// invalidate it.
+const CacheFormatVersion = 26
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit
@@ -127,9 +132,23 @@ type VanillaCache struct {
 	FireKeys         map[string]string              `json:"fireKeys,omitempty"`
 	NestedShapes     []NestedShape                  `json:"nestedShapes,omitempty"`
 	Wrappers         []string                       `json:"wrappers,omitempty"`
-	LocConventions   map[string]string              `json:"locConventions,omitempty"`
+	LocAffixes       map[string][]LocAffix          `json:"locAffixes,omitempty"`
+	LocFields        []string                       `json:"locFields,omitempty"`
+	LocMemberAffixes map[string][]LocAffix          `json:"locMemberAffixes,omitempty"`
 	KindInfo         map[string]string              `json:"kindInfo,omitempty"`
 	DataFunctions    []string                       `json:"dataFunctions,omitempty"`
+
+	// LocEngineSlots are `$NAME$` interpolations the game's own localization
+	// uses but never defines as a key — `$EFFECT_LIST_BULLET$`, `$ACTION$`,
+	// `$AGE$`. The engine fills them in; they are not loc keys anyone can
+	// write, so demanding one from a mod is a false "missing localization".
+	//
+	// Derived from the install, never listed: 354 of the 1,138 distinct
+	// ALL-CAPS interpolations in CK3's english loc are of this kind, and a game
+	// update changes the set. `isLocEngineToken` guesses at the same thing from
+	// shape (a single ALL-CAPS word) and is right about 80% of the time; this
+	// is the measured version.
+	LocEngineSlots []string `json:"locEngineSlots,omitempty"`
 
 	// Schema is the type system the game declares in script_docs: scope types,
 	// scope links, and typed engine tokens. Nil when the user has not run
@@ -156,6 +175,15 @@ type VanillaCache struct {
 	triggerSet         map[string]bool            `json:"-"`
 	structureSets      map[string]map[string]bool `json:"-"`
 	structureBlockSets map[string]map[string]bool `json:"-"`
+	// prepared marks the projections above as built. They are a pure function of
+	// the persisted fields, so deriving them once per cache is both correct and
+	// the only safe option: PrepareCache rebuilds maps in place, and every
+	// NewWithLoc calls it, so two sessions sharing one cache pointer raced.
+	//
+	// A plain bool rather than a sync.Once because internPaths copies the struct
+	// by value, and every guard type in sync and sync/atomic carries noCopy. The
+	// copy inherits prepared=true correctly: it shares the projection maps.
+	prepared bool `json:"-"`
 }
 
 // VanillaLoc is the default-language loc sidecar for one install + version + lang.
@@ -164,11 +192,29 @@ type VanillaLoc struct {
 	Sites         map[string]LocEntry `json:"sites"`
 }
 
-// PrepareCache normalizes field docs and builds O(1) membership maps for LSP/views.
+// PrepareCache normalizes field docs and builds O(1) membership maps for
+// LSP/views. It is idempotent: the projections derive purely from the persisted
+// fields, and rebuilding them in place while another session reads the same
+// cache is a data race.
+// prepareMu serializes cache preparation process-wide. It is held only while
+// the projections are built — once per cache, milliseconds — so the coarseness
+// costs nothing and it keeps VanillaCache copyable.
+var prepareMu sync.Mutex
+
 func PrepareCache(c *VanillaCache) {
 	if c == nil {
 		return
 	}
+	prepareMu.Lock()
+	defer prepareMu.Unlock()
+	if c.prepared {
+		return
+	}
+	prepareCacheOnce(c)
+	c.prepared = true
+}
+
+func prepareCacheOnce(c *VanillaCache) {
 	if c.FieldInfo == nil {
 		c.FieldInfo = map[string]string{}
 	}
@@ -193,8 +239,8 @@ func PrepareCache(c *VanillaCache) {
 	if c.FireKeys == nil {
 		c.FireKeys = map[string]string{}
 	}
-	if c.LocConventions == nil {
-		c.LocConventions = map[string]string{}
+	if c.LocAffixes == nil {
+		c.LocAffixes = map[string][]LocAffix{}
 	}
 	if c.KindInfo == nil {
 		c.KindInfo = map[string]string{}

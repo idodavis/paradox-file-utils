@@ -9,6 +9,7 @@ export type {
     Def,
     Edge,
     EngineToken,
+    LocAffix,
     Modifier,
     NestedShape,
     Ref,

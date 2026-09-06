@@ -37,10 +37,11 @@ export function ListDirectory(dirPath: string, showAll: boolean): $CancellablePr
 }
 
 /**
- * ReadEditableBase64 is ReadFileBase64 for the IDE file bridge, which opens the
- * bytes in an editor and so additionally refuses binary content.
+ * ReadEditableBase64 is ReadFileBase64 for the IDE file bridge, which hands the
+ * bytes to an editor: it refuses binary the workbench has no viewer for, and
+ * allows the image formats it does.
  * 
- * The two are separate because one function cannot serve both: the binary guard
+ * The two are separate because one function cannot serve both. The binary guard
  * keys on a NUL byte in the first 512, and a PNG carries its IHDR chunk length
  * (00 00 00 0D) at byte 8. Sharing the guard rejected every thumbnail, and the
  * explorer's per-mod icons quietly disappeared.

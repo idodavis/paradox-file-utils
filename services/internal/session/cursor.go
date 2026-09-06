@@ -36,8 +36,11 @@ type probe struct {
 	saveOK          bool
 	inKey           bool
 	slotKey         string
-	slot            string
-	paramOwner      string
+	// slotAssign is the assignment slotKey names, kept so a card can read the
+	// siblings of the thing under the cursor — what a weight is a share of.
+	slotAssign *jomini.Assignment
+	slot       string
+	paramOwner string
 }
 
 // CursorAt returns the CST probe at (line, UTF-8 column).
@@ -149,7 +152,8 @@ func fillCompleteSlot(at *probe, chain []jomini.Statement, off int) {
 		at.assign = inner
 		at.inKey = true
 		if len(assigns) >= 2 {
-			at.slotKey = assigns[len(assigns)-2].Key.Text
+			at.slotAssign = assigns[len(assigns)-2]
+			at.slotKey = at.slotAssign.Key.Text
 		}
 		return
 	}

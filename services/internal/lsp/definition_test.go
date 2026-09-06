@@ -216,10 +216,14 @@ func TestScriptNamesNavigate(t *testing.T) {
 }
 `
 	s, root := buildSession(t, "ck3", map[string]string{
-		"events/a.txt":                           a,
-		"events/b.txt":                           b,
-		"common/coat_of_arms/coat_of_arms/x.txt": "b_appleby = { pattern = \"p.dds\" }\n",
-		"common/landed_titles/t.txt":             "k_x = { coat_of_arms = b_appleby }\n",
+		"events/a.txt": a,
+		"events/b.txt": b,
+		// Two of each: field typing needs corroboration, so a single
+		// coat_of_arms usage no longer types the field (see minFieldHits).
+		"common/coat_of_arms/coat_of_arms/x.txt": "b_appleby = { pattern = \"p.dds\" }\n" +
+			"b_barton = { pattern = \"q.dds\" }\n",
+		"common/landed_titles/t.txt": "k_x = { coat_of_arms = b_appleby }\n" +
+			"k_y = { coat_of_arms = b_barton }\n",
 	}, nil, nil)
 	fa := filepath.Join(root, "events", "a.txt")
 	fb := filepath.Join(root, "events", "b.txt")

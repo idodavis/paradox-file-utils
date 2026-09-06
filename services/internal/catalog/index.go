@@ -19,6 +19,11 @@ type Harvest struct {
 	FieldValueKinds  map[string]string
 	FieldEnumsByKind map[string]map[string][]string
 	FireKeys         map[string]string
+	// Structures are the block-member key names the mods declare, per kind. The
+	// walk already collected these and threw them away; the orphan check needs
+	// them, because a mod's new game-rule option is a member name that exists in
+	// no install and in no definition index.
+	Structures map[string][]string
 }
 
 // BuildIndex walks every mod in load order and harvests its files.
@@ -38,7 +43,7 @@ func BuildIndex(ctx context.Context, gameID string, mods []ModInput, cache *Vani
 	if cache != nil {
 		schema = cache.Schema
 	}
-	acc, derived, _, err := collectExtracts(ctx, gameID, files, false, cache, schema)
+	acc, derived, _, err := collectExtracts(ctx, gameID, files, false, cache, schema, nil)
 	if acc == nil {
 		return Harvest{}, err
 	}
@@ -56,6 +61,7 @@ func BuildIndex(ctx context.Context, gameID string, mods []ModInput, cache *Vani
 		Order: uniqKeep(order), FieldValueKinds: kinds,
 		FieldEnumsByKind: deriveFieldEnums(acc.fieldRHSByKind, kinds),
 		FireKeys:         fireKeys,
+		Structures:       keysByCount(acc.structures),
 	}, err
 }
 

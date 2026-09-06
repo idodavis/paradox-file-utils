@@ -71,9 +71,9 @@ ns.1 = {
 
 func TestCoverageConventionLocsInGenericFile(t *testing.T) {
 	s := buildSession(t, "ck3", &catalog.VanillaCache{
-		LocConventions: map[string]string{
-			"decisions":  "id_desc",
-			"game_rules": "kind_id",
+		LocAffixes: map[string][]catalog.LocAffix{
+			"decisions":  {{Defs: 10, Of: 10}, {Suf: "_desc", Defs: 10, Of: 10}},
+			"game_rules": {{Pre: "game_rule_", Defs: 10, Of: 10}},
 		},
 	}, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
 		"common/game_rules/00.txt": `my_rule = {
@@ -228,5 +228,54 @@ ns.1 = { type = character_event title = used_key }
 		if strings.Contains(strings.ToLower(path), "metadata.json") {
 			t.Fatalf("metadata leaked: %+v", m)
 		}
+	}
+}
+
+// A game rule is a definition and gets `rule_<id>`; its options are nested one
+// level inside it and never become definitions, yet each gets `setting_<option>`
+// and `setting_<option>_desc`. Nothing owned those, so every option a mod added
+// produced two orphaned keys.
+func TestCoverageGameRuleOptionLocIsNotOrphaned(t *testing.T) {
+	s := buildSession(t, "ck3", &catalog.VanillaCache{
+		// What a scan derives from vanilla: rules are definitions, options are
+		// block members, and each has its own convention.
+		LocAffixes: map[string][]catalog.LocAffix{
+			"game_rules": {{Pre: "rule_", Defs: 81, Of: 81}},
+		},
+		LocMemberAffixes: map[string][]catalog.LocAffix{
+			"game_rules": {
+				{Pre: "setting_", Defs: 297, Of: 304},
+				{Pre: "setting_", Suf: "_desc", Defs: 294, Of: 304},
+			},
+		},
+	}, nil, []catalog.ModInput{oneMod(t, "ck3", map[string]string{
+		"common/game_rules/00.txt": `secret_unbeliever_found_rule = {
+	default = suf_quieter
+	suf_vanilla = { flag = GG_can_change_rule }
+	suf_quieter = { flag = GG_can_change_rule }
+}
+`,
+		"localization/english/mod_l_english.yml": "" +
+			"l_english:\n rule_secret_unbeliever_found_rule:0 \"R\"\n" +
+			" setting_suf_quieter:0 \"Quieter\"\n" +
+			" setting_suf_quieter_desc:0 \"Fewer events.\"\n" +
+			" setting_suf_vanilla:0 \"Vanilla\"\n" +
+			" genuinely_unused_key:0 \"U\"\n",
+	})})
+	_, cov := Coverage(s)
+	// The option names exist in no install — the mod invented them — so this
+	// only works because BuildIndex now carries the mods' own member names.
+	for _, key := range []string{
+		"rule_secret_unbeliever_found_rule",
+		"setting_suf_quieter", "setting_suf_quieter_desc", "setting_suf_vanilla",
+	} {
+		if coverageIssue(cov, "english", "orphaned", key) {
+			t.Errorf("%s is consumed by convention, not orphaned", key)
+		}
+	}
+	// And a key nothing explains is still reported. Suppressing everything
+	// would be no better than suppressing nothing.
+	if !coverageIssue(cov, "english", "orphaned", "genuinely_unused_key") {
+		t.Error("a key with no owner must still be orphaned")
 	}
 }

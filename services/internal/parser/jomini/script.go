@@ -268,3 +268,26 @@ var structuralDocs = map[string]string{
 func StructuralDoc(key string) string {
 	return structuralDocs[strings.ToLower(key)]
 }
+
+// IsObjectKind reports a kind whose definitions are things script can point at.
+//
+// The complement is not one category but three, and they were being excluded one
+// at a time, separately, at each place that resolves a name to a thing:
+//
+//   - ephemerals — a saved scope or a `$PARAM$` exists only while a body runs;
+//   - `loc_key` — a caption is not an object, though every object has one, and
+//     the games localize a great many words that are also script tokens;
+//   - `namespace` — an id prefix for events is not an object, though it shares a
+//     name with one often enough that a mod's `namespace = conqueror` outranked
+//     vanilla's `conqueror` trait.
+//
+// Each of those was found as a separate hover bug. Anything resolving a name to
+// a thing wants this predicate. Anything asking the different question "is this
+// name declared anywhere" does not — a namespace is genuinely declared.
+func IsObjectKind(kind string) bool {
+	switch CanonicalKind(strings.ToLower(kind)) {
+	case "", "loc_key", "namespace":
+		return false
+	}
+	return !IsEphemeral(kind)
+}

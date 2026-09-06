@@ -21,7 +21,6 @@ var strictProps = map[string]bool{
 	"prompt":            true,
 	"failure_desc":      true,
 	"success_desc":      true,
-	"localization_key":  true,
 	"war_name":          true,
 	"cb_name":           true,
 	"notification_text": true,
@@ -39,6 +38,19 @@ var broadProps = map[string]bool{
 	"name": true, "text": true, "tooltip": true, "first_valid": true,
 	"reason": true, "format": true, "header": true, "opinion_text": true,
 	"what": true, "who": true, "notification": true,
+
+	// localization_key was strict, and it is the single largest source of false
+	// "missing localization" anywhere in the engine. Counted over vanilla, where
+	// by definition nothing is missing, its value fails to resolve 2,607 times
+	// on CK3, 11,597 on Victoria 3 and 46,481 on EU5 — 99.7% of every unresolved
+	// strict property on that game.
+	//
+	// The reason is visible in the values: `localization_key = CustomLoc_BR_male_`
+	// ends in an underscore because customizable localization completes the stem
+	// at runtime. No key by that name exists or should. Broad still marks a
+	// resolved key used and still shows its text on hover; it just stops
+	// asserting that a key the game builds itself is missing.
+	"localization_key": true,
 }
 
 // Property classifies a script property name as a loc-key holder.
@@ -67,9 +79,25 @@ func Classify(prop string) Property {
 }
 
 // LooksLikeKey reports whether s is a plausible loc key (not yes/no/none,
-// not a `scope:` / `character:` prefix, not a built-in scope).
+// not a `scope:` / `character:` prefix, not a built-in scope, not prose).
+//
+// The prose case is why quoting proves nothing either way. Paradox quotes real
+// keys — `war_name = "HRE_CONQUEST_WAR_NAME"` — and also writes display text
+// straight into the same properties, which the game shows verbatim:
+//
+//	desc = "Always make coronations!"
+//	desc = "The Red Keep"
+//
+// What separates them is not the quotes but the space. A localization file is
+// `key:0 "value"`, so a key is a single token and can never contain whitespace.
+// Without this check every literal string in a strict property was demanded as
+// a missing key: 537 of A Game of Thrones' 618 such diagnostics, and EU5's
+// "Wrong culture" / "Wrong religion".
 func LooksLikeKey(s string) bool {
 	if s == "" || strings.Contains(s, ":") {
+		return false
+	}
+	if strings.ContainsFunc(s, unicode.IsSpace) {
 		return false
 	}
 	switch strings.ToLower(s) {

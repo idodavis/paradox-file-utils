@@ -42,18 +42,25 @@ type CallCandidate struct {
 
 // FileExtract is one parsed file's catalog harvest.
 type FileExtract struct {
-	Defs         []Def
-	Refs         []Ref
-	Edges        []Edge
-	Cands        []CallCandidate
-	Loc          LocDelta
-	StructKind   string
+	Defs       []Def
+	Refs       []Ref
+	Edges      []Edge
+	Cands      []CallCandidate
+	Loc        LocDelta
+	StructKind string
+	// MemberKind is StructKind for the member-name harvest, which unlike the
+	// rest runs for mods too. See the assignment site for why they are separate.
+	MemberKind   string
 	StructCounts map[string]int
 	StructBlocks map[string]int
 	Vocab        map[string]bool
 	GUITypes     map[string]bool
 	GUIProps     map[string]bool
 	FieldRHS     map[string]map[string]bool
+	// LocOrder is the file's index in the walk list, i.e. its load order. It
+	// decides which value survives when two files define one key; see
+	// accum.mergeLocOrdered.
+	LocOrder int
 }
 
 // extractLoc turns a localization file into loc_key defs, values, and `$key$` refs.
@@ -144,12 +151,27 @@ func extractForms(
 			ex.Defs = append(ex.Defs, kw...)
 		}
 		attachLeadingDocs(res.Src, res.Lines(), ex.Defs)
+		// MemberKind is set for mods as well as the install; StructKind stays
+		// install-only. They name the same kind, and the split exists because
+		// StructKind drives more than the member names: per-kind field values,
+		// the block-shape table and the completion vocabulary are all derived
+		// from vanilla on purpose, and letting a mod contribute to them changed
+		// which references counted as dangling.
+		//
+		// The member names alone are needed everywhere, because that is what a
+		// localization member convention resolves against — `setting_<option>`
+		// names an option nested inside a game rule, and a mod's own new option
+		// exists in no install.
+		kind := rule.Kind
+		if rule.Mode == game.ModeEventID {
+			kind = "event"
+		}
+		ex.MemberKind = kind
+		counts, blocks, vocab := harvestStructVocab(res.Root)
+		ex.StructCounts = counts
 		if harvestBodies {
-			ex.StructKind = rule.Kind
-			if rule.Mode == game.ModeEventID {
-				ex.StructKind = "event"
-			}
-			ex.StructCounts, ex.StructBlocks, ex.Vocab = harvestStructVocab(res.Root)
+			ex.StructKind = kind
+			ex.StructBlocks, ex.Vocab = blocks, vocab
 		}
 	default:
 		return ex
@@ -586,6 +608,13 @@ func extractRefsAndEdges(
 					line := li.PositionAt(a.Key.Range.Start).Line
 					from := containerAt(containers, line)
 					prop := loc.Classify(key)
+					if prop == loc.PropNone && derived.locField(key) {
+						// Broad, never strict: that a field usually holds
+						// localization keys is not evidence that every value of
+						// it must resolve. It marks a key used; it never demands
+						// one exist.
+						prop = loc.PropBroad
+					}
 					if prop != loc.PropNone {
 						if sc, ok := a.Value.(*jomini.Scalar); ok && sc.Text != "" && loc.LooksLikeKey(sc.Text) {
 							kind := "loc-broad"

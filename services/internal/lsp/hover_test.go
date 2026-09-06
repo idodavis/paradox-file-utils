@@ -316,7 +316,9 @@ func TestGameRuleSettingHover(t *testing.T) {
 		"localization/english/a_l_english.yml": loc,
 		"events/e.txt":                         use,
 	}, &catalog.VanillaCache{
-		LocConventions: map[string]string{"game_rule_setting": "kind_id"},
+		LocAffixes: map[string][]catalog.LocAffix{
+			"game_rule_setting": {{Pre: "game_rule_setting_", Defs: 10, Of: 10}},
+		},
 	}, &catalog.VanillaLoc{
 		Sites: map[string]catalog.LocEntry{
 			"game_rule_setting_suf_quieter": {Path: "loc", Line: 1, Value: "Quieter"},
@@ -468,5 +470,119 @@ func TestHoverModifierShowsDeclaredArea(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(h.Docs), "all") {
 		t.Errorf("docs = %q, must drop the all-modifiers filler", h.Docs)
+	}
+}
+
+// Paradox localizes a great many words that are also script tokens, and every
+// localization entry is a `loc_key` definition in the index. Two places let one
+// win where it should not: an unrecognised assignment key fell through to the
+// localization lookup, and a value that named an object matched both a
+// `loc_key` and the object, with load order rather than kind deciding.
+func TestLocKeyNeverWinsOverScript(t *testing.T) {
+	const body = "ns.1 = {\n\thas_realm_law = crown_authority_1\n\tculture = french\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"events/x.txt":          body,
+		"common/cultures/c.txt": "french = { }\n",
+		"common/laws/l.txt":     "crown_authority_1 = { }\n",
+		"localization/english/a_l_english.yml": "l_english:\n has_realm_law:0 \"Realm Law\"\n" +
+			" french:0 \"French\"\n crown_authority_1:0 \"Crown Authority\"\n",
+	}, nil, nil)
+	f := filepath.Join(root, "events", "x.txt")
+
+	// The check macro. Nothing declares it here, which is the point: not
+	// knowing is fine, calling it localization is not.
+	line, col := lineCol(body, "has_realm_law")
+	if h := Hover(s, f, line, col); h != nil && h.Kind == "loc key" {
+		t.Errorf("assignment key came back as a localization key: %#v", h)
+	}
+	// The value names a culture, and a culture always has a key named after it.
+	line, col = lineCol(body, "culture = french")
+	h := Hover(s, f, line, col+len("culture = "))
+	if h == nil || h.Kind == "loc key" {
+		t.Errorf("culture value came back as a localization key: %#v", h)
+	}
+}
+
+// A bare number on the left of an `=` is a weight. CK3 also keys map positions
+// by province id, so `95 = { … }` inside a random_list resolved to a map_data
+// definition and the card offered a French town as the meaning of a probability.
+func TestRandomListWeightIsNotAMapPosition(t *testing.T) {
+	const body = "ns.1 = {\n\timmediate = {\n\t\trandom_list = {\n" +
+		"\t\t\t95 = { trigger_event = birth.1001 }\n" +
+		"\t\t\t5 = { trigger_event = birth.1002 }\n\t\t}\n\t}\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/x.txt": body},
+		&catalog.VanillaCache{
+			Defs: []catalog.Def{{Kind: "map_data", Key: "95", Path: "positions.txt"}},
+		}, nil)
+	f := filepath.Join(root, "events", "x.txt")
+	line, col := lineCol(body, "95 = { trigger_event")
+	h := Hover(s, f, line, col)
+	if h == nil {
+		t.Fatal("no hover on a weight")
+	}
+	if h.Kind == "map data" || strings.Contains(h.Docs, "positions") {
+		t.Fatalf("weight resolved to a map position: %#v", h)
+	}
+	// The denominator is the sum of the siblings, not an assumed 100.
+	if h.Kind != "weight" || !strings.Contains(h.Docs, "95%") ||
+		!strings.Contains(h.Docs, "random_list") {
+		t.Fatalf("weight card = %#v", h)
+	}
+	// And peek must not offer to jump into positions.txt either.
+	if locs := Definition(s, f, line, col); len(locs) != 0 {
+		t.Fatalf("peek on a weight offered %v", locs)
+	}
+}
+
+// The same numeric key is not always a probability. A Victoria 3 gene block
+// writes `20 = empty`, an index into a lookup table, and its entries are
+// scalars rather than bodies — so there is no distribution to report and the
+// card must say nothing rather than invent a percentage.
+func TestNumericLookupKeyIsNotAWeight(t *testing.T) {
+	const body = "portrait = {\n\tgenes = {\n\t\thair = {\n" +
+		"\t\t\t20 = empty\n\t\t\t80 = empty\n\t\t}\n\t}\n}\n"
+	s, root := buildSession(t, "vic3",
+		map[string]string{"common/genes/g.txt": body}, nil, nil)
+	f := filepath.Join(root, "common", "genes", "g.txt")
+	line, col := lineCol(body, "20 = empty")
+	if h := Hover(s, f, line, col); h != nil && h.Kind == "weight" {
+		t.Fatalf("lookup index reported as a probability: %#v", h)
+	}
+}
+
+// A namespace declares an id prefix for events; nothing points at one. It is a
+// definition like any other in the index though, so load order decided ties
+// against real objects — a mod's `namespace = conqueror` outranked vanilla's
+// `conqueror` trait, and `add_trait = conqueror` hovered as the namespace.
+func TestNamespaceDoesNotOutrankAnObject(t *testing.T) {
+	const ev = "namespace = conqueror\nconqueror.1 = {\n" +
+		"\timmediate = { add_trait = conqueror }\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{"events/conq.txt": ev},
+		&catalog.VanillaCache{
+			Defs: []catalog.Def{{
+				Kind: "traits", Key: "conqueror", Path: "traits.txt", Line: 3,
+			}},
+		}, nil)
+	f := filepath.Join(root, "events", "conq.txt")
+	line, col := lineCol(ev, "add_trait = conqueror")
+	h := Hover(s, f, line, col+len("add_trait = "))
+	if h == nil || h.Kind != "traits" {
+		t.Fatalf("add_trait value = %#v, want the trait", h)
+	}
+	if locs := Definition(s, f, line, col+len("add_trait = ")); len(locs) != 1 ||
+		!strings.Contains(locs[0].URI, "traits.txt") {
+		t.Fatalf("F12 went to the namespace, not the trait: %v", locs)
+	}
+}
+
+// A namespace nothing shadows still resolves, so hovering one still works.
+func TestNamespaceStillResolvesWhenAlone(t *testing.T) {
+	const ev = "namespace = solitary\nsolitary.1 = { }\n"
+	s, root := buildSession(t, "ck3",
+		map[string]string{"events/s.txt": ev}, nil, nil)
+	f := filepath.Join(root, "events", "s.txt")
+	line, col := lineCol(ev, "namespace = solitary")
+	if h := Hover(s, f, line, col+len("namespace = ")); h == nil {
+		t.Fatal("a namespace with no rival must still hover")
 	}
 }

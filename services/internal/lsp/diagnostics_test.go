@@ -126,8 +126,10 @@ func TestSignatureHelpAndSchemaDiags(t *testing.T) {
 		Schema: &catalog.Schema{Effects: map[string]catalog.EngineToken{
 			"add_gold": {Usage: "add_gold = { $VALUE$ }"},
 		}},
-		FieldInfo:      map[string]string{"add_gold": "gold"},
-		LocConventions: map[string]string{"traits": "kind_id"},
+		FieldInfo: map[string]string{"add_gold": "gold"},
+		LocAffixes: map[string][]catalog.LocAffix{
+			"traits": {{Pre: "trait_", Defs: 10, Of: 10}},
+		},
 	}
 	s, root := buildSession(t, "ck3", map[string]string{
 		"events/x.txt":         "namespace = ns\nns.1 = {\n\timmediate = { add_gold = {  trigger_event = ns.99 }\n}\n",
