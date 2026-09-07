@@ -279,3 +279,75 @@ func TestCoverageGameRuleOptionLocIsNotOrphaned(t *testing.T) {
 		t.Error("a key with no owner must still be orphaned")
 	}
 }
+
+// TestCoverageCitedIdIsNotOrphaned pins the fix for the loudest remaining
+// orphan false positive: a key that shares its name with an object script
+// cites. The engine reads an object's id and its localization by the same name,
+// so `friend_after_subjugation` sitting in an opinion modifier's block accounts
+// for the key of that name — and go-to-references already found those uses
+// while the orphan check called the key dead.
+//
+// The reference here is an ordinary field value, not a loc property, which is
+// the whole point: UsedLocKeys only counts refs filed under a loc kind.
+func TestCoverageCitedIdIsNotOrphaned(t *testing.T) {
+	// The field type is what makes the reference exist at all; without it this
+	// fixture harvests nothing and the test would pass for the wrong reason.
+	c := &catalog.VanillaCache{
+		FieldValueKinds: map[string]string{"modifier": "opinion_modifiers"},
+	}
+	catalog.PrepareCache(c)
+	s := buildSession(t, "ck3", c, nil, []catalog.ModInput{oneMod(t, "ck3",
+		map[string]string{
+			"common/opinion_modifiers/00_x.txt": "friend_after_subjugation = {\n\topinion = 20\n}\n",
+			"common/scripted_effects/e.txt": "do_it = {\n" +
+				"\tadd_opinion = { modifier = friend_after_subjugation }\n}\n",
+			"localization/english/a_l_english.yml": "" +
+				"l_english:\n friend_after_subjugation:0 \"Subjugated\"\n" +
+				" truly_unused_key:0 \"Nothing cites this\"\n",
+		})})
+	_, cov := Coverage(s)
+	if coverageIssue(cov, "english", "orphaned", "friend_after_subjugation") {
+		t.Errorf("cited id reported as orphaned")
+	}
+	// The check must stay useful: a key nothing names anywhere is still an
+	// orphan. Suppressing everything would trade one wrong answer for another.
+	if !coverageIssue(cov, "english", "orphaned", "truly_unused_key") {
+		t.Errorf("genuinely unused key not reported: %+v", cov)
+	}
+}
+
+// TestCoverageAffixOverCitedNameIsNotOrphaned pins the second half of the same
+// rule: a convention whose stem is a name script uses but never defines. A CK3
+// game rule category is declared by the rules that cite it, so
+// `game_rule_category_<id>` had no definition to own it and read as an orphan.
+func TestCoverageAffixOverCitedNameIsNotOrphaned(t *testing.T) {
+	c := &catalog.VanillaCache{
+		FieldValueKinds: map[string]string{"category": "game_rule_categories"},
+		// The convention as the install would have yielded it.
+		LocAffixes: map[string][]catalog.LocAffix{
+			"game_rule_categories": {{Pre: "game_rule_category_", Defs: 9, Of: 9}},
+		},
+	}
+	catalog.PrepareCache(c)
+	s := buildSession(t, "ck3", c, nil, []catalog.ModInput{oneMod(t, "ck3",
+		map[string]string{
+			"common/game_rules/00_r.txt": "my_rule = {\n\tcategory = my_category\n}\n",
+			"localization/english/a_l_english.yml": "" +
+				"l_english:\n game_rule_category_my_category:0 \"Mine\"\n" +
+				" game_rule_category_nobody_cites_this:0 \"Dead\"\n",
+		})})
+	if coverageIssue(mustRows(t, s), "english", "orphaned", "game_rule_category_my_category") {
+		t.Errorf("convention over a cited name reported as orphaned")
+	}
+	// Same convention, stem nothing names: still an orphan.
+	if !coverageIssue(mustRows(t, s), "english", "orphaned",
+		"game_rule_category_nobody_cites_this") {
+		t.Errorf("convention over an unknown stem not reported")
+	}
+}
+
+func mustRows(t *testing.T, s *session.Session) []HealthRow {
+	t.Helper()
+	_, rows := Coverage(s)
+	return rows
+}

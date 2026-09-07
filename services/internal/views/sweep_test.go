@@ -20,6 +20,7 @@ package views
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -563,4 +564,265 @@ func sampleDiagnostics(s *session.Session, root string) (map[string]int, int) {
 		return nil
 	})
 	return out, files
+}
+
+// guards the scoreboard's usefulness. A count that moves
+// between runs cannot be a regression threshold, and CK3 orphaned came back
+// 76,041 / 76,064 / 76,071 across three sweeps of the same corpus.
+//
+// The two halves are separated on purpose: one session built twice from one
+// cache isolates Coverage, and two caches from two scans isolates the parallel
+// install walk. Whichever differs is the one to fix. Both faults it has caught
+// so far were real model bugs rather than reporting artifacts — see
+// GAME-SYNTAX.md §6, "Scheduling must not decide anything".
+//
+// By default it checks one Victoria 3 conversion, which is seconds. Widen it
+// when chasing something: an empty PMT_DET_MOD runs every mod of the game,
+// which is ~45s for Victoria 3 and ~11min for EU5.
+func TestHealthIsDeterministic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("scans a real install")
+	}
+	// Defaults to a Victoria 3 conversion because it is the fastest one that
+	// exercises the whole path. Point it elsewhere to chase a specific drift:
+	//   PMT_DET_GAME=ck3 PMT_DET_APP=1158310 PMT_DET_MOD=2962333032
+	game, appID, modID := "vic3", "529340", "3199730217"
+	if v := os.Getenv("PMT_DET_GAME"); v != "" {
+		game, appID, modID = v, os.Getenv("PMT_DET_APP"), os.Getenv("PMT_DET_MOD")
+	}
+	install := os.Getenv("PMT_TEST_INSTALL_" + strings.ToUpper(game))
+	if install == "" {
+		t.Skipf("PMT_TEST_INSTALL_%s not set", strings.ToUpper(game))
+	}
+	// An empty PMT_DET_MOD checks every mod of the game. One mod passing proves
+	// little: the drift chased here was visible only in a game's total, and the
+	// mod carrying it was not the obvious one.
+	var mods []string
+	if modID != "" {
+		mods = []string{modID}
+	} else {
+		ents, err := os.ReadDir(filepath.Join(workshopRoot, appID))
+		if err != nil {
+			t.Skipf("no workshop content (%v)", err)
+		}
+		for _, e := range ents {
+			if e.IsDir() {
+				mods = append(mods, e.Name())
+			}
+		}
+	}
+	scan := func(id string) (*catalog.VanillaCache, *catalog.VanillaLoc) {
+		t.Helper()
+		t.Cleanup(func() { _ = catalog.DropVanillaFiles(id) })
+		c, vloc, err := catalog.Scan(context.Background(), catalog.ScanRequest{
+			InstallID: id, GameID: game, InstallPath: install,
+			Version: "det", LocLang: "english",
+		})
+		if err != nil {
+			t.Fatalf("scan %s: %v", id, err)
+		}
+		return c, vloc
+	}
+	report := func(c *catalog.VanillaCache, vloc *catalog.VanillaLoc, mod string) HealthReport {
+		s := session.NewWithLoc("det", game, "english", c, vloc,
+			[]catalog.ModInput{{
+				Origin: "mod", Root: filepath.Join(workshopRoot, appID, mod), Name: "m",
+			}})
+		defer s.Close()
+		return Health(s, nil)
+	}
+	same := func(what, mod string, a, b HealthReport) {
+		t.Helper()
+		if a.Missing != b.Missing || a.Orphaned != b.Orphaned ||
+			a.Untranslated != b.Untranslated || a.Dangling != b.Dangling {
+			t.Errorf("%s [%s]: missing %d/%d orphaned %d/%d untranslated %d/%d dangling %d/%d",
+				what, mod, a.Missing, b.Missing, a.Orphaned, b.Orphaned,
+				a.Untranslated, b.Untranslated, a.Dangling, b.Dangling)
+		}
+	}
+
+	c1, l1 := scan("det-1")
+	c2, l2 := scan("det-2")
+	for _, mod := range mods {
+		same("same cache, two sessions", mod,
+			report(c1, l1, mod), report(c1, l1, mod))
+		same("two scans of one install", mod,
+			report(c1, l1, mod), report(c2, l2, mod))
+		debug.FreeOSMemory()
+	}
+}
+
+// calibrates the "orphaned" rule against vanilla.
+//
+// Vanilla is the corpus where the loc keys and the script that cites them ship
+// from the same build, so a vanilla key the rule calls orphaned is almost always
+// a mechanism PMT does not model rather than a defect Paradox shipped. That
+// makes the vanilla orphan rate a direct read on how much of the mod residue is
+// engine fault -- which is the question the baseline cannot answer on its own.
+//
+// Probe, not an assertion: run with PMT_LOC_RESIDUE=1 and read the clusters.
+func TestVanillaLocResidue(t *testing.T) {
+	if testing.Short() || os.Getenv("PMT_LOC_RESIDUE") == "" {
+		t.Skip("probe; set PMT_LOC_RESIDUE=1")
+	}
+	for _, g := range sweepGames {
+		install := os.Getenv(g.installEnv)
+		if install == "" {
+			t.Logf("%s: %s not set", g.game, g.installEnv)
+			continue
+		}
+		t.Run(g.game, func(t *testing.T) {
+			id := "residue-" + g.game
+			t.Cleanup(func() { _ = catalog.DropVanillaFiles(id) })
+			cache, vloc, err := catalog.Scan(context.Background(), catalog.ScanRequest{
+				InstallID: id, GameID: g.game, InstallPath: install,
+				Version: "residue", LocLang: "english",
+			})
+			if err != nil {
+				t.Fatalf("scan: %v", err)
+			}
+			s := session.NewWithLoc("residue", g.game, "english", cache, vloc, nil)
+			defer s.Close()
+
+			// Print what the rule accepted, not just what it scored. A shape
+			// list that reads as nonsense is a failure even if the number fell.
+			for i, af := range cache.LocKeyAffixes {
+				if i >= 20 {
+					t.Logf("  affix: %d accepted in total", len(cache.LocKeyAffixes))
+					break
+				}
+				t.Logf("  affix %-24q + %-18q %6d of %6d",
+					af.Pre, af.Suf, af.Keys, af.Of)
+			}
+			keys := s.InheritedLocKeys("english")
+			used := s.UsedLocKeys()
+			var residue []string
+			nUsed, nConv := 0, 0
+			for _, k := range keys {
+				if used[k] {
+					nUsed++
+					continue
+				}
+				if s.LocKeyExplained(k) {
+					nConv++
+					continue
+				}
+				residue = append(residue, k)
+			}
+			pct := func(n int) string {
+				if len(keys) == 0 {
+					return "0%"
+				}
+				return fmt.Sprintf("%.1f%%", 100*float64(n)/float64(len(keys)))
+			}
+			t.Logf("RESIDUE %s: %d english keys | cited %d (%s) | convention %d (%s) | ORPHAN %d (%s)",
+				g.game, len(keys), nUsed, pct(nUsed), nConv, pct(nConv),
+				len(residue), pct(len(residue)))
+			logClusters(t, "prefix", residue, func(k string) string { return headToken(k, 2) })
+			logClusters(t, "suffix", residue, func(k string) string { return tailToken(k, 2) })
+			convResidue(t, g.game, g.appID, cache, vloc)
+		})
+	}
+}
+
+// convResidue measures the same rule on the total conversions, reusing the
+// install scan above rather than repeating it. The rate is the point, not the
+// count: conversions are enormous, so a rate at or below vanilla's means the
+// residue is the engine's gap applied to more keys, not cruft the mod added.
+func convResidue(
+	t *testing.T, game, appID string, cache *catalog.VanillaCache, vloc *catalog.VanillaLoc,
+) {
+	t.Helper()
+	var ids []string
+	for key := range totalConversions {
+		if strings.HasPrefix(key, appID+"/") {
+			ids = append(ids, strings.TrimPrefix(key, appID+"/"))
+		}
+	}
+	sort.Strings(ids)
+	for _, modID := range ids {
+		s := session.NewWithLoc(game, game, "english", cache, vloc,
+			[]catalog.ModInput{{
+				Origin: "mod",
+				Root:   filepath.Join(workshopRoot, appID, modID),
+				Name:   modID,
+			}})
+		inherited := map[string]bool{}
+		for _, k := range s.InheritedLocKeys(locSourceLang) {
+			inherited[k] = true
+		}
+		used := s.UsedLocKeys()
+		own, orphan := 0, 0
+		s.EachLoc(func(lang, k string, _ catalog.LocEntry) {
+			if lang != locSourceLang || inherited[k] {
+				return
+			}
+			own++
+			if used[k] || s.LocKeyExplained(k) {
+				return
+			}
+			orphan++
+		})
+		rate := 0.0
+		if own > 0 {
+			rate = 100 * float64(orphan) / float64(own)
+		}
+		t.Logf("CONV %-24s own english keys %6d | orphan %6d (%.1f%%)",
+			totalConversions[appID+"/"+modID], own, orphan, rate)
+		s.Close()
+	}
+}
+
+// headToken returns the first n underscore-separated tokens of key.
+func headToken(key string, n int) string {
+	p := strings.Split(key, "_")
+	if len(p) <= n {
+		return key
+	}
+	return strings.Join(p[:n], "_") + "_*"
+}
+
+// tailToken returns the last n underscore-separated tokens of key.
+func tailToken(key string, n int) string {
+	p := strings.Split(key, "_")
+	if len(p) <= n {
+		return key
+	}
+	return "*_" + strings.Join(p[len(p)-n:], "_")
+}
+
+func logClusters(t *testing.T, label string, keys []string, sig func(string) string) {
+	t.Helper()
+	n := map[string]int{}
+	ex := map[string]string{}
+	for _, k := range keys {
+		s := sig(k)
+		n[s]++
+		if ex[s] == "" {
+			ex[s] = k
+		}
+	}
+	type row struct {
+		sig, ex string
+		n       int
+	}
+	rows := make([]row, 0, len(n))
+	for s, c := range n {
+		rows = append(rows, row{s, ex[s], c})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].n != rows[j].n {
+			return rows[i].n > rows[j].n
+		}
+		return rows[i].sig < rows[j].sig
+	})
+	top := 0
+	for i, r := range rows {
+		if i >= 25 {
+			break
+		}
+		top += r.n
+		t.Logf("  %s %-34s %6d  e.g. %s", label, r.sig, r.n, r.ex)
+	}
+	t.Logf("  %s: %d clusters, top 25 cover %d of %d", label, len(rows), top, len(keys))
 }

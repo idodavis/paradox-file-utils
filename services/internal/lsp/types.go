@@ -42,10 +42,18 @@ type HoverValue struct {
 // omitted after the cap. Owner is the enclosing scripted_* key for a param.
 // Usage is TokenUsage.
 type HoverResult struct {
-	Kind              string       `json:"kind,omitempty"`
-	Key               string       `json:"key,omitempty"`
-	Hint              string       `json:"hint,omitempty"`
-	Docs              string       `json:"docs,omitempty"`
+	Kind string `json:"kind,omitempty"`
+	Key  string `json:"key,omitempty"`
+	Hint string `json:"hint,omitempty"`
+	Docs string `json:"docs,omitempty"`
+	// Scope is the scope type in force where the cursor sits; ScopeOut is where
+	// the token moves to when it is a scope link. The single most useful thing
+	// to tell a new modder, and computed already for completion.
+	Scope    string `json:"scope,omitempty"`
+	ScopeOut string `json:"scopeOut,omitempty"`
+	// Accepts states what this key's value may be — often knowable even where
+	// nothing documents what the key means.
+	Accepts           string       `json:"accepts,omitempty"`
 	Body              string       `json:"body,omitempty"`
 	Values            []HoverValue `json:"values,omitempty"`
 	More              int          `json:"more,omitempty"`

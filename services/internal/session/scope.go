@@ -144,10 +144,13 @@ func (s *Session) ScopeAt(path string, line, col int) string {
 	if _, r, ok := s.locate(path); ok {
 		rel = r
 	}
+	// A missing root is not a dead end. Only on_action files declare their own
+	// starting scope, so bailing here meant every event, decision, scripted
+	// effect and modifier body reported nothing at all -- which is most of what
+	// anyone hovers. A declared scope link or iterator states the scope it
+	// produces regardless of what preceded it, so the walk continues and
+	// reports a scope only once something declared establishes one.
 	w := s.defRootScopeLocked(s.schemaLocked(), game.MatchExtract(s.GameID, rel).Kind, top)
-	if w.cur() == "" {
-		return ""
-	}
 	for _, st := range chain[1:] {
 		a, ok := st.(*jomini.Assignment)
 		if !ok || a.Key.Quoted {
@@ -187,6 +190,9 @@ func (w *scopeWalk) step(sc *catalog.Schema, key string) bool {
 	case "this":
 		return true
 	case "root":
+		if len(w.stack) == 0 {
+			return false
+		}
 		w.push(w.stack[0])
 		return true
 	case "prev":
@@ -197,8 +203,11 @@ func (w *scopeWalk) step(sc *catalog.Schema, key string) bool {
 		return true
 	}
 	// A declared scope link is a hop to its output type.
+	// An unknown current scope cannot contradict the declared input list, so the
+	// hop is taken on the game's word. Whether the link was legal where the
+	// modder used it is wrong-scope's question, not this one.
 	if l, ok := sc.Links[k]; ok && l.Out != "" {
-		if len(l.In) == 0 || slices.Contains(l.In, w.cur()) {
+		if len(l.In) == 0 || w.cur() == "" || slices.Contains(l.In, w.cur()) {
 			w.push(l.Out)
 			return true
 		}
@@ -206,7 +215,8 @@ func (w *scopeWalk) step(sc *catalog.Schema, key string) bool {
 	// Iterators are effects/triggers whose Supported Targets is the element
 	// scope: every_vassal is "Supported Scopes: character, Targets: character".
 	if t, _, ok := sc.Token(k); ok && t.Target != "" {
-		if catalog.UsableIn(t.In, w.cur()) && sc.Scopes[t.Target].ChangeScopes {
+		if (w.cur() == "" || catalog.UsableIn(t.In, w.cur())) &&
+			sc.Scopes[t.Target].ChangeScopes {
 			w.push(t.Target)
 			return true
 		}

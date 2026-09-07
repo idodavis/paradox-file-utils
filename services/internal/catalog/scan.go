@@ -1080,3 +1080,22 @@ func (a *accum) mergeLocOrdered(order int, d LocDelta) {
 		ord[k] = order
 	}
 }
+
+// authorProse joins comment lines while keeping the author's line breaks.
+//
+// prose reflows into a single paragraph, which is right for the game's own dump
+// and info-file text: that is prose the game wrapped for a fixed console width,
+// so its line endings carry no meaning. A comment a modder wrote above a
+// definition is different — they chose where the lines end, and folding a
+// four-line note into one wrapped run loses a list, a worked example, or a
+// heading. Each line is still normalised internally so stray alignment spaces
+// do not survive.
+func authorProse(parts []string) string {
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.Join(strings.Fields(p), " "); t != "" {
+			out = append(out, t)
+		}
+	}
+	return strings.Join(out, "\n")
+}

@@ -3,7 +3,9 @@
 
 package jomini
 
-import "testing"
+import (
+	"testing"
+)
 
 // topKeys returns the keys of a source's top-level assignments.
 func topKeys(src string) []string {
@@ -114,5 +116,171 @@ func TestDecodeStripsBOMAndLatin1Fallback(t *testing.T) {
 	got := LineIndents("a = {\n\tb = 1\n}\n")
 	if len(got) < 3 || got[0] != 0 || got[1] != 1 || got[2] != 0 {
 		t.Fatalf("LineIndents = %v, want [0 1 0 ...]", got)
+	}
+}
+
+// covers LineIndex offset<->position math (incl. UTF-8 byte columns)
+// and the Walk / NodeAtOffset helpers.
+func TestLineIndexPositionAt(t *testing.T) {
+	li := NewLineIndex("ab\ncde\nf")
+	cases := []struct {
+		offset    int
+		line, col int
+	}{
+		{0, 0, 0},
+		{2, 0, 2}, // the \n itself sits at end of line 0
+		{3, 1, 0},
+		{6, 1, 3},
+		{7, 2, 0},
+	}
+	for _, c := range cases {
+		p := li.PositionAt(c.offset)
+		if p.Line != c.line || p.Character != c.col {
+			t.Errorf("PositionAt(%d) = %d,%d want %d,%d", c.offset, p.Line, p.Character, c.line, c.col)
+		}
+	}
+}
+
+func TestLineIndexOffsetAtRoundTrip(t *testing.T) {
+	text := "ab\ncde\nf"
+	li := NewLineIndex(text)
+	for off := 0; off <= len(text); off++ {
+		p := li.PositionAt(off)
+		if got := li.OffsetAt(p.Line, p.Character); got != off {
+			t.Errorf("round trip offset %d -> (%d,%d) -> %d", off, p.Line, p.Character, got)
+		}
+	}
+}
+
+func TestLineIndexUTF8ByteColumns(t *testing.T) {
+	// Non-ASCII: "é" is two UTF-8 bytes. Column after it is byte column 3.
+	li := NewLineIndex("a\u00e9b")
+	if p := li.PositionAt(3); p.Line != 0 || p.Character != 3 {
+		t.Fatalf("PositionAt(3) = %+v want line 0 col 3", p)
+	}
+}
+
+func TestWalkVisitsNested(t *testing.T) {
+	r := Parse("a = { b = { c = 1 } }\n")
+	want := map[string]int{"a": 0, "b": 1, "c": 2}
+	var keys []string
+	Walk(r.Root, func(st Statement, depth int, parent *Block) bool {
+		if a, ok := st.(*Assignment); ok {
+			keys = append(keys, a.Key.Text)
+			if depth != want[a.Key.Text] {
+				t.Errorf("%s depth=%d want %d", a.Key.Text, depth, want[a.Key.Text])
+			}
+			if a.Key.Text == "a" && parent != nil {
+				t.Errorf("a parent=%v", parent)
+			}
+			if a.Key.Text == "b" && parent == nil {
+				t.Error("b missing parent")
+			}
+		}
+		return true
+	})
+	if len(keys) != 3 || keys[0] != "a" || keys[1] != "b" || keys[2] != "c" {
+		t.Fatalf("walk keys = %v", keys)
+	}
+}
+
+func TestNodeAtOffsetChain(t *testing.T) {
+	src := "a = { b = 1 }\n"
+	r := Parse(src)
+	path := NodeAtOffset(r.Root, 6)
+	if len(path) != 2 {
+		t.Fatalf("path len = %d want 2 (%v)", len(path), path)
+	}
+	outer, ok := path[0].(*Assignment)
+	if !ok || outer.Key.Text != "a" {
+		t.Fatalf("outer = %+v", path[0])
+	}
+	inner, ok := path[1].(*Assignment)
+	if !ok || inner.Key.Text != "b" {
+		t.Fatalf("inner = %+v", path[1])
+	}
+}
+
+// covers the shared grammar: kind canonicalisation, trigger and
+// effect slots, and the assignment keys that name an ephemeral value.
+func TestCanonicalKind(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"scripted_effects", "scripted_effects"},
+		{"event namespace", "event_namespace"},
+		{"landed_titles", "landed_titles"},
+		{"title", "title"},
+		{"culture", "culture"},
+	}
+	for _, c := range cases {
+		if got := CanonicalKind(c.in); got != c.want {
+			t.Errorf("CanonicalKind(%q) = %q want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestScriptSlot(t *testing.T) {
+	cases := []struct {
+		key, want string
+	}{
+		{"trigger", "trigger"},
+		{"limit", "trigger"},
+		{"AND", "trigger"},
+		{"any_courtier", "trigger"},
+		{"immediate", "effect"},
+		{"after", "effect"},
+		{"every_child", "effect"},
+		{"effect", "effect"},
+		{"title", ""},
+		{"type", ""},
+		{"test.1", ""},
+	}
+	for _, c := range cases {
+		if got := ScriptSlot(c.key); got != c.want {
+			t.Errorf("ScriptSlot(%q) = %q want %q", c.key, got, c.want)
+		}
+	}
+}
+
+// These names are shared Jomini, not a per-game table: 17 of the 18 are declared
+// in effects.log / triggers.log on CK3, Victoria 3 and EU5 alike, and the
+// eighteenth (save_temporary_value_as) is used in all three games' vanilla
+// script while being declared by none of them.
+func TestScriptNameAndPrefixKind(t *testing.T) {
+	if r, ok := ScriptName("has_variable"); !ok || r.Kind != "var" {
+		t.Fatalf("has_variable: %+v ok=%v", r, ok)
+	}
+	if r, ok := ScriptName("set_variable"); !ok || !r.IsDef || r.InnerKey != "name" {
+		t.Fatalf("set_variable: %+v ok=%v", r, ok)
+	}
+	if PrefixKind("var") != "" || PrefixKind("scope") != "saved_scope" {
+		t.Fatal("PrefixKind")
+	}
+	if !IsSaveScopeKey("save_scope_as") || IsSaveScopeKey("save_scope_value_as") {
+		t.Fatal("IsSaveScopeKey")
+	}
+	if !IsSaveScopeValueKey("save_scope_value_as") {
+		t.Fatal("IsSaveScopeValueKey")
+	}
+}
+
+func TestIsEphemeral(t *testing.T) {
+	for _, k := range []string{"saved_scope", "var", "global_var", "flag", "script_param"} {
+		if !IsEphemeral(k) {
+			t.Errorf("IsEphemeral(%q) = false", k)
+		}
+	}
+	if IsEphemeral("traits") {
+		t.Fatal("traits not ephemeral")
+	}
+}
+
+func TestScriptParamSpan(t *testing.T) {
+	src := `add_trait = $TRAIT$`
+	name, start, end, ok := ScriptParamSpan(src, 14)
+	if !ok || name != "TRAIT" || src[start:end] != "$TRAIT$" {
+		t.Fatalf("span name=%q %d:%d ok=%v", name, start, end, ok)
+	}
+	if _, _, _, ok := ScriptParamSpan(`add_trait = brave`, 14); ok {
+		t.Fatal("plain scalar is not a param span")
 	}
 }

@@ -1339,7 +1339,7 @@ func leadingKindProse(text string) string {
 			break
 		}
 	}
-	return prose(lines)
+	return authorProse(lines)
 }
 
 // locField reports a script property the corpus shows holds localization keys,

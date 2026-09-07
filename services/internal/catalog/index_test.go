@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"paradox-modding-tools/services/internal/parser/jomini"
@@ -712,5 +713,253 @@ func TestListMembersAreLocRefs(t *testing.T) {
 		if hasRef(ex.Refs, "loc", no) {
 			t.Errorf("%q must not demand a key: %v", no, ex.Refs)
 		}
+	}
+}
+
+// covers Winner (LIOS/FIOS) and Contests overlay vs conflict.
+func TestWinner(t *testing.T) {
+	tests := []struct {
+		name   string
+		gameID string
+		defs   []Def
+		order  map[string]int
+		origin string
+	}{
+		{
+			"LIOS last mod", "",
+			[]Def{
+				{Kind: "trait", Key: "brave", Origin: "a"},
+				{Kind: "trait", Key: "brave", Origin: "b"},
+				{Kind: "trait", Key: "brave", Origin: ""},
+			},
+			map[string]int{"a": 0, "b": 1}, "b",
+		},
+		{
+			"FIOS gui", "ck3",
+			[]Def{
+				{Kind: "gui_type", Key: "widget", Origin: "b"},
+				{Kind: "gui_type", Key: "widget", Origin: "a"},
+			},
+			map[string]int{"a": 0, "b": 1}, "a",
+		},
+		{
+			"vanilla only", "",
+			[]Def{{Kind: "trait", Key: "x", Origin: ""}},
+			map[string]int{}, "",
+		},
+		{
+			"vic3 event FIOS", "vic3",
+			[]Def{
+				{Kind: "event", Key: "e.1", Origin: "b"},
+				{Kind: "event", Key: "e.1", Origin: "a"},
+			},
+			map[string]int{"a": 0, "b": 1}, "a",
+		},
+		{
+			"eu5 gui_type LIOS", "eu5",
+			[]Def{
+				{Kind: "gui_type", Key: "widget", Origin: "a"},
+				{Kind: "gui_type", Key: "widget", Origin: "b"},
+			},
+			map[string]int{"a": 0, "b": 1}, "b",
+		},
+		{
+			"ck3 event LIOS", "ck3",
+			[]Def{
+				{Kind: "event", Key: "e.1", Origin: "a"},
+				{Kind: "event", Key: "e.1", Origin: "b"},
+			},
+			map[string]int{"a": 0, "b": 1}, "b",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := Winner(tt.gameID, tt.defs, tt.order)
+			if w == nil || w.Origin != tt.origin {
+				t.Errorf("winner = %v, want origin %q", w, tt.origin)
+			}
+		})
+	}
+}
+
+func TestContests(t *testing.T) {
+	vanilla := []Def{{Kind: "trait", Key: "brave", Origin: "", Path: "vanilla.txt", Line: 9}}
+	modPair := []Def{
+		{Kind: "trait", Key: "brave", Origin: "a", Path: "a.txt", Line: 1},
+		{Kind: "trait", Key: "brave", Origin: "b", Path: "b.txt", Line: 2},
+	}
+	tests := []struct {
+		name    string
+		gameID  string
+		defs    []Def
+		cache   []Def
+		order   []string
+		n       int
+		overlay bool
+		winner  string
+		mods    int
+	}{
+		{"mod vs mod LIOS", "", modPair, nil, []string{"a", "b"}, 1, false, "b", 2},
+		{"vanilla shadow conflict", "", modPair, vanilla, []string{"a", "b"}, 1, false, "b", 2},
+		{"vanilla overlay only", "",
+			[]Def{{Kind: "trait", Key: "brave", Origin: "a", Path: "a.txt", Line: 1}},
+			vanilla, []string{"a"}, 1, true, "", 1},
+		{
+			"skip loc and isolated kinds", "",
+			[]Def{
+				{Kind: "loc_key", Key: "brave", Origin: "a", Path: "a.yml"},
+				{Kind: "loc_key", Key: "brave", Origin: "b", Path: "b.yml"},
+				{Kind: "mod_descriptor", Key: "name", Origin: "a", Path: "a.mod"},
+				{Kind: "mod_descriptor", Key: "name", Origin: "b", Path: "b.mod"},
+				{Kind: "trait", Key: "same", Origin: "a", Path: "t.txt"},
+				{Kind: "event", Key: "same", Origin: "b", Path: "e.txt"},
+			},
+			nil, []string{"a", "b"}, 0, false, "", 0,
+		},
+		{
+			"skip shared namespace", "",
+			[]Def{
+				{Kind: "namespace", Key: "ns", Origin: "a", Path: "a.txt"},
+				{Kind: "namespace", Key: "ns", Origin: "b", Path: "b.txt"},
+			},
+			[]Def{{Kind: "namespace", Key: "ns", Origin: "", Path: "v.txt"}},
+			[]string{"a", "b"}, 0, false, "", 0,
+		},
+		{
+			"vic3 event FIOS", "vic3",
+			[]Def{
+				{Kind: "event", Key: "e.1", Origin: "a", Path: "a.txt", Line: 1},
+				{Kind: "event", Key: "e.1", Origin: "b", Path: "b.txt", Line: 2},
+			},
+			nil, []string{"a", "b"}, 1, false, "a", 2,
+		},
+		{
+			"eu5 gui_type LIOS", "eu5",
+			[]Def{
+				{Kind: "gui_type", Key: "w", Origin: "a", Path: "a.gui", Line: 1},
+				{Kind: "gui_type", Key: "w", Origin: "b", Path: "b.gui", Line: 2},
+			},
+			nil, []string{"a", "b"}, 1, false, "b", 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := Contests(tt.gameID, tt.defs, tt.cache, tt.order)
+			if len(rows) != tt.n {
+				t.Fatalf("rows = %d, want %d (%+v)", len(rows), tt.n, rows)
+			}
+			if tt.n == 0 {
+				return
+			}
+			r := rows[0]
+			if r.Overlay != tt.overlay || r.ModCount != tt.mods {
+				t.Errorf("overlay=%v mods=%d", r.Overlay, r.ModCount)
+			}
+			if tt.winner != "" && r.Winner != tt.winner {
+				t.Errorf("winner = %q, want %s", r.Winner, tt.winner)
+			}
+			if tt.name == "vic3 event FIOS" && r.Rule != "FIOS" {
+				t.Errorf("rule = %q, want FIOS", r.Rule)
+			}
+			if tt.name == "eu5 gui_type LIOS" && r.Rule != "LIOS" {
+				t.Errorf("rule = %q, want LIOS", r.Rule)
+			}
+		})
+	}
+}
+
+func internFixture() *VanillaCache {
+	const a = `C:\Games\CK3\game\common\traits\00_traits.txt`
+	const b = `C:\Games\CK3\game\events\yearly_events.txt`
+	return &VanillaCache{
+		FormatVersion: CacheFormatVersion,
+		InstallID:     "i", GameID: "ck3", GameVersion: "1.0",
+		Defs: []Def{
+			{Kind: "traits", Key: "brave", Path: a, Line: 1},
+			{Kind: "traits", Key: "craven", Path: a, Line: 9},
+			{Kind: "event", Key: "y.1", Path: b, Line: 3},
+		},
+		LocRefs:  []Ref{{Key: "brave", Kind: "loc", Path: a, Line: 2}},
+		CallRefs: []Ref{{Key: "my_effect", Kind: "scripted_effects", Path: b, Line: 4}},
+		Edges:    []Edge{{From: "y.1", To: "y.2", Via: "trigger_event", Path: b, Line: 5}},
+	}
+}
+
+// Paths must survive the save/load round trip exactly: they are what go-to
+// definition navigates to.
+func TestInternPathsRoundTrip(t *testing.T) {
+	src := internFixture()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "vanilla-test.json")
+	if err := saveCacheFile(p, src); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadCacheFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, d := range src.Defs {
+		if got.Defs[i].Path != d.Path {
+			t.Errorf("def %d path = %q, want %q", i, got.Defs[i].Path, d.Path)
+		}
+		if got.Defs[i].Key != d.Key || got.Defs[i].Line != d.Line {
+			t.Errorf("def %d = %+v, want %+v", i, got.Defs[i], d)
+		}
+	}
+	if got.LocRefs[0].Path != src.LocRefs[0].Path {
+		t.Errorf("locRef path = %q", got.LocRefs[0].Path)
+	}
+	if got.CallRefs[0].Path != src.CallRefs[0].Path {
+		t.Errorf("callRef path = %q", got.CallRefs[0].Path)
+	}
+	if got.Edges[0].Path != src.Edges[0].Path {
+		t.Errorf("edge path = %q", got.Edges[0].Path)
+	}
+	if len(got.Paths) != 0 {
+		t.Errorf("Paths table leaked into the loaded cache: %v", got.Paths)
+	}
+}
+
+// Saving must not disturb the in-memory cache: a live session may hold it while
+// the scan writes.
+func TestInternPathsDoesNotMutateSource(t *testing.T) {
+	src := internFixture()
+	want := src.Defs[0].Path
+	dir := t.TempDir()
+	if err := saveCacheFile(filepath.Join(dir, "v.json"), src); err != nil {
+		t.Fatal(err)
+	}
+	if src.Defs[0].Path != want {
+		t.Errorf("source mutated: %q, want %q", src.Defs[0].Path, want)
+	}
+	if len(src.Paths) != 0 {
+		t.Errorf("source gained a Paths table: %v", src.Paths)
+	}
+}
+
+// The whole point: the install path appears once, not once per record.
+func TestInternPathsShrinksFile(t *testing.T) {
+	src := internFixture()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "v.json")
+	if err := saveCacheFile(p, src); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const a = `common\\traits\\00_traits.txt`
+	if n := strings.Count(string(raw), a); n != 1 {
+		t.Errorf("traits path written %d times, want 1:\n%s", n, raw)
+	}
+}
+
+// A cache written before interning has no table and must still load.
+func TestExpandPathsWithoutTable(t *testing.T) {
+	c := internFixture()
+	expandPaths(c)
+	if !strings.HasSuffix(c.Defs[0].Path, "00_traits.txt") {
+		t.Errorf("path mangled without a table: %q", c.Defs[0].Path)
 	}
 }

@@ -699,3 +699,179 @@ func TestKindHintHasNoLocConvention(t *testing.T) {
 		t.Fatalf("hint still carries a loc convention: hint=%q", h.Hint)
 	}
 }
+
+// covers the scope context on the hover card: which scope
+// the cursor sits in, and where a scope link moves.
+// TestHoverReportsScopeAtCursor pins that the card answers "what scope am I
+// in?". The engine already computed this for completion filtering and simply
+// never showed it, which is the single most useful thing to tell a new modder.
+func TestHoverReportsScopeAtCursor(t *testing.T) {
+	body := "on_birth = {\n\teffect = {\n\t\tadd_gold = 10\n\t}\n}\n"
+	s, path := scopedSession(t, body)
+	// Line 2, on `add_gold`.
+	h := Hover(s, path, 2, 3)
+	if h == nil {
+		t.Fatal("no hover on add_gold")
+	}
+	if h.Scope != "character" {
+		t.Errorf("Scope = %q, want %q", h.Scope, "character")
+	}
+	if h.ScopeOut != "" {
+		t.Errorf("ScopeOut = %q, want empty for a plain effect", h.ScopeOut)
+	}
+}
+
+// TestHoverReportsScopeTransition pins the other half: a scope link's whole
+// purpose is to move somewhere else, so the card names where it lands.
+func TestHoverReportsScopeTransition(t *testing.T) {
+	body := "on_birth = {\n\teffect = {\n\t\tcapital_county = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n"
+	s, path := scopedSession(t, body)
+	h := Hover(s, path, 2, 3) // on `capital_county`
+	if h == nil {
+		t.Fatal("no hover on capital_county")
+	}
+	if h.ScopeOut != "landed_title" {
+		t.Errorf("ScopeOut = %q, want %q", h.ScopeOut, "landed_title")
+	}
+	// Sitting on the link itself asks what scope the link is used in, which is
+	// the scope outside its block — not the one it moves to.
+	if h.Scope != "character" {
+		t.Errorf("Scope = %q, want %q", h.Scope, "character")
+	}
+}
+
+// TestHoverScopeInsideLinkBlock pins that the scope follows the cursor into the
+// block, which is the case a file cannot answer: the enclosing link may be
+// hundreds of lines up.
+func TestHoverScopeInsideLinkBlock(t *testing.T) {
+	body := "on_birth = {\n\teffect = {\n\t\tcapital_county = {\n\t\t\tadd_title_law = x\n\t\t}\n\t}\n}\n"
+	s, path := scopedSession(t, body)
+	h := Hover(s, path, 3, 4) // on `add_title_law`, inside the link block
+	if h == nil {
+		t.Fatal("no hover on add_title_law")
+	}
+	if h.Scope != "landed_title" {
+		t.Errorf("Scope = %q, want %q", h.Scope, "landed_title")
+	}
+}
+
+// TestHoverScopeAbsentWithoutSchema pins the floor: with no declared type
+// system there is no scope to report, and an empty result means "do not say",
+// never "no scope is valid".
+func TestHoverScopeAbsentWithoutSchema(t *testing.T) {
+	s, root := buildSession(t, "ck3",
+		map[string]string{"common/traits/x.txt": "brave = {\n\tdiplomacy = 1\n}\n"}, nil, nil)
+	h := Hover(s, root+"/common/traits/x.txt", 1, 2)
+	if h != nil && strings.TrimSpace(h.Scope) != "" {
+		t.Errorf("Scope = %q, want empty without a schema", h.Scope)
+	}
+}
+
+// TestHoverScopeWithoutDeclaredRoot pins the case that covers most of what
+// anyone actually hovers. Only on_action files declare a starting scope, so the
+// walk used to give up immediately everywhere else — every event, decision,
+// scripted effect and modifier body reported nothing. A declared scope link
+// states what it produces regardless of what preceded it.
+func TestHoverScopeWithoutDeclaredRoot(t *testing.T) {
+	// common/scripted_effects has no declared root scope of its own.
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_effects/e.txt": "do_it = {\n\tcapital_county = {\n\t\tadd_title_law = x\n\t}\n}\n",
+	}, scopedCache(), nil)
+	path := root + "/common/scripted_effects/e.txt"
+
+	h := Hover(s, path, 2, 3) // inside capital_county's block
+	if h == nil {
+		t.Fatal("no hover")
+	}
+	if h.Scope != "landed_title" {
+		t.Errorf("Scope = %q, want %q — a declared link establishes the scope",
+			h.Scope, "landed_title")
+	}
+}
+
+// TestHoverScopeStaysSilentWhenUndeclared pins the floor the change must not
+// cross: with nothing declared to establish a scope, the card says nothing
+// rather than guessing. Reporting a wrong scope is worse than reporting none.
+func TestHoverScopeStaysSilentWhenUndeclared(t *testing.T) {
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/scripted_effects/e.txt": "do_it = {\n\tadd_gold = 10\n}\n",
+	}, scopedCache(), nil)
+	h := Hover(s, root+"/common/scripted_effects/e.txt", 1, 3)
+	if h != nil && h.Scope != "" {
+		t.Errorf("Scope = %q, want empty — nothing declares the root here", h.Scope)
+	}
+}
+
+// covers the accepted-value line: what a key's value may
+// be, which is often knowable even where nothing documents what the key means.
+// acceptsCache declares a token whose argument type the game states, alongside
+// a field PMT could only have inferred, so the precedence is observable.
+func acceptsCache() *catalog.VanillaCache {
+	c := &catalog.VanillaCache{
+		Schema: &catalog.Schema{
+			Scopes: map[string]catalog.ScopeType{
+				"character":     {ChangeScopes: true, ExecuteEffects: true},
+				"culture_group": {},
+			},
+			Triggers: map[string]catalog.EngineToken{
+				"has_culture_group": {In: []string{"character"}, Target: "culture_group"},
+			},
+			OnActions: map[string]string{"on_birth": "character"},
+		},
+		// Derived, and deliberately disagreeing with the declared target above
+		// so a card that reads the wrong one is visible.
+		FieldValueKinds: map[string]string{
+			"has_culture_group": "traits",
+			"some_undeclared":   "traits",
+		},
+		// Documented, so the key is identified at all and reaches a card. A
+		// token nothing recognises produces no hover, which is correct.
+		FieldInfo: map[string]string{"some_undeclared": "An undeclared field."},
+	}
+	catalog.PrepareCache(c)
+	return c
+}
+
+func TestHoverAcceptsPrefersDeclaredTarget(t *testing.T) {
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/on_action/x.txt": "on_birth = {\n\ttrigger = {\n\t\thas_culture_group = x\n\t}\n}\n",
+	}, acceptsCache(), nil)
+	h := Hover(s, root+"/common/on_action/x.txt", 2, 3)
+	if h == nil {
+		t.Fatal("no hover")
+	}
+	if !strings.Contains(h.Accepts, "culture group") {
+		t.Errorf("Accepts = %q, want the declared target type", h.Accepts)
+	}
+	if strings.Contains(h.Accepts, "trait") {
+		t.Errorf("Accepts = %q used the derived field type over the declared one",
+			h.Accepts)
+	}
+}
+
+func TestHoverAcceptsFallsBackToDerived(t *testing.T) {
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/on_action/x.txt": "on_birth = {\n\teffect = {\n\t\tsome_undeclared = x\n\t}\n}\n",
+	}, acceptsCache(), nil)
+	h := Hover(s, root+"/common/on_action/x.txt", 2, 3)
+	if h == nil {
+		t.Fatal("no hover")
+	}
+	if !strings.Contains(h.Accepts, "trait") {
+		t.Errorf("Accepts = %q, want the derived field type when nothing declares one",
+			h.Accepts)
+	}
+}
+
+// TestHoverAcceptsSilentWhenUnknown pins the floor: saying nothing is correct
+// when no source types the slot. Inventing a type would be the failure this
+// whole line exists to avoid.
+func TestHoverAcceptsSilentWhenUnknown(t *testing.T) {
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/on_action/x.txt": "on_birth = {\n\teffect = {\n\t\tnothing_knows_this = x\n\t}\n}\n",
+	}, acceptsCache(), nil)
+	h := Hover(s, root+"/common/on_action/x.txt", 2, 3)
+	if h != nil && h.Accepts != "" {
+		t.Errorf("Accepts = %q, want empty", h.Accepts)
+	}
+}

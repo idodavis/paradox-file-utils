@@ -117,11 +117,31 @@ function withDoc(text: string): vscode.MarkdownString {
   return md;
 }
 
+/**
+ * Keep the line breaks an author wrote.
+ *
+ * Markdown folds a single newline into a space, so a four-line comment above a
+ * definition arrived as one wrapped run and lost whatever structure the modder
+ * put there. Two trailing spaces is markdown's hard break. Paragraph breaks are
+ * left alone — a blank line already means what it looks like.
+ */
+function hardBreaks(text: string): string {
+  return text
+    .split("\n\n")
+    .map((para) => para.split("\n").join("  \n"))
+    .join("\n\n");
+}
+
 /** One Markdown card: header, hint/docs, values/body, usage. */
 function hoverCardMarkdown(h: HoverResult): string {
   const parts = [hoverCardHeader(h)];
   if (h.hint) parts.push(h.owner ? `${h.hint} of ${h.owner}` : h.hint);
-  if (h.docs) parts.push(h.docs);
+  if (h.docs) parts.push(hardBreaks(h.docs));
+  // What the key accepts sits above the scope line: it is about the token
+  // itself, where the scope is about where the token sits.
+  if (h.accepts) parts.push(`*${h.accepts}*`);
+  const scope = hoverScopeLine(h);
+  if (scope) parts.push(scope);
   const quote = hoverValuesText(h) || h.body;
   if (quote) {
     parts.push(
@@ -134,6 +154,24 @@ function hoverCardMarkdown(h: HoverResult): string {
   }
   if (h.usage) parts.push("```\n" + h.usage.trim() + "\n```");
   return parts.join("\n\n");
+}
+
+/**
+ * Scope context: which scope the cursor sits in, and where a scope link goes.
+ *
+ * "What scope am I in?" is the question the file cannot answer — the enclosing
+ * blocks may be hundreds of lines up — and it has to be right before any effect
+ * or trigger makes sense. Rendered as a trailing context line rather than a
+ * heading, because it is orientation, not the token's own meaning.
+ */
+function hoverScopeLine(h: HoverResult): string {
+  const code = (s: string) => "`" + s + "`";
+  const inScope = h.scope ? `in a ${code(h.scope)} scope` : "";
+  if (h.scopeOut) {
+    const to = `moves to ${code(h.scopeOut)}`;
+    return `*${inScope ? `${inScope} · ${to}` : to}*`;
+  }
+  return inScope ? `*${inScope}*` : "";
 }
 
 /** Kind + key; overlay label is a second span so hover CSS can pin it right. */

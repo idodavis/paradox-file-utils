@@ -351,7 +351,7 @@ func leadingComment(src string, li *jomini.LineIndex, line int) string {
 		return ""
 	}
 	slices.Reverse(rev)
-	return prose(rev)
+	return authorProse(rev)
 }
 
 func extractTopLevel(root *jomini.Root, li *jomini.LineIndex, gameID, kind, path, origin string) []Def {

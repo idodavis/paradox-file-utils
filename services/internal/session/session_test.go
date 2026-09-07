@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"paradox-modding-tools/services/internal/catalog"
@@ -291,5 +292,213 @@ func TestDidOpenKeepsThePathSpelling(t *testing.T) {
 	s.DidOpen(strings.ToLower(p), "brave = { }\n")
 	if got := len(s.ModDefsOf("brave")); got != 1 {
 		t.Fatalf("%d definitions after reopening under another spelling, want 1", got)
+	}
+}
+
+// TestResolutionOrder pins the order itself. Every LSP bug found so far was a
+// derived source ranked above a declared one, and each fix moved one branch of
+// a 200-line if-ladder where the move was invisible in review. Naming the order
+// here makes inserting a source a deliberate edit to this list.
+func TestResolutionOrder(t *testing.T) {
+	want := []string{
+		"language-prefix",
+		"typed-cite",
+		"slot-declared",
+		"slot-derived",
+		"definition",
+		"vocabulary",
+		"localization",
+		"data-function",
+		"macro-kind",
+		"field-doc",
+		"unresolved",
+	}
+	if len(wordResolvers) != len(want) {
+		t.Fatalf("resolver count = %d, want %d — add it to the list here too",
+			len(wordResolvers), len(want))
+	}
+	for i, w := range want {
+		if got := wordResolvers[i].name; got != w {
+			t.Errorf("resolver %d = %q, want %q", i, got, w)
+		}
+	}
+}
+
+// TestDeclaredOutranksDerived is the invariant the order exists to hold: what
+// the game declares about a slot is consulted before what PMT inferred about
+// it. The derived pass carries coverage floors, so it is silent exactly where
+// the declared answer was available all along.
+func TestDeclaredOutranksDerived(t *testing.T) {
+	declared, derived := -1, -1
+	for i, r := range wordResolvers {
+		switch r.name {
+		case "slot-declared":
+			declared = i
+		case "slot-derived":
+			derived = i
+		}
+	}
+	if declared < 0 || derived < 0 {
+		t.Fatal("slot resolvers missing")
+	}
+	if declared > derived {
+		t.Errorf("slot-declared at %d ranks below slot-derived at %d", declared, derived)
+	}
+}
+
+// TestUnresolvedIsLast pins the floor. Every other resolver may decline; this
+// one answers for anything left, so a source added below it would never run.
+func TestUnresolvedIsLast(t *testing.T) {
+	last := wordResolvers[len(wordResolvers)-1]
+	if last.name != "unresolved" {
+		t.Fatalf("last resolver = %q, want %q", last.name, "unresolved")
+	}
+	for i, r := range wordResolvers[:len(wordResolvers)-1] {
+		if r.name == "unresolved" {
+			t.Errorf("unresolved also at %d", i)
+		}
+	}
+}
+
+// TestVocabularyOutranksLocalization pins the fix for the most visible symptom
+// of the ordering fault: a declared effect or trigger hovering as the quoted
+// player-facing string, because Paradox localizes a great many ordinary words.
+func TestVocabularyOutranksLocalization(t *testing.T) {
+	vocab, locz := -1, -1
+	for i, r := range wordResolvers {
+		switch r.name {
+		case "vocabulary":
+			vocab = i
+		case "localization":
+			locz = i
+		}
+	}
+	if vocab < 0 || locz < 0 {
+		t.Fatal("resolvers missing")
+	}
+	if vocab > locz {
+		t.Errorf("vocabulary at %d ranks below localization at %d", vocab, locz)
+	}
+}
+
+// covers CanonPath identity on Windows vs Unix.
+func TestCanonPathWindowsFold(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows path folding")
+	}
+	a := `C:\Steam\steamapps\common\Game\events\x.txt`
+	b := `c:\steam\steamapps\common\game\events\x.txt`
+	if CanonPath(a) != CanonPath(b) {
+		t.Fatalf("CanonPath(%q) = %q, CanonPath(%q) = %q",
+			a, CanonPath(a), b, CanonPath(b))
+	}
+	if !SamePath(a, b) {
+		t.Fatal("SamePath should treat drive/case variants as one file")
+	}
+}
+
+func TestCanonPathUnixPreservesCase(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix case-sensitive paths")
+	}
+	a := "/tmp/Mod/events/X.txt"
+	if CanonPath(a) != filepath.Clean(a) {
+		t.Fatalf("CanonPath = %q, want cleaned original case", CanonPath(a))
+	}
+	if SamePath(a, strings.ToLower(a)) {
+		t.Fatal("SamePath must not fold case on Unix")
+	}
+}
+
+// verifies that concurrent EnsureSession calls for one id build the
+// session exactly once (singleflight) and all callers share it.
+func TestEnsureSession(t *testing.T) {
+	var builds int32
+	var events []string
+	pool := NewPool(func(id string) (*Session, error) {
+		atomic.AddInt32(&builds, 1)
+		return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+	}, func(event string, _ any) { events = append(events, event) })
+
+	const n = 20
+	var wg sync.WaitGroup
+	sessions := make([]*Session, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s, err := pool.EnsureSession("ws")
+			if err != nil {
+				t.Errorf("EnsureSession: %v", err)
+				return
+			}
+			sessions[i] = s
+		}(i)
+	}
+	wg.Wait()
+
+	if got := atomic.LoadInt32(&builds); got != 1 {
+		t.Fatalf("builds = %d, want 1", got)
+	}
+	for i := 1; i < n; i++ {
+		if sessions[i] != sessions[0] {
+			t.Fatalf("caller %d got a different session instance", i)
+		}
+	}
+	if len(events) != 1 || events[0] != EventReady {
+		t.Errorf("events = %v, want [%s]", events, EventReady)
+	}
+}
+
+func TestEnsureSessionEmptyIDDoesNotDrop(t *testing.T) {
+	pool := NewPool(func(id string) (*Session, error) {
+		return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+	}, nil)
+	live, err := pool.EnsureSession("ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.EnsureSession(""); err == nil {
+		t.Fatal("empty id: want error")
+	}
+	if pool.Get("ws") != live {
+		t.Fatal("empty EnsureSession dropped the live session")
+	}
+}
+
+func TestEnsureSessionReturnsExistingBeforeDrop(t *testing.T) {
+	var builds int32
+	pool := NewPool(func(id string) (*Session, error) {
+		atomic.AddInt32(&builds, 1)
+		return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+	}, nil)
+	first, err := pool.EnsureSession("ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := pool.EnsureSession("ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatal("second EnsureSession rebuilt the live session")
+	}
+	if atomic.LoadInt32(&builds) != 1 {
+		t.Fatalf("builds = %d, want 1", atomic.LoadInt32(&builds))
+	}
+}
+
+func TestDropAll(t *testing.T) {
+	pool := NewPool(func(id string) (*Session, error) {
+		return NewWithLoc(id, "ck3", "english", nil, nil, nil), nil
+	}, nil)
+	if _, err := pool.EnsureSession("ws"); err != nil {
+		t.Fatal(err)
+	}
+	pool.DropAll()
+	if pool.Get("ws") != nil {
+		t.Fatal("DropAll left a session")
 	}
 }

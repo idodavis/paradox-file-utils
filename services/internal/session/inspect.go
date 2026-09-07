@@ -3,6 +3,7 @@
 package session
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,6 +32,18 @@ type Inspect struct {
 	Line, Col                                  int
 	VanillaOriginName, VanillaRel, VanillaPath string
 	VanillaLine, VanillaCol                    int
+
+	// Scope is the scope type in force where the cursor sits, and ScopeOut the
+	// type the token under it moves to when it is a scope link. "What scope am I
+	// in?" is the question a new modder cannot answer from the file, and the
+	// engine already computes it for completion -- it was simply never shown.
+	Scope, ScopeOut string
+	// Accepts states what this key's value may be. For the many fields no source
+	// documents, what a field accepts is knowable even when what it means is not.
+	Accepts string
+	// Via names the resolution step that claimed this word, so a card that is
+	// wrong can say which source claimed it. See resolve.go.
+	Via string
 
 	RawKind, Name string
 	Def           *catalog.Def
@@ -78,6 +91,8 @@ func (s *Session) Inspect(path string, line, col int) *Inspect {
 	}
 	ins.RawKind = id.kind
 	ins.Name = id.name
+	ins.Via = id.via
+	s.fillScope(ins, path, line, col, id)
 	ins.Def = id.def
 	ins.FieldKey = id.fieldKey
 	ins.Local = id.local
@@ -90,6 +105,22 @@ func (s *Session) Inspect(path string, line, col int) *Inspect {
 		ins.Owner = id.owner
 	}
 	return ins
+}
+
+// fillScope records the scope context around the cursor.
+//
+// Called from Inspect rather than from fillCard because it needs the cursor
+// position, and because it holds no lock of its own: ScopeAt and scopeLink each
+// take the read lock, so doing this inside a locked card builder would deadlock
+// the way LocConventionOwner did inside EachLoc.
+func (s *Session) fillScope(ins *Inspect, path string, line, col int, id identity) {
+	ins.Scope = s.ScopeAt(path, line, col)
+	// A scope link is the one token whose whole purpose is to move somewhere
+	// else, so the transition is the useful thing to show -- "holder" answers
+	// "character" only once you know it landed you in one.
+	if l, ok := s.scopeLink(id.name); ok && l.Out != "" {
+		ins.ScopeOut = l.Out
+	}
 }
 
 // inspectOf fills Kind/Hint/Docs for a resolved identity.
@@ -254,11 +285,68 @@ func (s *Session) LocKeyExplained(key string) bool {
 	if _, _, ok := s.locConventionOwnerLocked(key); ok {
 		return true
 	}
-	if s.cache == nil || len(s.cache.LocKeyAffixes) == 0 {
+	// Anything in script that names this key accounts for it, whatever kind of
+	// reference the harvester filed it under.
+	//
+	// UsedLocKeys counts only refs of kind loc / loc-broad / loc-convention,
+	// but go-to-references matches by name across every kind — which is why
+	// F12 on `friend_after_subjugation` finds its uses while the orphan check
+	// called it dead. The engine reads an object's id and its localization by
+	// the same name, so a cited id is a used key; asking a narrower question
+	// here than navigation already answers is what produced the false positive.
+	if len(s.refsByKey[key]) > 0 || len(s.cacheRefsByKey[key]) > 0 {
+		return true
+	}
+	if s.cache == nil {
+		return false
+	}
+	// The same convention, but the stem only has to be a name script uses — not
+	// a definition. A game rule category is declared by the rules that cite it
+	// (`category = my_category`) and may never be a def of its own, so
+	// `game_rule_category_my_category` had no owner and read as an orphan.
+	// Strict resolution keeps asking for a def, because it has to name a file
+	// to open; this side only has to say "something accounts for this".
+	if _, _, ok := catalog.ConventionOwner(
+		s.cache.LocAffixes, key, s.nameKindsLocked); ok {
+		return true
+	}
+	if len(s.cache.LocKeyAffixes) == 0 {
 		return false
 	}
 	_, ok := catalog.KeyAffixOwner(s.cache.LocKeyAffixes, key, s.isLocKeyLocked)
 	return ok
+}
+
+// nameKindsLocked visits the kinds anything in the model files under id --
+// definitions first, then the kinds references were harvested as.
+//
+// Permissive by design and used only by LocKeyExplained. defKindsLocked stays
+// the strict version: it backs resolution that must name a file to open, and a
+// reference is not a place to open.
+func (s *Session) nameKindsLocked(id string, visit func(kind string) bool) {
+	stop := false
+	s.defKindsLocked(id, func(kind string) bool {
+		if !visit(kind) {
+			stop = true
+			return false
+		}
+		return true
+	})
+	if stop {
+		return
+	}
+	seen := map[string]bool{}
+	for _, group := range [][]catalog.Ref{s.refsByKey[id], s.cacheRefsByKey[id]} {
+		for _, r := range group {
+			if r.Kind == "" || seen[r.Kind] {
+				continue
+			}
+			seen[r.Kind] = true
+			if !visit(r.Kind) {
+				return
+			}
+		}
+	}
 }
 
 // isLocKeyLocked reports whether key is defined in any language, workspace or
@@ -576,6 +664,7 @@ func (s *Session) fillCard(id identity) *Inspect {
 		// and the signature the game states for it was being dropped on the
 		// floor — 58 of CK3's 1,201 sampled hovers that had one.
 		ins.Usage = s.TokenUsage(id.name)
+		ins.Accepts = s.fieldAccepts(id.extractKind, id.name)
 		return s.vanillaSite(ins)
 	case id.def != nil && id.def.Kind == "loc_key":
 		return s.locCard(id.name)
@@ -584,6 +673,7 @@ func (s *Session) fillCard(id identity) *Inspect {
 	case id.kind != "":
 		ins := s.inspectOf(id.kind, id.name, s.docsOnly(id.name, id.kind))
 		ins.Usage = s.TokenUsage(id.name)
+		ins.Accepts = s.fieldAccepts(id.kind, id.name)
 		return s.vanillaSite(ins)
 	default:
 		return nil
@@ -1244,4 +1334,61 @@ func weightShare(parent *jomini.Assignment, listName, weight string) string {
 
 func trimFloat(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
+// maxAcceptedValues bounds the enumeration on a card. A closed set is the point;
+// a hundred of them is a wall of text that teaches nothing.
+const maxAcceptedValues = 8
+
+// fieldAccepts states what a field's value may be, in one line.
+//
+// This is the answer for the fields that have no prose anywhere — 28% of them
+// on EU5 — where the card previously borrowed the enclosing kind's description
+// and said something misleading instead. What a field accepts is often knowable
+// even when nothing documents what it means.
+//
+// The order is the same invariant lsp/valueSources follows for completion, and
+// for the same reason: declared beats derived, so a slot the game types is not
+// described by whatever PMT inferred about it. The two are separate lists
+// because one produces prose and the other produces items; they must not
+// disagree about precedence.
+func (s *Session) fieldAccepts(kind, field string) string {
+	// Declared target: the game states the argument's scope type.
+	if target := s.TokenTarget(field); target != "" {
+		// A bound database gives the citation form as well, which is the more
+		// useful answer -- one accept produces a valid value. Its absence does
+		// not weaken the declaration, though: the game still states the type,
+		// and reporting it is better than falling through to something PMT
+		// merely inferred about the same key.
+		if cite, k := s.CiteFormOfScope(target); k != "" {
+			if cite != "" {
+				return "accepts a " + PrettyKind(k) + ", cited `" + cite + ":<id>`"
+			}
+			return "accepts a " + PrettyKind(k)
+		}
+		return "accepts a " + PrettyKind(target)
+	}
+	// Declared slot: script_docs name the database this key holds.
+	if r, ok := jomini.ScriptName(field); ok && r.Kind != "" {
+		return "accepts a " + PrettyKind(r.Kind)
+	}
+	// Derived slot: what the install walk inferred, behind its coverage floor.
+	if k := s.FieldValueKind(field); k != "" && !jomini.IsEphemeral(k) {
+		return "accepts a " + PrettyKind(k)
+	}
+	// A closed set is the most useful thing of all when it exists.
+	if enums := s.FieldEnums(kind, field); len(enums) > 0 {
+		shown := enums
+		extra := 0
+		if len(shown) > maxAcceptedValues {
+			extra = len(shown) - maxAcceptedValues
+			shown = shown[:maxAcceptedValues]
+		}
+		out := "one of: " + strings.Join(shown, ", ")
+		if extra > 0 {
+			out += fmt.Sprintf(", +%d more", extra)
+		}
+		return out
+	}
+	return ""
 }

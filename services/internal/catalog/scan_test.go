@@ -8,10 +8,11 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"paradox-modding-tools/services/internal/parser/jomini"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"paradox-modding-tools/services/internal/parser/jomini"
 )
 
 // ck3Install writes the shared corpus fixture and returns install + isolated user data.
@@ -820,5 +821,39 @@ func TestParseDumpFormats(t *testing.T) {
 
 	if kindFromDocFilename("on_actions.log") != "on_action" {
 		t.Fatal("on_actions kind")
+	}
+}
+
+// covers harvest-site decisions about definitions and the prose
+// attached to them.
+// TestLeadingCommentKeepsLineBreaks pins that an author's line breaks survive.
+// The game's own dump prose is wrapped for a console and reflows correctly, but
+// a comment a modder wrote above a definition chose where its lines end — a
+// list or a worked example is destroyed by folding it into one run.
+func TestLeadingCommentKeepsLineBreaks(t *testing.T) {
+	src := "# Grants the title.\n" +
+		"# Requires:\n" +
+		"#   - a living holder\n" +
+		"#   - an existing de jure liege\n" +
+		"grant_title = {\n\tvalue = 1\n}\n"
+	ex := extractCK3("common/script_values/x.txt", src, "mod")
+	var doc string
+	for _, d := range ex.Defs {
+		if d.Key == "grant_title" {
+			doc = d.Doc
+		}
+	}
+	if doc == "" {
+		t.Fatalf("no doc harvested from %d defs", len(ex.Defs))
+	}
+	lines := strings.Split(doc, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("doc = %q, want 4 lines", doc)
+	}
+	// Each line is still normalised internally, so alignment padding does not
+	// survive — only the break the author chose does.
+	if lines[2] != "- a living holder" {
+		t.Errorf("line 3 = %q, want the list item with its indent normalised",
+			lines[2])
 	}
 }

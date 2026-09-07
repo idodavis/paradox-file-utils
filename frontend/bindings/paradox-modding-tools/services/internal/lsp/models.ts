@@ -60,6 +60,20 @@ export interface HoverResult {
     "key"?: string;
     "hint"?: string;
     "docs"?: string;
+
+    /**
+     * Scope is the scope type in force where the cursor sits; ScopeOut is where
+     * the token moves to when it is a scope link. The single most useful thing
+     * to tell a new modder, and computed already for completion.
+     */
+    "scope"?: string;
+    "scopeOut"?: string;
+
+    /**
+     * Accepts states what this key's value may be — often knowable even where
+     * nothing documents what the key means.
+     */
+    "accepts"?: string;
     "body"?: string;
     "values"?: HoverValue[] | null;
     "more"?: number;
