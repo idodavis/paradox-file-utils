@@ -100,6 +100,14 @@ func LooksLikeKey(s string) bool {
 	if strings.ContainsFunc(s, unicode.IsSpace) {
 		return false
 	}
+	// A value carrying a macro parameter is not knowable until the macro is
+	// called: the key is whatever the caller passed, or a stem the engine
+	// completes at runtime. Reporting either as missing tells a modder that
+	// correct script is wrong — `desc = $TT$` in a scripted effect is not a key
+	// by that name, and no key by that name should exist.
+	if strings.Contains(s, "$") {
+		return false
+	}
 	switch strings.ToLower(s) {
 	case "yes", "no", "none", "root", "prev", "this", "from":
 		return false

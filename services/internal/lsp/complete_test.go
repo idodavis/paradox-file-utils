@@ -4,6 +4,7 @@
 package lsp
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -425,5 +426,51 @@ func TestCompleteCitationReplacesWholeCite(t *testing.T) {
 		t.Fatalf("range = %d..%d, want %d..%d (over %q)",
 			cite.Range.Start.Character, cite.Range.End.Character, startCol, len(typed),
 			"culture_group:tur")
+	}
+}
+
+// Filtering after the limit returns whichever definitions the index reached
+// first, which on a real workspace is almost never the kind asked for. Both
+// value paths had it: completion fell through to `yes`/`no` even where the type
+// was perfectly well known — 203 of Victoria 3's 496 unanswered value positions
+// knew the field kind (`interest_groups`, `cultures`, `religions`) and got
+// nothing back, and EU5's `has_culture_group = ` declared its target, bound it
+// to `culture_groups`, and offered nothing.
+//
+// The fixture is the shape that breaks it: more definitions of an unrelated
+// kind than the completion limit, with the wanted ones behind them.
+func TestCompletionFiltersKindBeforeTheLimit(t *testing.T) {
+	// The noise is in the workspace and the traits are in the install, because
+	// eachDef walks every mod file before it reaches the cache. That ordering is
+	// the one part of the iteration that is specified, so a search which takes
+	// maxComplete definitions of any kind and only then keeps the matching ones
+	// fills its budget on decisions and never sees a trait — deterministically,
+	// rather than depending on Go's map order.
+	var noise strings.Builder
+	for i := range maxComplete * 4 {
+		fmt.Fprintf(&noise, "aaa_decision_%03d = { }\n", i)
+	}
+	const ev = "ns.1 = {\n\timmediate = { add_trait = \n} }\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/decisions/00.txt": noise.String(),
+		"events/x.txt":            ev,
+	}, &catalog.VanillaCache{
+		FieldValueKinds: map[string]string{"add_trait": "traits"},
+		Defs: []catalog.Def{
+			{Kind: "traits", Key: "zzz_brave", Path: "t.txt"},
+			{Kind: "traits", Key: "zzz_craven", Path: "t.txt"},
+		},
+	}, nil)
+	f := filepath.Join(root, "events", "x.txt")
+
+	line, col := lineCol(ev, "add_trait = ")
+	got := labels(Complete(s, f, line, col+len("add_trait = ")))
+	if len(got) == 0 || got[0] == "yes" {
+		t.Fatalf("add_trait fell through to the boolean fallback: %v", got)
+	}
+	for _, l := range got {
+		if !strings.HasPrefix(l, "zzz_") {
+			t.Fatalf("offered a non-trait %q: %v", l, got)
+		}
 	}
 }

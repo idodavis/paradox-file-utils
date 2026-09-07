@@ -260,3 +260,36 @@ func TestModifierAreas(t *testing.T) {
 		}
 	}
 }
+
+// CanonPath is for comparison, never for a value anything downstream opens.
+// reindexLocked used to overwrite the path with it, so every definition
+// harvested from an open file carried a lower-cased path on Windows. That
+// spelling reached the editor, which keys its tabs by exact URI: go-to-
+// definition on a symbol in the file already on screen opened a second tab, and
+// reveal-in-explorer went quiet because the workbench first asks whether the
+// resource sits inside a workspace folder — and the folders are registered with
+// their real casing.
+func TestDidOpenKeepsThePathSpelling(t *testing.T) {
+	root := writeFiles(t, map[string]string{
+		"descriptor.mod":               "name = \"t\"\n",
+		"common/traits/Mixed_Case.txt": "brave = { }\n",
+	})
+	p := filepath.Join(root, "common", "traits", "Mixed_Case.txt")
+	s := NewWithLoc("ws", "ck3", "english", nil, nil,
+		[]catalog.ModInput{{Origin: "mod", Root: root, Order: 0}})
+	defer s.Close()
+	s.DidOpen(p, "brave = { }\n")
+
+	d := s.Resolve("brave")
+	if d == nil {
+		t.Fatal("definition not harvested")
+	}
+	if d.Path != filepath.Clean(p) {
+		t.Fatalf("stored path %q, want the caller's spelling %q", d.Path, filepath.Clean(p))
+	}
+	// Re-opening under a different spelling must not double-index it.
+	s.DidOpen(strings.ToLower(p), "brave = { }\n")
+	if got := len(s.ModDefsOf("brave")); got != 1 {
+		t.Fatalf("%d definitions after reopening under another spelling, want 1", got)
+	}
+}

@@ -113,13 +113,23 @@ class SimpleEmitter<T> {
   }
 }
 
+/** True only where the host filesystem really is case-sensitive. */
+export function caseSensitiveFs(): boolean {
+  const ua = navigator.userAgent;
+  return ua.includes("Linux") && !ua.includes("Android");
+}
+
 /** File system provider bridging workbench URIs to Go FileService. */
 export class WailsFileSystemProvider
   implements IFileSystemProviderWithFileReadWriteCapability
 {
+  // Only Linux has a case-sensitive filesystem; Windows and macOS do not.
+  // Note this alone does not reach IUriIdentityService: the `file:` provider it
+  // queries is monaco-vscode's OverlayFileSystemProvider, which hardcodes its
+  // own capabilities and never asks its delegates. See alignFsCaseSensitivity.
   readonly capabilities =
     FileSystemProviderCapabilities.FileReadWrite |
-    FileSystemProviderCapabilities.PathCaseSensitive;
+    (caseSensitiveFs() ? FileSystemProviderCapabilities.PathCaseSensitive : 0);
 
   private readonly _onDidChangeCapabilities = new SimpleEmitter<void>();
   readonly onDidChangeCapabilities = this._onDidChangeCapabilities.event;

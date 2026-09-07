@@ -77,6 +77,7 @@ import {
   setListShowAll,
   setModRootDeletedHook,
   normFs,
+  caseSensitiveFs,
   type IdeRoot,
 } from "./fsBridge";
 import {
@@ -99,6 +100,9 @@ import {
   RemoveWorkspaceMod,
   SaveIdeSession,
 } from "@services/workspaceservice";
+import { getService } from "@codingame/monaco-vscode-api";
+import { FileSystemProviderCapabilities } from "@codingame/monaco-vscode-api/vscode/vs/platform/files/common/files";
+import { IFileService } from "@codingame/monaco-vscode-api/vscode/vs/platform/files/common/files.service";
 import { ISearchService } from "@codingame/monaco-vscode-api/vscode/vs/workbench/services/search/common/search.service";
 import { SearchService } from "@codingame/monaco-vscode-search-service-override/vscode/vs/workbench/services/search/common/searchService";
 import { registerWorkspaceSearch } from "./searchProvider";
@@ -648,13 +652,56 @@ function syncEditorReadOnly(ed: monaco.editor.ICodeEditor): void {
   ed.updateOptions({ readOnly: fsProvider.isReadOnly(path) });
 }
 
+/**
+ * Stop the workbench treating `C:/x` and `c:/x` as two different files.
+ *
+ * IUriIdentityService decides whether to compare `file:` URIs case-sensitively
+ * by asking IFileService for the provider's PathCaseSensitive capability. The
+ * registered `file:` provider is monaco-vscode's OverlayFileSystemProvider,
+ * which hardcodes that flag in its constructor and never consults the delegates
+ * we register -- so WailsFileSystemProvider cannot answer for itself.
+ *
+ * The cost is silent: ExplorerService.select() gives up when findClosestRoot()
+ * matches no workspace folder, and go-to-definition hands back paths spelled by
+ * Go's lowercasing CanonPath while the roots come from Windows with the drive
+ * letter as the OS gave it. Nothing logs; the reveal just never happens.
+ *
+ * Called before any workspace folder is registered, because the service caches
+ * the answer per scheme the first time a file URI is compared.
+ */
+async function alignFsCaseSensitivity(): Promise<void> {
+  if (caseSensitiveFs()) return;
+  try {
+    const files = (await getService(IFileService)) as unknown as {
+      getProvider(scheme: string): { capabilities: number } | undefined;
+    };
+    const provider = files.getProvider?.("file");
+    if (!provider) return;
+    provider.capabilities &= ~FileSystemProviderCapabilities.PathCaseSensitive;
+  } catch (err) {
+    console.warn("[pmt] could not align fs case sensitivity", err);
+  }
+}
+
+// Selecting the active file in the tree is explorer.autoReveal's job, and it
+// does it without stealing focus. revealInExplorer would also focus the tree,
+// so it is deliberately not called here.
 function syncActiveFile(): void {
   const ed = vscode.window.activeTextEditor;
   setIdeActiveFile(ed?.document.uri.fsPath ?? "");
-  if (ed) {
-    void vscode.commands.executeCommand("revealInExplorer", ed.document.uri);
+  // The one gate that decides whether the tree can reveal this file. If it is
+  // null the URI does not match any root and no amount of reveal will work, so
+  // say so instead of failing the way the workbench does -- silently.
+  if (ed && !warnedOutsideRoots && !vscode.workspace.getWorkspaceFolder(ed.document.uri)) {
+    warnedOutsideRoots = true;
+    console.warn(
+      "[pmt] active file is outside every workspace folder; explorer.autoReveal " +
+        "cannot select it:", ed.document.uri.toString(),
+      vscode.workspace.workspaceFolders?.map((f) => f.uri.toString()),
+    );
   }
 }
+let warnedOutsideRoots = false;
 
 function hookEditorReadOnly(): void {
   if (editorHooked) return;
@@ -786,6 +833,7 @@ async function runInitialize(theme: string): Promise<void> {
           if (!isAlreadyInitialized(err)) throw err;
         }
       }
+      await alignFsCaseSensitivity();
     }
     attachIdeParts();
     await monacoLifecycle.waitServicesReady();

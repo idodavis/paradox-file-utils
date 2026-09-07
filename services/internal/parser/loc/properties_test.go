@@ -84,3 +84,20 @@ func TestLocalizationKeyIsBroadNotStrict(t *testing.T) {
 		}
 	}
 }
+
+// TestLooksLikeKeyMacroParams pins that a key completed at call time is never
+// demanded. `desc = $TT$` and `desc = $title$` both reached Workspace Health as
+// missing localization on real Victoria 3 mods.
+func TestLooksLikeKeyMacroParams(t *testing.T) {
+	for _, s := range []string{"$TT$", "$title$", "evt_$TYPE$_desc", "$COA$"} {
+		if LooksLikeKey(s) {
+			t.Errorf("LooksLikeKey(%q) = true, want false", s)
+		}
+	}
+	// Still a key when nothing is substituted.
+	for _, s := range []string{"HRE_CONQUEST_WAR_NAME", "my_event.0001.desc"} {
+		if !LooksLikeKey(s) {
+			t.Errorf("LooksLikeKey(%q) = false, want true", s)
+		}
+	}
+}

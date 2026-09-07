@@ -680,3 +680,37 @@ func TestResolveFireKindsCoverage(t *testing.T) {
 	}
 	_ = events
 }
+
+// A list member is a value, not an assignment, so the field-RHS harvest never
+// saw one — and localization keys hide there in quantity. CK3 writes a culture's
+// given names and its cadet dynasty names as lists, both are keys
+// (`Abbas:0 "Abbas"`, `dynn_Rasulid:0 "Rasulid"`), and nothing cited them: 6,978
+// of A Game of Thrones' 20,196 orphaned English keys.
+func TestListMembersAreLocRefs(t *testing.T) {
+	const body = "name_list_x = {\n" +
+		"\tmale_names = { Abbas Ali Ibrahim }\n" +
+		"\tcadet_dynasty_names = { \"dynn_Rasulid\" \"dynn_Umarid\" }\n" +
+		"\tsome_other_list = { not_a_key also_not }\n}\n"
+	cache := &VanillaCache{LocListFields: []string{
+		"male_names", "cadet_dynasty_names",
+	}}
+	ex := extractCK3Overlay("common/culture/name_lists/x.txt", body, "mod", cache)
+	for _, want := range []string{"Abbas", "Ali", "Ibrahim", "dynn_Rasulid", "dynn_Umarid"} {
+		if !hasRef(ex.Refs, "loc-broad", want) {
+			t.Errorf("missing list loc ref %q: %v", want, ex.Refs)
+		}
+	}
+	// Quoting says nothing either way — vanilla quotes cadet dynasty names and
+	// not given names — but a list no evidence elected contributes nothing.
+	for _, no := range []string{"not_a_key", "also_not"} {
+		if hasRef(ex.Refs, "loc-broad", no) {
+			t.Errorf("undeclared list contributed %q: %v", no, ex.Refs)
+		}
+	}
+	// Broad, never strict: a name the author has not localized is not a defect.
+	for _, no := range []string{"Abbas", "dynn_Rasulid"} {
+		if hasRef(ex.Refs, "loc", no) {
+			t.Errorf("%q must not demand a key: %v", no, ex.Refs)
+		}
+	}
+}

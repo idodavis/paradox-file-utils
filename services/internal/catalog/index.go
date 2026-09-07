@@ -107,3 +107,11 @@ func modFiles(root string) []fileRef {
 	})
 	return out
 }
+
+// cacheKindScope is the install's declared kind→scope map, or nil.
+func cacheKindScope(c *VanillaCache) map[string]string {
+	if c == nil {
+		return nil
+	}
+	return c.KindScope
+}

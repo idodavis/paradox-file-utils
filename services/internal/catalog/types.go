@@ -14,7 +14,7 @@ import (
 // before deriveNestedOptions was made order-independent has 352 CK3 defs under
 // whichever kind that scan's threads happened to pick, and nothing else would
 // invalidate it.
-const CacheFormatVersion = 26
+const CacheFormatVersion = 27
 
 // NestedShape is a derived parent→child harvest pattern (faiths under religion,
 // nested titles, law policies, …). GroupKey is the wrapper when every hit
@@ -134,9 +134,13 @@ type VanillaCache struct {
 	Wrappers         []string                       `json:"wrappers,omitempty"`
 	LocAffixes       map[string][]LocAffix          `json:"locAffixes,omitempty"`
 	LocFields        []string                       `json:"locFields,omitempty"`
+	LocListFields    []string                       `json:"locListFields,omitempty"`
 	LocMemberAffixes map[string][]LocAffix          `json:"locMemberAffixes,omitempty"`
-	KindInfo         map[string]string              `json:"kindInfo,omitempty"`
-	DataFunctions    []string                       `json:"dataFunctions,omitempty"`
+	// LocKeyAffixes are shapes that derive one loc key from another, so a key
+	// nothing cites is still explained. Not per kind: the stem is a key, not a def.
+	LocKeyAffixes []LocKeyAffix     `json:"locKeyAffixes,omitempty"`
+	KindInfo      map[string]string `json:"kindInfo,omitempty"`
+	DataFunctions []string          `json:"dataFunctions,omitempty"`
 
 	// LocEngineSlots are `$NAME$` interpolations the game's own localization
 	// uses but never defines as a key — `$EFFECT_LIST_BULLET$`, `$ACTION$`,

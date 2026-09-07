@@ -130,7 +130,7 @@ func Coverage(s *session.Session) ([]HealthLang, []HealthRow) {
 		if v, done := byConvention[key]; done {
 			return v
 		}
-		_, _, ok := s.LocConventionOwner(key)
+		ok := s.LocKeyExplained(key)
 		byConvention[key] = ok
 		return ok
 	}

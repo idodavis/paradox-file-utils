@@ -267,35 +267,88 @@ func rootItems(s *session.Session, kind, prefix string) []CompletionItem {
 	return out
 }
 
+// valueSource is one named source that may know what a slot holds.
+//
+// The order is the same invariant identify follows and is written out for the
+// same reason: this is the second place it lives, and the two drifting apart is
+// how a slot would come to complete differently from the way it hovers. See
+// session/resolve.go.
+type valueSource struct {
+	name string
+	// items returns ok=false to decline, which passes the slot to the next
+	// source. ok=true with no items is a real answer -- "the game says this slot
+	// holds kind X and nothing of kind X matches" -- and must not fall through,
+	// or a slot whose type is declared would be offered values of some other
+	// type inferred from the install.
+	items func(s *session.Session, kind, parentKey, prefix string) ([]CompletionItem, bool)
+}
+
+// valueSources is the order, most authoritative first. Declared beats derived:
+// the game states the argument type of 1,694 CK3 / 3,834 Vic3 / 1,742 EU5
+// tokens in Supported Targets, and until that was read here
+// `has_culture_group = ` fell through to install-derived field typing and, when
+// that had too little evidence to clear its coverage floor, all the way to
+// offering `yes` and `no`.
+var valueSources = []valueSource{
+	{"fire-key", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
+		fk := s.FireKind(parentKey)
+		if fk == "" {
+			return nil, false
+		}
+		return defsOfType(s, prefix, fk), true
+	}},
+	{"localization", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
+		if loc.Classify(parentKey) == loc.PropNone {
+			return nil, false
+		}
+		return locItems(s, prefix), true
+	}},
+	{"slot-declared", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
+		r, ok := jomini.ScriptName(parentKey)
+		if !ok {
+			return nil, false
+		}
+		return defsOfType(s, prefix, r.Kind), true
+	}},
+	// The only source that declines on an empty result: a token with no
+	// declared target type yields nothing here and has not answered.
+	{"target-declared", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
+		items := targetItems(s, parentKey, prefix)
+		return items, len(items) > 0
+	}},
+	{"slot-derived", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
+		k := s.FieldValueKind(parentKey)
+		if k == "" {
+			return nil, false
+		}
+		return defsOfType(s, prefix, k), true
+	}},
+	{"macro-params", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
+		if !s.IsMacroDef(parentKey) && !s.IsMacroKind(parentKey) {
+			return nil, false
+		}
+		return scriptParamItems(s, parentKey, prefix), true
+	}},
+	{"macro-call-params", func(s *session.Session, _, parentKey, prefix string) ([]CompletionItem, bool) {
+		if !macroCallParent(s, parentKey) {
+			return nil, false
+		}
+		return scriptParamItems(s, parentKey, prefix), true
+	}},
+	{"field-enums", func(s *session.Session, kind, parentKey, prefix string) ([]CompletionItem, bool) {
+		enums := s.FieldEnums(kind, parentKey)
+		if len(enums) == 0 {
+			return nil, false
+		}
+		return enumItems(enums, prefix), true
+	}},
+}
+
 func valueItems(s *session.Session, kind, parentKey, prefix string) []CompletionItem {
-	if fk := s.FireKind(parentKey); fk != "" {
-		return defsOfType(s, prefix, fk)
-	}
-	if loc.Classify(parentKey) != loc.PropNone {
-		return locItems(s, prefix)
-	}
-	if r, ok := jomini.ScriptName(parentKey); ok {
-		return defsOfType(s, prefix, r.Kind)
-	}
-	// Declared beats derived. The game states the argument type of 1,694 CK3 /
-	// 3,834 Vic3 / 1,742 EU5 tokens in Supported Targets, and until now nothing
-	// read it here: `has_culture_group = ` fell through to install-derived field
-	// typing and, when that had too little evidence to pass its coverage floor,
-	// all the way to offering `yes` and `no`.
-	if items := targetItems(s, parentKey, prefix); len(items) > 0 {
-		return items
-	}
-	if k := s.FieldValueKind(parentKey); k != "" {
-		return defsOfType(s, prefix, k)
-	}
-	if s.IsMacroDef(parentKey) || s.IsMacroKind(parentKey) {
-		return scriptParamItems(s, parentKey, prefix)
-	}
-	if macroCallParent(s, parentKey) {
-		return scriptParamItems(s, parentKey, prefix)
-	}
-	if enums := s.FieldEnums(kind, parentKey); len(enums) > 0 {
-		return enumItems(enums, prefix)
+	for _, src := range valueSources {
+		if items, ok := src.items(s, kind, parentKey, prefix); ok {
+			return items
+		}
 	}
 	return valueFallback(prefix)
 }
@@ -338,8 +391,12 @@ func citedDefsOfType(s *session.Session, typed, cite, kind string) []CompletionI
 	}
 	seen := map[string]bool{}
 	var out []CompletionItem
-	for _, d := range s.FindDefs(idPrefix, maxComplete, true, true) {
-		if jomini.CanonicalKind(d.Kind) != kind || d.Key == "" {
+	// The same filter-before-the-limit rule as defsOfType, and the same symptom
+	// when it was broken: `has_culture_group = ` on EU5 declares its target,
+	// binds it to `culture_groups`, and still offered nothing, because the first
+	// maxComplete definitions of any kind held none of them.
+	for _, d := range s.FindDefsOf(idPrefix, kind, maxComplete, true, true) {
+		if d.Key == "" {
 			continue
 		}
 		label := cite + ":" + d.Key
@@ -493,19 +550,18 @@ func defsOfType(s *session.Session, prefix, defType string) []CompletionItem {
 		seen[key] = true
 		out = append(out, documentedVal(s, key, kind, kind))
 	}
-	if jomini.IsEphemeral(defType) {
-		for _, d := range s.FindDefsOf(prefix, defType, maxComplete, true, true) {
-			add(d.Key, d.Kind)
-			if len(out) >= maxComplete {
-				break
-			}
-		}
-		return out
-	}
-	for _, d := range s.FindDefs(prefix, maxComplete, true, true) {
-		if jomini.CanonicalKind(d.Kind) != defType {
-			continue
-		}
+	// FindDefsOf, which applies the kind before the limit. The ephemeral branch
+	// always did; everything else took the first maxComplete definitions of any
+	// kind and then discarded the ones that did not match, so on a workspace
+	// with two hundred thousand definitions the answer was whatever the index
+	// reached first — almost never the kind asked for.
+	//
+	// This is why completion fell through to `yes`/`no` even when the type was
+	// perfectly well known: on Victoria 3 the field kind was right for 203 of
+	// 496 unanswered value positions — `interest_groups`, `cultures`,
+	// `religions`, `ideologies` — and the lookup returned nothing anyway.
+	// Cheap discriminator first: filter before the limit.
+	for _, d := range s.FindDefsOf(prefix, defType, maxComplete, true, true) {
 		add(d.Key, d.Kind)
 		if len(out) >= maxComplete {
 			break

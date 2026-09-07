@@ -327,14 +327,51 @@ func sweepGame(t *testing.T, game, appID, installEnv string, base baselineFile) 
 	t.Logf("SWEEP %s: install scan %s, %d mods in %s",
 		game, scanTook.Round(time.Millisecond*100),
 		len(dirs), (time.Since(scanStart) - scanTook).Round(time.Millisecond*100))
+	// The corpus is not frozen: Steam updates workshop mods underneath us. One
+	// Victoria 3 mod gained 320 files mid-session, which moved `missing` by 445
+	// and changed the sampled token count — movement that looks exactly like an
+	// engine regression and is not one. Two runs are only comparable when this
+	// line matches, so print it beside the counts rather than leaving the next
+	// reader to wonder.
+	t.Logf("SWEEP %s  corpus: %s", game, corpusStamp(dirs, appID))
 	reportGame(t, game, scores)
+}
+
+// corpusStamp fingerprints the workshop content a run measured: how many mods,
+// and the newest file mtime across them.
+func corpusStamp(dirs []os.DirEntry, appID string) string {
+	var newest time.Time
+	files := 0
+	for _, e := range dirs {
+		_ = filepath.WalkDir(filepath.Join(workshopRoot, appID, e.Name()),
+			func(_ string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return nil
+				}
+				files++
+				if fi, err := d.Info(); err == nil && fi.ModTime().After(newest) {
+					newest = fi.ModTime()
+				}
+				return nil
+			})
+	}
+	return itoa(len(dirs)) + " mods, " + itoa(files) + " files, newest " +
+		newest.UTC().Format("2006-01-02T15:04Z")
 }
 
 // isFault reports the row types that assert something is wrong. Overrides,
 // conflicts and dependencies describe a workspace; they are not defects.
+// isFault separates the rows that accuse the modder of a defect from the ones
+// that report hygiene. "your script references something that does not exist"
+// must be right, and is bounded — 186 dangling rows across all three games.
+// "you have localization nothing uses" is a cleanup list: over-reporting it is
+// noise in a count, not a false accusation, and driving it to zero would mean
+// tuning the engine until it hides real findings. Orphaned and untranslated are
+// still counted and still shown, under their own filters; they just do not gate
+// the phase. See GAME-SYNTAX §13.
 func isFault(rowType string) bool {
 	switch rowType {
-	case "dangling", "missing", "orphaned", "untranslated":
+	case "dangling", "missing":
 		return true
 	}
 	return false

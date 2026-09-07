@@ -37,6 +37,7 @@ type Derived struct {
 	FieldValueKinds map[string]string
 	LocAffixes      map[string][]LocAffix
 	LocFields       map[string]bool
+	LocListFields   map[string]bool
 }
 
 // derivedFromCache copies the persisted derived maps so a live reindex can
@@ -50,6 +51,7 @@ func derivedFromCache(c *VanillaCache) *Derived {
 		FieldValueKinds: map[string]string{},
 		LocAffixes:      map[string][]LocAffix{},
 		LocFields:       map[string]bool{},
+		LocListFields:   map[string]bool{},
 	}
 	if c == nil {
 		return v
@@ -61,6 +63,9 @@ func derivedFromCache(c *VanillaCache) *Derived {
 	maps.Copy(v.LocAffixes, c.LocAffixes)
 	for _, f := range c.LocFields {
 		v.LocFields[f] = true
+	}
+	for _, f := range c.LocListFields {
+		v.LocListFields[f] = true
 	}
 	for _, w := range c.Wrappers {
 		v.Wrappers[w] = true
@@ -132,9 +137,21 @@ const (
 	minAffixDefs = 8
 	// minAffixCoverage is the share of a kind that must carry it.
 	minAffixCoverage = 20
-	// maxAffixesPerKind bounds what one kind contributes. State regions alone
-	// produce a convention per hub type, and the tail is not worth storing.
-	maxAffixesPerKind = 8
+	// minAffixDefsStrong admits a convention that covers only a slice of its
+	// kind but is shared by a great many definitions anyway.
+	//
+	// Coverage alone cannot see these. CK3 portrait modifiers are keyed
+	// `PORTRAIT_MODIFIER_custom_clothes_<accessory>`, and there is one such
+	// prefix per portrait group — clothes, headgear, legwear, hair, cloaks,
+	// jewelry — so each covers roughly a tenth of the `accessories` kind and
+	// none reaches a fifth. They were 994 of A Game of Thrones' uncited orphans.
+	// A shape 410 distinct definitions share is not a coincidence whatever
+	// fraction of its kind that happens to be.
+	minAffixDefsStrong = 50
+	// maxAffixesPerKind bounds what one kind contributes. State regions produce
+	// a convention per hub type and accessories one per portrait group, so the
+	// cap has to clear a real fan-out before it starts discarding evidence.
+	maxAffixesPerKind = 16
 	// affixKeyTokens caps span enumeration per key. Spans are quadratic in
 	// tokens and a twenty-token key is a sentence, not a naming convention.
 	affixKeyTokens = 10
@@ -142,10 +159,32 @@ const (
 	// LocConventionUsed is the floor for "the engine may consume this key" —
 	// what suppressing a false "orphaned" row needs.
 	LocConventionUsed = minAffixCoverage
+	// LocConventionStored is the floor for expanding a convention forwards into
+	// stored references, which is what makes the key navigable and countable as
+	// used without a reverse lookup. Kept separate from LocConventionRequired
+	// because "worth storing" and "the game demands it" are different claims;
+	// while they shared a constant, tightening the diagnostic silently changed
+	// which keys counted as used.
+	LocConventionStored = 90
 	// LocConventionRequired is the floor for "the game expects this key", which
-	// is a claim strong enough to put a warning in a modder's editor. A shape
-	// four fifths of a kind happens to share is a habit, not a requirement.
-	LocConventionRequired = 90
+	// is a claim strong enough to put a warning in a modder's editor.
+	//
+	// It is 100 because nothing less passes the gate the diagnostics are held
+	// to: zero findings on vanilla. Vanilla is complete by construction, so for
+	// each convention `Of - Defs` is exactly how many vanilla definitions the
+	// check would warn about. Measured:
+	//
+	//	floor  CK3 conventions / vanilla warnings   Vic3        EU5
+	//	  90       197 / 475                     164 / 119   301 / 270
+	//	  95       175 / 230                     160 /  55   287 / 224
+	//	  99       137 /  16                     143 /  13   253 /  71
+	//	 100       126 /   0                     135 /   0   244 /   0
+	//
+	// The cost is 19-36% of the conventions and it buys away every false
+	// positive. A shape nine definitions in ten share is a habit: EU5 gives 90%
+	// of diplomatic actions a `WE_PERFORM_<id>_ACTION_BTN3` key, and an action
+	// with two buttons is not defective.
+	LocConventionRequired = 100
 )
 
 // ConventionKeys expands a kind's derived conventions for one definition,
@@ -244,6 +283,9 @@ func (v *Derived) mergeLocal(local *Derived) {
 	}
 	for f := range local.LocFields {
 		v.LocFields[f] = true
+	}
+	for f := range local.LocListFields {
+		v.LocListFields[f] = true
 	}
 	for k, ok := range local.Wrappers {
 		if ok {
@@ -966,6 +1008,131 @@ func deriveLocAffixes(defs []Def, locKeys map[string]bool) map[string][]LocAffix
 // affixesFrom is the derivation itself: given names that belong to a kind, and
 // how many names each kind has, find the prefix/suffix shapes that turn enough
 // of them into real localization keys.
+// LocKeyAffix is a loc key shape derived from another loc key rather than from
+// a definition. EU5 writes NOT_<key> for the negated form of a trigger tooltip,
+// so NOT_POP_LITERACY_TRIGGER is consumed by the engine even though nothing
+// cites it and no definition is named POP_LITERACY_TRIGGER — the stem is
+// itself a key. Vanilla EU5 has 69,565 keys reading as orphaned and this family
+// is its largest cluster; see GAME-SYNTAX §12.
+type LocKeyAffix struct {
+	Pre string `json:"pre,omitempty"`
+	Suf string `json:"suf,omitempty"`
+	// Keys carrying this shape whose stem is itself a loc key, out of Of, every
+	// key carrying it. The ratio is the evidence: a real derivation resolves
+	// nearly always, a coincidence resolves sometimes.
+	Keys int `json:"keys"`
+	Of   int `json:"of"`
+}
+
+// maxAffixStrip bounds how many whole tokens may be taken off each end when
+// looking for a stem. Two covers OTHER_PERFORMS_<key> and <key>_option_desc;
+// going wider costs a multiple of the key set per token for shapes no game was
+// observed to use.
+const maxAffixStrip = 2
+
+// deriveLocKeyAffixes finds the shapes that build one loc key out of another.
+//
+// Linear in the key set rather than quadratic like affixesFrom: the stem of a
+// derived key is the key minus whole tokens off each end, so a bounded strip
+// finds it directly and there is no need to enumerate every span. Both counts
+// are collected here and the floor is applied in acceptLocKeyAffix, so the
+// evidence and the judgement stay separable.
+func deriveLocKeyAffixes(locKeys map[string]bool) []LocKeyAffix {
+	if len(locKeys) == 0 {
+		return nil
+	}
+	type shape struct{ pre, suf string }
+	hits := map[shape]int{}
+	total := map[shape]int{}
+	var offs []int
+	for key := range locKeys {
+		offs = tokenOffsets(key, offs[:0])
+		n := len(offs) - 1 // tokens in key
+		if n < 2 || len(offs) > affixKeyTokens+1 {
+			continue
+		}
+		for pre := 0; pre <= maxAffixStrip && pre < n; pre++ {
+			for suf := 0; suf+pre <= maxAffixStrip && pre+suf < n; suf++ {
+				if pre == 0 && suf == 0 {
+					continue
+				}
+				lo, hi := offs[pre], offs[n-suf]
+				sh := shape{key[:lo], key[hi-1:]}
+				total[sh]++
+				if locKeys[key[lo:hi-1]] {
+					hits[sh]++
+				}
+			}
+		}
+	}
+	out := make([]LocKeyAffix, 0, 16)
+	for sh, of := range total {
+		a := LocKeyAffix{Pre: sh.pre, Suf: sh.suf, Keys: hits[sh], Of: of}
+		if acceptLocKeyAffix(a) {
+			out = append(out, a)
+		}
+	}
+	slices.SortFunc(out, func(a, b LocKeyAffix) int {
+		if c := cmp.Compare(b.Keys, a.Keys); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Pre, b.Pre); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Suf, b.Suf)
+	})
+	return out
+}
+
+const (
+	// minKeyAffixKeys is how many keys must resolve through a shape before it
+	// counts as a convention. Higher than minAffixDefs because the denominator
+	// here is the whole key set rather than one kind's definitions, so
+	// coincidences are correspondingly easier to find: CK3 has 287,896 english
+	// keys, and 29,647 distinct prefix shapes among the unexplained ones alone.
+	minKeyAffixKeys = 20
+	// minKeyAffixCoverage is the share of keys carrying a shape whose stem is
+	// itself a key. This is the evidence that does not scale with volume: a real
+	// derivation resolves nearly always — every NOT_<key> has its <key> — while
+	// a coincidental shape like _desc resolves only where the stem happens to
+	// exist as well. Set high on purpose. Under-reporting an orphan costs a
+	// modder some dead lines; a shape accepted here explains keys away, and the
+	// cheapest way to lose a real finding is to accept a shape that half works.
+	minKeyAffixCoverage = 80
+)
+
+// acceptLocKeyAffix decides whether one derived shape is real rather than a
+// coincidence. Kept separate from the counting in deriveLocKeyAffixes so the
+// evidence and the judgement can be recalibrated independently — the ratio is
+// the discriminator, and the count floor stops one lucky pair clearing it the
+// way body_part cleared 50% coverage on 1 of 2 values.
+func acceptLocKeyAffix(a LocKeyAffix) bool {
+	if a.Keys < minKeyAffixKeys || a.Of == 0 {
+		return false
+	}
+	return a.Keys*100 >= a.Of*minKeyAffixCoverage
+}
+
+// KeyAffixOwner reports the loc key that key is derived from, if any. isKey is
+// asked last because it is the only part that touches the session's own keys.
+func KeyAffixOwner(
+	affixes []LocKeyAffix, key string, isKey func(string) bool,
+) (stem string, ok bool) {
+	for _, a := range affixes {
+		if len(key) <= len(a.Pre)+len(a.Suf) {
+			continue
+		}
+		if !strings.HasPrefix(key, a.Pre) || !strings.HasSuffix(key, a.Suf) {
+			continue
+		}
+		s := key[len(a.Pre) : len(key)-len(a.Suf)]
+		if isKey(s) {
+			return s, true
+		}
+	}
+	return "", false
+}
+
 func affixesFrom(
 	kindsOf map[string][]string, total map[string]int, locKeys map[string]bool,
 ) map[string][]LocAffix {
@@ -1015,7 +1182,10 @@ func affixesFrom(
 	out := map[string][]LocAffix{}
 	for c, n := range hits {
 		of := total[c.kind]
-		if n < minAffixDefs || of == 0 || n*100 < of*minAffixCoverage {
+		if n < minAffixDefs || of == 0 {
+			continue
+		}
+		if n*100 < of*minAffixCoverage && n < minAffixDefsStrong {
 			continue
 		}
 		out[c.kind] = append(out[c.kind], LocAffix{Pre: c.pre, Suf: c.suf, Defs: n, Of: of})
@@ -1208,4 +1378,13 @@ func MemberConventionOwner(
 		}
 	}
 	return "", "", false
+}
+
+// locListField reports a property whose LIST members are localization keys —
+// a culture's `male_names`, its `cadet_dynasty_names`.
+func (v *Derived) locListField(key string) bool {
+	if v == nil {
+		return false
+	}
+	return v.LocListFields[key] || v.LocListFields[strings.ToLower(key)]
 }

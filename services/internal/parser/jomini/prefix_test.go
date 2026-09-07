@@ -146,3 +146,25 @@ func TestParsePrefixedMatchesPattern(t *testing.T) {
 		}
 	}
 }
+
+// TestSkipObjectRHSEnginePaths pins the two shapes that reached Workspace
+// Health as dangling references on real CK3 mods: an engine define path, and a
+// GUI identifier the lexer left a terminator attached to.
+func TestSkipObjectRHSEnginePaths(t *testing.T) {
+	skip := []string{
+		"define:NTaskContract|HIGH_TASK_CONTRACT_TIER",
+		"define:NTaskContract|MEDIUM_TASK_CONTRACT_TIER",
+		"struggle_tooltip;",
+	}
+	for _, s := range skip {
+		if !SkipObjectRHS(s) {
+			t.Errorf("SkipObjectRHS(%q) = false, want true", s)
+		}
+	}
+	// The guard must stay narrow: an ordinary id still has to be harvested.
+	for _, s := range []string{"english", "castle_holding", "k_magyar"} {
+		if SkipObjectRHS(s) {
+			t.Errorf("SkipObjectRHS(%q) = true, want false", s)
+		}
+	}
+}

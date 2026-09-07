@@ -10,6 +10,7 @@ export type {
     Edge,
     EngineToken,
     LocAffix,
+    LocKeyAffix,
     Modifier,
     NestedShape,
     Ref,

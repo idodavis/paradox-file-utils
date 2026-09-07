@@ -71,6 +71,30 @@ export interface LocAffix {
 }
 
 /**
+ * affixesFrom is the derivation itself: given names that belong to a kind, and
+ * how many names each kind has, find the prefix/suffix shapes that turn enough
+ * of them into real localization keys.
+ * LocKeyAffix is a loc key shape derived from another loc key rather than from
+ * a definition. EU5 writes NOT_<key> for the negated form of a trigger tooltip,
+ * so NOT_POP_LITERACY_TRIGGER is consumed by the engine even though nothing
+ * cites it and no definition is named POP_LITERACY_TRIGGER — the stem is
+ * itself a key. Vanilla EU5 has 69,565 keys reading as orphaned and this family
+ * is its largest cluster; see GAME-SYNTAX §12.
+ */
+export interface LocKeyAffix {
+    "pre"?: string;
+    "suf"?: string;
+
+    /**
+     * Keys carrying this shape whose stem is itself a loc key, out of Of, every
+     * key carrying it. The ratio is the evidence: a real derivation resolves
+     * nearly always, a coincidence resolves sometimes.
+     */
+    "keys": number;
+    "of": number;
+}
+
+/**
  * Modifier is one modifier token. Area is CK3 "Use areas" / Vic3 "Mask".
  */
 export interface Modifier {
@@ -248,7 +272,14 @@ export interface VanillaCache {
     "wrappers"?: string[] | null;
     "locAffixes"?: { [_ in string]?: LocAffix[] | null } | null;
     "locFields"?: string[] | null;
+    "locListFields"?: string[] | null;
     "locMemberAffixes"?: { [_ in string]?: LocAffix[] | null } | null;
+
+    /**
+     * LocKeyAffixes are shapes that derive one loc key from another, so a key
+     * nothing cites is still explained. Not per kind: the stem is a key, not a def.
+     */
+    "locKeyAffixes"?: LocKeyAffix[] | null;
     "kindInfo"?: { [_ in string]?: string } | null;
     "dataFunctions"?: string[] | null;
 

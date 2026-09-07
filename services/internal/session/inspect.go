@@ -47,7 +47,10 @@ type identity struct {
 	path, name, kind, owner, locFilter, extractKind string
 	// docs is prose the identify step worked out itself, for the cards whose
 	// content is computed from the cursor's surroundings rather than looked up.
-	docs                               string
+	docs string
+	// via names the wordResolver that produced this identity, so a wrong card
+	// can say which source claimed the word instead of leaving it to be guessed.
+	via                                string
 	def                                *catalog.Def
 	fieldKey, local                    bool
 	spanStart, spanEnd                 int
@@ -136,12 +139,17 @@ func (s *Session) composeHint(kind, _ string) string {
 				break
 			}
 		}
-		// The convention as a template rather than a label: "loc
-		// `ACHIEVEMENT_<id>`" teaches the shape, where the old "loc kind_id"
-		// only named PMT's own vocabulary.
-		if a := s.locAffixesLocked(ck); len(a) > 0 {
-			parts = append(parts, "loc `"+a[0].Key("<id>")+"`")
-		}
+		// No localization-convention line. It was tried twice — as the label
+		// "loc kind_id", then as the template "loc `<id>_adj`" — and neither
+		// says anything a reader can act on: the first named PMT's own
+		// vocabulary, the second a placeholder. Rendering the concrete key
+		// instead would only repeat what the card's Body already shows when the
+		// key exists.
+		//
+		// Which localization keys an object should have, and which of them are
+		// missing, is a list with per-key state. That belongs in the Inspector
+		// pane, not in a one-line subtitle, and `required-loc` already reports
+		// the ones the game demands.
 		if jomini.IsMacroKind(ck) {
 			// The real signature, when the macro takes parameters, is built by
 			// macroUsage and shown as a code block; this is only the shape note
@@ -220,11 +228,56 @@ func (s *Session) locAffixesLocked(kind string) []catalog.LocAffix {
 // `ACHIEVEMENT_DESC_<id>` naming the achievement, `notification_<id>_tooltip`
 // naming the message. A key with an owner is consumed by the engine even though
 // nothing cites it, which is what stops it reading as orphaned.
-// Takes the write lock, not the read lock: isMemberLocked fills a per-kind set
-// on first use, and building a cache under a read lock is a race.
 func (s *Session) LocConventionOwner(key string) (id, kind string, ok bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.locConventionOwnerLocked(key)
+}
+
+// LocKeyExplained reports whether anything in the model can account for key,
+// without saying what. It is deliberately more permissive than
+// LocConventionOwner and answers a different question.
+//
+// The two have opposite failure costs. Hover and go-to-definition need to know
+// WHICH definition owns a key, so a wrong answer sends the reader to the wrong
+// file — that path stays strict. The orphan check only needs to know whether
+// anything consumes the key at all, and a wrong answer there tells a modder
+// their correct localization is dead. Returning a bool and nothing else is what
+// keeps the permissive side from leaking into the strict one: it cannot produce
+// a link because it does not produce an identity.
+//
+// Its failure mode is a genuine orphan going unreported, which is the direction
+// to fail in.
+func (s *Session) LocKeyExplained(key string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, _, ok := s.locConventionOwnerLocked(key); ok {
+		return true
+	}
+	if s.cache == nil || len(s.cache.LocKeyAffixes) == 0 {
+		return false
+	}
+	_, ok := catalog.KeyAffixOwner(s.cache.LocKeyAffixes, key, s.isLocKeyLocked)
+	return ok
+}
+
+// isLocKeyLocked reports whether key is defined in any language, workspace or
+// install. Any language: a derived shape is a property of the key set, and a
+// mod that ships only french still proves the stem exists.
+func (s *Session) isLocKeyLocked(key string) bool {
+	for _, m := range s.locByLang {
+		if _, ok := m[key]; ok {
+			return true
+		}
+	}
+	if s.vanillaLoc != nil {
+		_, ok := s.vanillaLoc.Sites[key]
+		return ok
+	}
+	return false
+}
+
+func (s *Session) locConventionOwnerLocked(key string) (id, kind string, ok bool) {
 	if s.cache == nil || len(s.cache.LocAffixes) == 0 {
 		return "", "", false
 	}
@@ -241,32 +294,40 @@ func (s *Session) LocConventionOwner(key string) (id, kind string, ok bool) {
 }
 
 // isMemberLocked reports name as a block-member key of kind, across the install
-// and the mods. The per-kind set is built on first use and only for the kinds
-// that carry a member convention, which is a handful.
+// and the mods. Read-only: the sets are built by rebuildMemberSetsLocked.
 func (s *Session) isMemberLocked(kind, name string) bool {
 	if kind == "" || name == "" {
 		return false
 	}
 	// Member names are stored lowercased by harvestStructVocab; the stem comes
 	// off a localization key verbatim.
-	name = strings.ToLower(name)
-	set, built := s.memberSets[kind]
-	if !built {
-		set = map[string]bool{}
-		if s.cache != nil {
-			for _, k := range s.cache.Structures[kind] {
-				set[k] = true
-			}
+	return s.memberSets[kind][strings.ToLower(name)]
+}
+
+// rebuildMemberSetsLocked indexes block-member names for the kinds that carry a
+// localization member convention, and only those — 22 kinds on CK3 rather than
+// the 218 the install has structures for.
+//
+// Built up front rather than on first use so LocConventionOwner can stay a read
+// lock. Filling a cache inside a query meant that query took the write lock,
+// which deadlocks the moment anything calls it from inside EachLoc or any other
+// read-locked walk. A lookup should not be able to do that.
+func (s *Session) rebuildMemberSetsLocked() {
+	s.memberSets = nil
+	if s.cache == nil || len(s.cache.LocMemberAffixes) == 0 {
+		return
+	}
+	s.memberSets = make(map[string]map[string]bool, len(s.cache.LocMemberAffixes))
+	for kind := range s.cache.LocMemberAffixes {
+		set := map[string]bool{}
+		for _, k := range s.cache.Structures[kind] {
+			set[k] = true
 		}
 		for _, k := range s.modMembers[kind] {
 			set[k] = true
 		}
-		if s.memberSets == nil {
-			s.memberSets = map[string]map[string]bool{}
-		}
 		s.memberSets[kind] = set
 	}
-	return set[name]
 }
 
 // defKindsLocked visits the kinds that define id, stopping when visit returns
@@ -379,112 +440,32 @@ func (s *Session) identify(path string, line, col int) (identity, bool) {
 	if at.word == "" {
 		return identity{}, false
 	}
-	// A bare number or boolean on the right of an assignment is a literal, and
-	// resolving it against the databases finds whatever happens to share the
-	// spelling. `is_ai = yes` reached the localization lookup and vanilla
-	// defines a loc key called `yes`, so the card showed the player-facing
-	// string "Yes". Keys are handled above, in the at.assign branch, so a
-	// `random_list` weight or a numeric event id is unaffected.
-	if at.slotKey != "" && jomini.IsLiteralValue(at.word) {
+	// A literal is a value, not a name, and resolving one against the databases
+	// finds whatever happens to share the spelling. That is not a rare accident:
+	// 68,109 of CK3's 215,448 definitions are keyed by a bare number — 38,020
+	// characters, 10,887 provinces, 4,223 dynasties — so on one conversion 4,044
+	// arithmetic operands (`value = 5`, `add = 10`, `weight = 100`, `days`,
+	// `MIN`) resolved to province ids. `is_ai = yes` reached the localization
+	// lookup the same way, and vanilla defines a key called `yes`.
+	//
+	// The primitive set is small and closed — number, date, boolean — and
+	// getting it complete is the whole defence. Dates were missing from it,
+	// which is why `game_start_date < 1178.1.1` hovered as a struggle: CK3 keys
+	// its history files by date.
+	//
+	// Unconditional, with no slot required. Measured on a 21,499-file
+	// conversion, literals sitting in a slot whose type the engine knows number
+	// **zero**, so this costs nothing; requiring a slot only left the positions
+	// without one exposed. Assignment keys never reach here — the at.assign
+	// branch above claims them — so a `random_list` weight and a numeric key in
+	// the file that defines it are unaffected.
+	if jomini.IsLiteralValue(at.word) {
 		return identity{}, false
 	}
-	if p, ok := jomini.ParsePrefixed(at.word); ok {
-		kind := jomini.PrefixKind(p.Prefix)
-		if kind == "" {
-			kind = p.Prefix
-		}
-		return s.ephemeralID(path, p.Name, kind), true
-	}
-	wordOff := at.off - at.start
-	if sp, ok := jomini.TypedSpanAt(at.word, wordOff); ok {
-		kind, id, ok := game.ParseTyped(s.GameID, sp.Prefix+":"+sp.ID)
-		if !ok {
-			kind, id = sp.Prefix, sp.ID
-		}
-		if pk := s.PrefixKind(sp.Prefix); pk != "" {
-			kind = pk
-		} else if kind == "" {
-			kind = sp.Prefix
-		}
-		d := s.resolveOfKind(id, kind)
-		if d == nil {
-			d = s.resolveNonLoc(id)
-		}
-		return identity{path: path, name: id, kind: kind, def: d}, true
-	}
-	if at.slotKey != "" {
-		if r, ok := jomini.ScriptName(at.slotKey); ok {
-			if jomini.IsEphemeral(r.Kind) {
-				return s.ephemeralID(path, at.word, r.Kind), true
-			}
-			if d := s.resolveOfKind(at.word, r.Kind); d != nil {
-				return identity{path: path, name: at.word, kind: r.Kind, def: d}, true
-			}
-		}
-		if k := s.FieldValueKind(at.slotKey); k != "" {
-			if jomini.IsEphemeral(k) {
-				return s.ephemeralID(path, at.word, k), true
-			}
-			if loc.Classify(at.slotKey) == loc.PropNone {
-				if d := s.resolveOfKind(at.word, k); d != nil {
-					return identity{path: path, name: at.word, kind: k, def: d}, true
-				}
-			}
-		}
-	}
-	// resolveNonLoc, not Resolve: every localization entry is a `loc_key`
-	// definition in the index, and Resolve's default filter drops only
-	// ephemerals — so a word the game localizes resolved here, as loc_key,
-	// before ever reaching the vocabulary check below that is supposed to beat
-	// it. That is how a check macro or a field came up as a quoted player-facing
-	// string instead of its own documentation. Real loc-key references are
-	// served by the locDefined branch further down, which builds the same card.
-	// resolveNonLoc, not Resolve: every localization entry is a `loc_key`
-	// definition in the index, and Resolve's default filter drops only
-	// ephemerals. Every object in these games has a key named after it, so a
-	// value that names an object matched both, and which one came back was
-	// decided by load order rather than by kind.
-	if d := s.resolveNonLoc(at.word); d != nil {
-		return identity{path: path, name: d.Key, kind: d.Kind, def: d}, true
-	}
-	// What the game declares wins over a localization entry that merely shares
-	// the spelling. Paradox localizes a great many ordinary words, so with the
-	// loc lookup first, hovering a declared effect or trigger showed the
-	// player-facing string in a quote instead of the token's own documentation.
-	// A word the type system does not declare still falls through to loc below,
-	// which is what an actual loc-key reference needs.
-	if ck := s.vocabRole(at.word); ck != "" {
-		return identity{path: path, name: at.word, kind: ck}, true
-	}
-	// Never on the left of an `=`. A key is a property name — a field, an
-	// effect, a check macro — and the games localize a great many of those
-	// words, so an unrecognised key came back as a localization entry and the
-	// card showed the player-facing string. Not knowing what a key is is the
-	// honest answer; claiming it is loc is not. Localization files themselves
-	// go through identifyLoc, above, and are unaffected.
-	if !at.inKey && s.locDefined(at.word) {
-		if file, ln, origin, ok := s.LocSite(at.word); ok {
-			d := &catalog.Def{
-				Kind: "loc_key", Key: at.word, Path: file, Line: ln, Origin: origin,
-			}
-			return identity{path: path, name: at.word, kind: "loc_key", def: d}, true
-		}
-	}
-	for _, k := range s.Vocab("datafunction") {
-		if k == at.word {
-			return identity{path: path, name: at.word, kind: "data_function"}, true
-		}
-	}
-	if ck := jomini.CanonicalKind(at.word); s.IsMacroKind(ck) {
-		return identity{path: path, name: at.word, kind: ck}, true
-	}
-	if extra := s.FieldDoc(at.word, ""); extra != "" {
-		return identity{path: path, name: at.word, kind: "field"}, true
-	}
-	if at.word != "" {
-		return identity{path: path, name: at.word}, true
-	}
-	return identity{}, false
+	// Everything past this point is a question about which SOURCE gets to name
+	// the word, not about where the cursor is. That order lives in resolve.go
+	// as data so a new source cannot quietly outrank a declared one.
+	return s.resolveWord(path, at)
 }
 
 func (s *Session) identifyLoc(path string, line, col int) (identity, bool) {
@@ -582,6 +563,19 @@ func (s *Session) fillCard(id identity) *Inspect {
 		docs := s.FieldDoc(id.name, id.extractKind)
 		ins := s.inspectOf(id.extractKind, id.name, docs)
 		ins.Kind += " key"
+		// composeHint describes the KIND — its scope type, how it is cited, how
+		// its localization keys are named. None of that is about the field under
+		// the cursor, and inspectOf attaches it whenever the field itself has no
+		// documentation. Hovering `color2` inside a coat of arms therefore
+		// reported the coat of arms' localization convention as though it
+		// described `color2`. The Kind line already says which object this is a
+		// key of; anything more has to be about the key.
+		ins.Hint = ""
+		// A key can be a declared token as well: `add_to_list` reaches this
+		// branch because it is also a structure key of the kind being edited,
+		// and the signature the game states for it was being dropped on the
+		// floor — 58 of CK3's 1,201 sampled hovers that had one.
+		ins.Usage = s.TokenUsage(id.name)
 		return s.vanillaSite(ins)
 	case id.def != nil && id.def.Kind == "loc_key":
 		return s.locCard(id.name)

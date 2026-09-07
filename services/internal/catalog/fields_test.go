@@ -6,6 +6,7 @@
 package catalog
 
 import (
+	"fmt"
 	"regexp"
 	"slices"
 	"testing"
@@ -183,16 +184,21 @@ func TestDeriveLocAffixes(t *testing.T) {
 // the game requires it.
 func TestConventionKeysCoverageFloor(t *testing.T) {
 	affixes := []LocAffix{
-		{Pre: "ACHIEVEMENT_", Defs: 10, Of: 10},
-		{Suf: "_hint", Defs: 3, Of: 10},
+		{Pre: "ACHIEVEMENT_", Defs: 10, Of: 10}, // every definition: required
+		{Suf: "_btn3", Defs: 9, Of: 10},         // nine in ten: a habit
+		{Suf: "_hint", Defs: 3, Of: 10},         // plausible only
 	}
 	cases := []struct {
 		name     string
 		coverage int
 		want     []string
 	}{
-		{"used takes the plausible one too", LocConventionUsed,
-			[]string{"ACHIEVEMENT_x", "x_hint"}},
+		{"used takes every plausible shape", LocConventionUsed,
+			[]string{"ACHIEVEMENT_x", "x_btn3", "x_hint"}},
+		// Nine in ten is the case that matters. Anything short of every
+		// definition means vanilla itself lacks the key somewhere, so demanding
+		// it warns about correct script — EU5 gives 90% of diplomatic actions a
+		// `_ACTION_BTN3` key, and an action with two buttons is not defective.
 		{"required takes only the universal one", LocConventionRequired,
 			[]string{"ACHIEVEMENT_x"}},
 	}
@@ -396,5 +402,52 @@ func TestDeriveLocMemberAffixes(t *testing.T) {
 				t.Fatalf("got (%q, %v), want %q", name, ok, tc.wantName)
 			}
 		})
+	}
+}
+
+// A convention that covers only a slice of its kind is still a convention.
+// CK3 keys portrait modifiers `PORTRAIT_MODIFIER_custom_<group>_<accessory>`,
+// one prefix per group, so each covers about a tenth of the `accessories` kind
+// and none clears a fifth — 994 orphans on A Game of Thrones. What separates
+// these from noise is not their share but how many definitions share them.
+func TestDeriveLocAffixesAdmitsSliceConventions(t *testing.T) {
+	var defs []Def
+	locKeys := map[string]bool{}
+	// 200 accessories in two groups of 100: each prefix covers half — no, a
+	// quarter, once the two groups and the plain half are counted.
+	for i := range 200 {
+		id := fmt.Sprintf("acc_%03d", i)
+		defs = append(defs, Def{Kind: "accessories", Key: id})
+		switch {
+		case i < 60:
+			locKeys["PORTRAIT_MODIFIER_clothes_"+id] = true
+		case i < 120:
+			locKeys["PORTRAIT_MODIFIER_headgear_"+id] = true
+		}
+	}
+	// A shape only a handful share stays out; the absolute floor is not a way
+	// around the evidence requirement.
+	for i := range 12 {
+		locKeys[fmt.Sprintf("ODD_acc_%03d", i)] = true
+	}
+
+	got := deriveLocAffixes(defs, locKeys)["accessories"]
+	var shapes []string
+	for _, a := range got {
+		shapes = append(shapes, a.Key("<id>"))
+	}
+	slices.Sort(shapes)
+	want := []string{
+		"PORTRAIT_MODIFIER_clothes_<id>", "PORTRAIT_MODIFIER_headgear_<id>",
+	}
+	if !slices.Equal(shapes, want) {
+		t.Fatalf("affixes = %v, want %v", shapes, want)
+	}
+	// 60 of 200 is 30%, below nothing here — the point is that it is admitted
+	// on count, and Coverage still reports the honest share.
+	for _, a := range got {
+		if a.Coverage() != 30 {
+			t.Errorf("%+v coverage = %d, want the true share", a, a.Coverage())
+		}
 	}
 }

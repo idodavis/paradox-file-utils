@@ -279,6 +279,51 @@ is display text the game shows verbatim, and demanding a key by that name was
 537 of A Game of Thrones' 618 `missing-required-loc` findings. `LooksLikeKey`
 now rejects any value containing whitespace.
 
+**Keys hide in lists, not only on the right of an `=`.** A list member is a
+value, not an assignment, so a harvest that reads `field = value` structurally
+cannot see one — and the games put localization keys there in quantity:
+
+```
+male_names = { Abu-Bakr Aarif Abdul-Gafur … }   →  Abbas:0 "Abbas"
+cadet_dynasty_names = { "dynn_Rasulid" … }      →  dynn_Rasulid:0 "Rasulid"
+```
+
+Quoting is again no signal: vanilla quotes its cadet dynasty names and not its
+given names. Which list-valued properties hold keys is derived exactly as for
+assignment values — same floors, same declared-token exclusion, different value
+source — giving **11 fields on Victoria 3, 19 on EU5, 168 on CK3** (mostly name
+*equivalency* blocks, `alexander_male = { Alexander Alexandros … }`, which are
+genuinely lists of keys).
+
+Measured: name-list members were **6,978 of A Game of Thrones' 20,196** orphaned
+English keys, 35%. Corpus-wide the fix took orphaned **75,686 → 50,438** on CK3
+and **99,560 → 92,770** on Victoria 3, EU5 unchanged. It costs references —
+`locRefs` +23% on CK3, +51% on EU5 — and EU5's Workspace Health live heap rose
+from 2.1 GB to 3.9 GB, which Phase 9 has to budget against.
+
+**A convention nine definitions in ten share is a habit, not a requirement.**
+Vanilla is complete by construction, so for any convention `Of - Defs` is exactly
+how many vanilla definitions a "missing required key" check would warn about —
+which makes the floor measurable rather than a matter of taste:
+
+| floor | CK3 conventions / vanilla warnings | Vic3 | EU5 |
+|---|---|---|---|
+| 90 | 197 / 475 | 164 / 119 | 301 / 270 |
+| 95 | 175 / 230 | 160 / 55 | 287 / 224 |
+| 99 | 137 / 16 | 143 / 13 | 253 / 71 |
+| **100** | **126 / 0** | **135 / 0** | **244 / 0** |
+
+Only 100 clears the gate, at a cost of 19–36% of the conventions. EU5 gives 90%
+of its diplomatic actions a `WE_PERFORM_<id>_ACTION_BTN3` key, and an action with
+two buttons is not defective. On the workshop corpus this took `required-loc`
+from 12/185/401 to **5/103/61**.
+
+Three floors, three questions, deliberately not one constant: `LocConventionUsed`
+(20 — might the engine read this key?), `LocConventionStored` (90 — is it worth a
+stored, navigable reference?), `LocConventionRequired` (100 — does the game demand
+it?). While the last two shared a value, tightening the diagnostic silently
+shrank the set of keys counted as used and pushed EU5's orphan count up 143.
+
 What remains after both fixes is genuinely ambiguous and vanilla shares it:
 `desc = "base"`, `desc = "Pyke"`, `desc = "Cowardly"` are single tokens
 indistinguishable from keys, and CK3 vanilla itself has 233 of them. No
@@ -458,3 +503,272 @@ Real-install tests, skipped when the env var is absent:
 **Rule for adding to this file:** record the measurement and the reproduction,
 not the conclusion alone. Every wrong turn in this engine came from reasoning
 about what the games *should* do instead of sampling what they *do*.
+
+---
+
+## 8. Structure keys are recorded one level deep, on purpose
+
+`harvestStructVocab` records the direct children of a definition, not its
+grandchildren. That is why hovering Victoria 3's `instance` — nested inside
+`colored_emblem = { … }` inside a coat of arms — produces no card, and it is
+**740 of the 884 unnamed hovers** on the Hail conversion, which is the whole of
+that game's 77%-vs-96% hover-naming gap.
+
+Recording depth 2 was measured and rejected:
+
+| Game | depth-1 names | depth-2 names | new names added |
+|---|---|---|---|
+| CK3 | 9,652 | 15,893 | **+14,895 (+154%)** |
+| Vic3 | 10,993 | 6,183 | +6,004 (+54%) |
+| EU5 | 4,321 | 6,775 | **+6,606 (+152%)** |
+
+`Structures` is not only a hover lookup: it feeds the structure keys completion
+offers inside a block, and it is what a future `unknown-key` diagnostic would
+judge against. Trebling it with names that are only valid two levels down would
+offer them where they are wrong and blunt that check — a bad trade for naming one
+key.
+
+The number is also a sampling artifact worth remembering when reading the
+scoreboard: one mod's coat-of-arms files repeat `instance` hundreds of times, and
+the sample takes every seventh assignment, so a single deeply-nested key in a
+single file family moved a whole-game metric by nineteen points.
+
+---
+
+## 9. A key belonging to several kinds is normal, and typing on it is not solved
+
+`deriveFieldValueKinds` refuses to type a field whose values disagree about their
+kind. That veto also fires on a value that is merely *ambiguous* — one key that
+several databases share — and the games do that constantly:
+
+| Game | distinct definition keys | belonging to more than one kind |
+|---|---|---|
+| CK3 | 180,434 | 16,576 (9%) |
+| Vic3 | 35,328 | 757 (2%) |
+| **EU5** | 81,643 | **35,019 (42%)** |
+
+An EU5 country tag such as `BYZ` is at once a `countries`, a `coat_of_arms`, a
+`flag_definitions` and a `customizable_localization` key. So `has_or_had_tag`
+types as nothing, completion offers `yes`/`no` for a field whose values are
+perfectly well known, and it looks like an EU5-specific weakness when it is a
+general rule meeting an unusual corpus.
+
+**Two replacements were measured and both rejected.** The guard is `dangling`,
+which sits at 82 / 97 / 7 and had not moved for any other change:
+
+| Rule | CK3 dangling | Vic3 | EU5 | completion won |
+|---|---|---|---|---|
+| veto (shipped) | 82 | 97 | 7 | — |
+| vote per kind, 80% winner | **1,031** | 174 | 51 | CK3 +7, EU5 +17 |
+| intersect the kind sets | **679** | 111 | 20 | EU5 +20 only |
+
+Voting let two coincidental matches carry a whole field — `cultures/bad`,
+`map_data/b`, `dynasties/generate`. Intersection is the right *shape*, because it
+separates ambiguity (a big candidate set that constrains little) from
+disagreement (an empty set, which must veto), and it recovers `has_or_had_tag`
+correctly once the schema picks `countries` from the survivors on the grounds
+that it is the only one with a scope type. But it still types a field on as few
+as two resolving values, and where keys belong to four kinds apiece a spurious
+intersection is cheap.
+
+What a future attempt needs is not another rule but a far higher evidence floor
+on this path specifically. And note what the table says about value: on CK3 and
+Victoria 3 both replacements bought **no completion at all** and cost 597 and 14
+false dangling rows. Only EU5 gained, because only EU5 has the 42%.
+
+---
+
+## 10. The hover signature rate is a property of the game, not of the engine
+
+The scoreboard reports how often a hover carries a signature, and the three games
+look wildly unequal — CK3 15%, Victoria 3 5%, EU5 1%. That is not an engine gap.
+Measured over the sampled tokens of each conversion:
+
+| Game | hovers sampled | the game states a signature | the card showed it |
+|---|---|---|---|
+| CK3 | 7,278 | 1,201 (16.5%) | **100%** |
+| Vic3 | 3,848 | 214 (5.6%) | **100%** |
+| EU5 | 1,614 | 26 (1.6%) | **100%** |
+
+The "states a signature" column *is* the reported rate. Each game's script_docs
+carry usage strings for a different share of the API, and the share that overlaps
+what modders actually write differs again: EU5 documents a usage for 40% of its
+declared tokens, but only 1.6% of the tokens appearing in real EU5 mod script.
+
+So the metric is honest and the gap is not closable by engine work. Do not chase
+it: the only way to raise EU5's number is to invent signatures the game does not
+state, which is the opposite of reading the type system from the dumps.
+
+The one thing that *was* an engine fault here was small and is fixed: a token
+that is both a declared effect and a structure key of the kind being edited
+reached the structure-key card, which never attached the signature. That lost 58
+of CK3's 1,201 and 8 of Victoria 3's 214. All three games now show 100% of what
+their dumps state.
+
+---
+
+## 11. Primitives: the set is small, closed, and must be complete
+
+A third of CK3's model is keyed by a bare number, so every integer in script can
+collide with a definition:
+
+| Game | definitions | keyed by a bare number |
+|---|---|---|
+| **CK3** | 215,448 | **68,109 (32%)** — characters 38,020, province_terrain 12,720, provinces 10,887, dynasties 4,223, map_data 1,465 |
+| Vic3 | 41,011 | 0 |
+| EU5 | 142,258 | 240 |
+
+Left alone, `value = 5` resolves to a province. Measured on A Game of Thrones,
+**4,044 of 11,411** literal values would resolve against some database — every
+one a `provinces` hit on an arithmetic operand: `value`, `add`, `weight`, `days`,
+`MIN`, `MAX`, `divide`, `count`.
+
+**The defence is not context-tracking, it is a complete primitive set.** A
+literal in a value position is a value, and the set of things that look like
+literals is small and closed: **number, date, boolean**. Every bug of this shape
+so far was a hole in that set rather than a flaw in the rule — dates were
+missing, which is why `game_start_date < 1178.1.1` hovered as a struggle.
+
+Two measurements say the rule is not too blunt:
+
+- literal values sitting in a slot whose type the engine already knows: **zero**,
+  across a 21,499-file conversion. Suppressing them costs nothing today.
+- assignment keys never reach the rule, so a `random_list` weight and a numeric
+  key in the file that defines it keep their own handling (§3f).
+
+If a future game does put a literal in a typed slot, the fix is already designed
+and should not be built before then: resolve it through the slot's declared type
+using the same chain completion uses in `valueItems` — fire key, script name,
+`Supported Targets`, then field value kind. Hover and completion would then
+answer "what is this" and "what can go here" from one source. Today that would
+change nothing, and speculative machinery here is how an engine accumulates the
+hardcoded edge cases this one was rebuilt to remove.
+
+## 12. Loc keys are built out of other loc keys, not only out of definitions
+
+Measured on vanilla, where the keys and the script that cites them ship from the
+same build, so a key the orphan rule flags is nearly always a mechanism PMT does
+not model rather than dead weight Paradox shipped:
+
+| Game | english keys | cited | convention-owned | flagged orphan |
+|---|---|---|---|---|
+| CK3 | 287,896 | 63.9% | 19.9% | **46,526 (16.2%)** |
+| Vic3 | 101,713 | 65.8% | 19.4% | **15,021 (14.8%)** |
+| EU5 | 234,673 | 38.5% | 31.9% | **69,565 (29.6%)** |
+
+**Total conversions do not inflate the rate**, only the count — they are large,
+so the same rate produces a much bigger number:
+
+| Corpus | own english keys | flagged | rate |
+|---|---|---|---|
+| CK3 vanilla | 287,896 | 46,526 | 16.2% |
+| CK3 · A Game of Thrones | 93,914 | 11,813 | **12.6%** |
+| CK3 · The Fallen Eagle | 26,417 | 5,047 | 19.1% |
+| Vic3 vanilla | 101,713 | 15,021 | 14.8% |
+| Vic3 · Hail | 3,487 | 205 | **5.9%** |
+| EU5 vanilla | 234,673 | 69,565 | 29.6% |
+| EU5 · Basileia Romaion | 7,675 | 5,762 | **75.1%** |
+
+AGoT and Hail sit *below* their game's vanilla rate, so the residue there is the
+same engine gap being applied to more keys. Fallen Eagle's 19.1% against CK3's
+16.2% is the only CK3 excess worth treating as candidate real cruft.
+
+The largest unmodelled mechanism is a key derived from **another key** rather
+than from a definition. EU5 writes the negated form of a trigger tooltip as
+`NOT_<key>`: `NOT_THIRD_*` (1,259), `NOT_FIRST_*` (490), `NOT_HAS_*`, `NOT_IS_*`,
+`NOT_any_*`, and diplomatic actions as `OTHER_PERFORMS_<key>` (1,349) and
+`WE_PERFORM_<key>` (708). `ConventionOwner` only resolves affixes around a
+**definition id**, so none of these have an owner and all of them read as
+orphaned.
+
+CK3's residue is the same rule failing on shapes it should already reach —
+`game_concept_*` (921, and concepts are *declared*, so this is declared-beats-
+derived again), `PORTRAIT_MODIFIER_*` (1,023), `mercenary_company_*` (321),
+`great_project_*` (231), `dynn_title_*` (110), `struggle_parameter_*` (94).
+
+**The tail is long and that shapes the fix.** CK3's residue spreads over 29,647
+distinct prefix clusters and the top 25 cover 9% of it. There is no set of
+special cases here; only a rule that generalises will move the number.
+
+EU5 also carries a dotted family — `caux.elysian_language`,
+`br_ere_resistance_events.60.entry` — where the stem before the first `.` names a
+location or an event namespace. §3g recorded 592 of these on AGoT as not worth a
+tokeniser change; at EU5's 75% mod rate that judgement no longer holds.
+
+Reproduce with `PMT_LOC_RESIDUE=1` and `internal/views/locresidue_test.go`.
+
+## 13. Where permissiveness is allowed, and where it is not
+
+The consequences are asymmetric, and the engine should be calibrated to that
+rather than to one global notion of "accurate".
+
+**Failing to report an orphan costs a modder some dead localization lines** —
+clutter they will probably never notice. **Loosening a derivation costs them a
+hover that names the wrong thing, a go-to-definition that opens the wrong file,
+and a `loc_key` type on a field that holds no key.** The second is the failure
+that teaches a new modder something false, which is the one thing this engine
+exists to avoid.
+
+So the reporting side may be permissive and the derivation side may not. Two
+rules keep that from collapsing back into one loose predicate:
+
+1. **The permissive side returns a boolean and nothing else.** `LocKeyExplained`
+   answers "does anything account for this key?" and cannot answer "what?". A
+   predicate that yields no identity cannot produce a wrong link, so widening it
+   has no reachable effect on hover, definition or typing. `LocConventionOwner`
+   keeps the `(id, kind, ok)` signature and its floors, and stays the only thing
+   the LSP asks.
+2. **The permissive side is reverse-only.** `ConventionOwner` runs backwards,
+   from a key to whatever explains it. `ConventionLocKeys` runs forwards, from a
+   definition to the keys it is expected to have, and feeds both the
+   `required-loc` diagnostics and the stored loc references that `UsedLocKeys`
+   reads. A permissive shape in the forward direction would *demand* keys that
+   were never meant to exist and fabricate references to them — false positives
+   in the other direction, and in a diagnostic. `LocKeyAffixes` must never be
+   wired into it.
+
+`deriveLocFields` is the neighbour to keep honest for the same reason: it decides
+which script fields hold a localization key, so it changes typing, hover and
+go-to-definition directly. It keeps strict floors (`minLocFieldHits = 8`,
+`locFieldCoverage = 80`) and skips values that name a definition or a schema
+token. Electing 323 CK3 fields there put `has_trait` and `capital` on the
+loc_key path; 179 is the honest number.
+
+---
+
+## 11. Primitives: the set is small, closed, and must be complete
+
+A third of CK3's model is keyed by a bare number, so every integer in script can
+collide with a definition:
+
+| Game | definitions | keyed by a bare number |
+|---|---|---|
+| **CK3** | 215,448 | **68,109 (32%)** — characters 38,020, province_terrain 12,720, provinces 10,887, dynasties 4,223, map_data 1,465 |
+| Vic3 | 41,011 | 0 |
+| EU5 | 142,258 | 240 |
+
+Left alone, `value = 5` resolves to a province. Measured on A Game of Thrones,
+**4,044 of 11,411** literal values would resolve against some database — every
+one of them a `provinces` hit on an arithmetic operand: `value`, `add`, `weight`,
+`days`, `MIN`, `MAX`, `divide`, `count`.
+
+**The defence is not context-tracking, it is a complete primitive set.** A
+literal in a value position is a value, full stop, and the set of things that
+look like literals is small and closed: **number, date, boolean**. Every bug of
+this shape so far was a hole in that set rather than a flaw in the rule — dates
+were missing, which is why `game_start_date < 1178.1.1` hovered as a struggle.
+
+Two measurements say the rule is not too blunt:
+
+- literal values sitting in a slot whose type the engine already knows: **zero**,
+  across a 21,499-file conversion. Suppressing them costs nothing today.
+- assignment keys never reach the rule, so a `random_list` weight and a numeric
+  key in the file that defines it keep their own handling (§3f).
+
+If a future game does put a literal in a typed slot, the fix is already designed
+and should not be built before then: resolve it through the slot's declared type
+using the same chain completion uses in `valueItems` — fire key, script name,
+`Supported Targets`, then field value kind. Hover and completion would then
+answer "what is this" and "what can go here" from one source. Today that would
+change nothing, and speculative machinery here is how the engine got its
+hardcoded edge cases in the first place.

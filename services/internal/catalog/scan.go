@@ -127,7 +127,9 @@ func Scan(ctx context.Context, req ScanRequest) (*VanillaCache, *VanillaLoc, err
 		Wrappers:         sortedKeys(derived.Wrappers),
 		LocAffixes:       deriveLocAffixes(acc.defs, locKeys),
 		LocFields:        sortedKeys(derived.LocFields),
+		LocListFields:    sortedKeys(derived.LocListFields),
 		LocMemberAffixes: deriveLocMemberAffixes(structures, locKeys),
+		LocKeyAffixes:    deriveLocKeyAffixes(locKeys),
 		KindInfo:         kindInfo,
 		FieldInfo:        fieldInfo,
 		FieldInfoByKind:  fieldByKind,
@@ -292,6 +294,7 @@ type accum struct {
 	guiTypes       map[string]bool
 	guiProps       map[string]bool
 	fieldRHS       map[string]map[string]bool
+	fieldListRHS   map[string]map[string]bool
 	fieldRHSByKind map[string]map[string]map[string]bool
 }
 
@@ -305,6 +308,7 @@ func newAccum() *accum {
 		guiTypes:       map[string]bool{},
 		guiProps:       map[string]bool{},
 		fieldRHS:       map[string]map[string]bool{},
+		fieldListRHS:   map[string]map[string]bool{},
 		fieldRHSByKind: map[string]map[string]map[string]bool{},
 	}
 }
@@ -325,6 +329,14 @@ func (a *accum) merge(ex FileExtract) {
 	maps.Copy(a.vocab, ex.Vocab)
 	maps.Copy(a.guiTypes, ex.GUITypes)
 	maps.Copy(a.guiProps, ex.GUIProps)
+	for field, vals := range ex.FieldListRHS {
+		m := a.fieldListRHS[field]
+		if m == nil {
+			m = map[string]bool{}
+			a.fieldListRHS[field] = m
+		}
+		maps.Copy(m, vals)
+	}
 	for field, vals := range ex.FieldRHS {
 		m := a.fieldRHS[field]
 		if m == nil {
@@ -395,6 +407,7 @@ func collectExtracts(
 	corp := corpus{ctx: ctx, gameID: gameID, files: files}
 	dataFns := map[string]bool{}
 	fieldRHS := map[string]map[string]bool{}
+	fieldListRHS := map[string]map[string]bool{}
 	var baseDefs []Def
 	var mu sync.Mutex
 
@@ -412,6 +425,14 @@ func collectExtracts(
 			if m == nil {
 				m = map[string]bool{}
 				fieldRHS[field] = m
+			}
+			maps.Copy(m, vals)
+		}
+		for field, vals := range ex.FieldListRHS {
+			m := fieldListRHS[field]
+			if m == nil {
+				m = map[string]bool{}
+				fieldListRHS[field] = m
 			}
 			maps.Copy(m, vals)
 		}
@@ -435,7 +456,9 @@ func collectExtracts(
 	// a mod's `last_name` is read as localization for the same reason vanilla's
 	// is.
 	if len(locKeys) > 0 {
-		derived.LocFields = deriveLocFields(fieldRHS, locKeys, defKeySet(baseDefs), schema)
+		defKeys := defKeySet(baseDefs)
+		derived.LocFields = deriveLocFields(fieldRHS, locKeys, defKeys, schema)
+		derived.LocListFields = deriveLocFields(fieldListRHS, locKeys, defKeys, schema)
 	}
 	baseDefs = nil
 

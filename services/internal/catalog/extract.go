@@ -57,6 +57,9 @@ type FileExtract struct {
 	GUITypes     map[string]bool
 	GUIProps     map[string]bool
 	FieldRHS     map[string]map[string]bool
+	// FieldListRHS is the bare members of a list value, keyed by the field that
+	// holds the list. See extractFieldListValues.
+	FieldListRHS map[string]map[string]bool
 	// LocOrder is the file's index in the walk list, i.e. its load order. It
 	// decides which value survives when two files define one key; see
 	// accum.mergeLocOrdered.
@@ -183,6 +186,7 @@ func extractForms(
 	ex.Defs = append(ex.Defs, paramDefs...)
 	ex.Refs = append(ex.Refs, paramRefs...)
 	ex.FieldRHS = extractFieldRHS(res.Root)
+	ex.FieldListRHS = extractFieldListValues(res.Root)
 	return ex
 }
 
@@ -362,6 +366,15 @@ func extractTopLevel(root *jomini.Root, li *jomini.LineIndex, gameID, kind, path
 		}
 		name := game.KeyIdentity(gameID, a.Key.Text)
 		if !defNameRe.MatchString(name) || name == "namespace" {
+			continue
+		}
+		// A date is not a definition. The games key their history files by one —
+		// `history/struggles/…` opens `718.1.1 = { … }` and
+		// `history/cultures/afghan.txt` opens `867.1.1 = { … }` — so the same
+		// date was harvested as a `struggles` object and a `cultures` object,
+		// and hovering `game_start_date < 1178.1.1` produced a struggle card
+		// while go-to-definition jumped into a culture's history.
+		if jomini.IsDateLiteral(name) {
 			continue
 		}
 		defs = append(defs, makeDef(kind, name, path, origin, a.Key.Range, li))
@@ -628,6 +641,28 @@ func extractRefsAndEdges(
 							})
 						}
 					}
+					// A list whose members are localization keys: a culture's
+					// `male_names`, its `cadet_dynasty_names`. The members are
+					// values, not assignments, so nothing else here sees them.
+					if derived.locListField(key) {
+						if b := jomini.BlockOf(a.Value); b != nil {
+							for _, in := range b.Statements {
+								vs, ok := in.(*jomini.ValueStmt)
+								if !ok {
+									continue
+								}
+								sc, ok := vs.Value.(*jomini.Scalar)
+								if !ok || sc.Text == "" || !loc.LooksLikeKey(sc.Text) {
+									continue
+								}
+								refs = append(refs, Ref{
+									Key: sc.Text, Kind: "loc-broad", Path: path,
+									Line:  li.PositionAt(sc.Range.Start).Line,
+									Start: sc.Range.Start, End: sc.Range.End,
+								})
+							}
+						}
+					}
 					if sc, ok := a.Value.(*jomini.Scalar); ok && !sc.Quoted && sc.Text != "" {
 						if prop == loc.PropNone {
 							if _, _, ok := game.ParseTyped(gameID, sc.Text); ok {
@@ -730,6 +765,67 @@ func extractFieldRHS(root *jomini.Root) map[string]map[string]bool {
 			if b := jomini.BlockOf(a.Value); b != nil {
 				walk(b.Statements)
 			}
+		}
+	}
+	walk(root.Statements)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// extractFieldListValues collects the bare members of a list — `male_names = {
+// Abu-Bakr Aarif … }` — keyed by the field that holds the list.
+//
+// A list member is a `ValueStmt`, not an assignment, so extractFieldRHS never
+// saw one: it reads the right-hand side of `field = value`. Localization keys
+// hide there in quantity. CK3 writes a culture's given names and its cadet
+// dynasty names as lists, both are keys (`Abbas:0 "Abbas"`,
+// `dynn_Rasulid:0 "Rasulid"`), and nothing cited them — 6,978 of A Game of
+// Thrones' 20,196 orphaned English keys, 35% of the whole residue.
+//
+// Quoted members count. Vanilla quotes its cadet dynasty names and not its
+// given names, and the quoting says nothing about whether the value is a key.
+func extractFieldListValues(root *jomini.Root) map[string]map[string]bool {
+	if root == nil {
+		return nil
+	}
+	out := map[string]map[string]bool{}
+	var walk func(stmts []jomini.Statement)
+	walk = func(stmts []jomini.Statement) {
+		for _, st := range stmts {
+			a, ok := st.(*jomini.Assignment)
+			if !ok {
+				if vs, ok := st.(*jomini.ValueStmt); ok {
+					if b := jomini.BlockOf(vs.Value); b != nil {
+						walk(b.Statements)
+					}
+				}
+				continue
+			}
+			b := jomini.BlockOf(a.Value)
+			if b == nil {
+				continue
+			}
+			if !a.Key.Quoted && loc.Classify(a.Key.Text) == loc.PropNone {
+				for _, in := range b.Statements {
+					vs, ok := in.(*jomini.ValueStmt)
+					if !ok {
+						continue
+					}
+					sc, ok := vs.Value.(*jomini.Scalar)
+					if !ok || sc.Text == "" || !loc.LooksLikeKey(sc.Text) {
+						continue
+					}
+					m := out[a.Key.Text]
+					if m == nil {
+						m = map[string]bool{}
+						out[a.Key.Text] = m
+					}
+					m[sc.Text] = true
+				}
+			}
+			walk(b.Statements)
 		}
 	}
 	walk(root.Statements)

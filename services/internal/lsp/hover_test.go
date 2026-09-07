@@ -586,3 +586,116 @@ func TestNamespaceStillResolvesWhenAlone(t *testing.T) {
 		t.Fatal("a namespace with no rival must still hover")
 	}
 }
+
+// A key can be a declared token as well. `add_to_list` is an effect the game
+// documents, and it is also a structure key of the kind being edited, so hover
+// identifies it as a key — and the signature the game states for it was being
+// dropped, on 58 of CK3's 1,201 sampled hovers that had one.
+func TestFieldKeyCardKeepsDeclaredSignature(t *testing.T) {
+	const body = "act = {\n\tadd_to_list = my_list\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/activity_types/a.txt": body,
+	}, &catalog.VanillaCache{
+		// Both a structure key of the kind and a declared effect.
+		Structures: map[string][]string{"activity_types": {"add_to_list"}},
+		Schema: &catalog.Schema{Effects: map[string]catalog.EngineToken{
+			"add_to_list": {Usage: "add_to_list = <list name>"},
+		}},
+	}, nil)
+	f := filepath.Join(root, "common", "activity_types", "a.txt")
+	line, col := lineCol(body, "add_to_list")
+	h := Hover(s, f, line, col)
+	if h == nil {
+		t.Fatal("no hover")
+	}
+	if !strings.Contains(h.Kind, "key") {
+		t.Fatalf("expected the structure-key card: %#v", h)
+	}
+	if h.Usage != "add_to_list = <list name>" {
+		t.Fatalf("declared signature dropped: %#v", h)
+	}
+}
+
+// A date is not a name. The games key their history files by one, so `1178.1.1`
+// was harvested as a `struggles` object and a `cultures` object at once:
+// hovering `game_start_date < 1178.1.1` produced a struggle card citing
+// `struggle:id`, and go-to-definition jumped into a culture's history file.
+func TestDateLiteralIsNotADefinition(t *testing.T) {
+	const body = "d = {\n\tis_shown = { game_start_date < 1178.1.1 }\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/decisions/d.txt": body,
+		// Exactly what vanilla ships: history keyed by date, under two kinds.
+		"history/struggles/s.txt": "1178.1.1 = { effect = { } }\n",
+		"history/cultures/c.txt":  "1178.1.1 = { discover_innovation = x }\n",
+	}, nil, nil)
+	f := filepath.Join(root, "common", "decisions", "d.txt")
+	line, col := lineCol(body, "1178.1.1")
+
+	if h := Hover(s, f, line, col); h != nil {
+		t.Errorf("a date must not hover as an object: %#v", h)
+	}
+	if locs := Definition(s, f, line, col); len(locs) != 0 {
+		t.Errorf("a date must not go to a definition: %v", locs)
+	}
+	// And the date never became a definition in the first place.
+	if d := s.Resolve("1178.1.1"); d != nil {
+		t.Errorf("date harvested as a %s definition: %+v", d.Kind, d)
+	}
+}
+
+// composeHint describes the KIND — its scope type, how it is cited, how its
+// localization keys are named. A field-key card is not about the kind, so
+// attaching that hint reported a coat of arms' localization convention as
+// though it described `color2`.
+func TestFieldKeyCardDoesNotDescribeItsKind(t *testing.T) {
+	const body = "k_hungary = {\n\tcolor2 = \"white\"\n}\n"
+	s, root := buildSession(t, "ck3", map[string]string{
+		"common/coat_of_arms/coat_of_arms/c.txt": body,
+	}, &catalog.VanillaCache{
+		Structures: map[string][]string{"coat_of_arms": {"color2"}},
+		// The kind has a localization convention; the field does not.
+		LocAffixes: map[string][]catalog.LocAffix{
+			"coat_of_arms": {{Defs: 10, Of: 10}},
+		},
+	}, nil)
+	f := filepath.Join(root, "common", "coat_of_arms", "coat_of_arms", "c.txt")
+	line, col := lineCol(body, "color2")
+	h := Hover(s, f, line, col)
+	if h == nil {
+		t.Fatal("no hover")
+	}
+	if !strings.Contains(h.Kind, "key") {
+		t.Fatalf("expected the field-key card: %#v", h)
+	}
+	if h.Hint != "" {
+		t.Fatalf("field-key card described its kind: hint=%q", h.Hint)
+	}
+}
+
+// The kind hint never mentions localization conventions. Two renderings were
+// tried — the label "loc kind_id" and the template "loc `<id>_adj`" — and
+// neither says anything a reader can act on. Which keys an object should have,
+// and which are missing, is a list with per-key state: Inspector material, not a
+// subtitle.
+func TestKindHintHasNoLocConvention(t *testing.T) {
+	const body = "my_trait = {\n\tcategory = personality\n}\n"
+	cache := &catalog.VanillaCache{
+		LocAffixes: map[string][]catalog.LocAffix{
+			"traits": {
+				{Defs: 10, Of: 10},               // the key is the id
+				{Suf: "_desc", Defs: 10, Of: 10}, // this one is worth saying
+			},
+		},
+	}
+	s, root := buildSession(t, "ck3",
+		map[string]string{"common/traits/t.txt": body}, cache, nil)
+	f := filepath.Join(root, "common", "traits", "t.txt")
+	line, col := lineCol(body, "my_trait")
+	h := Hover(s, f, line, col)
+	if h == nil {
+		t.Fatal("no hover")
+	}
+	if strings.Contains(h.Hint, "loc ") || strings.Contains(h.Hint, "<id>") {
+		t.Fatalf("hint still carries a loc convention: hint=%q", h.Hint)
+	}
+}

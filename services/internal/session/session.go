@@ -121,10 +121,10 @@ func NewWithLoc(
 	s.modFieldEnums = idx.FieldEnumsByKind
 	s.modFireKeys = maps.Clone(idx.FireKeys)
 	s.modMembers = idx.Structures
-	s.memberSets = nil
 	s.rebuildCacheIndexLocked()
 	s.rebuildFieldKindsLocked()
 	s.rebuildMacroSetsLocked()
+	s.rebuildMemberSetsLocked()
 	s.viaDirty = true
 	return s
 }
@@ -139,6 +139,7 @@ func (s *Session) ReplaceCache(c *catalog.VanillaCache) {
 	s.rebuildCacheIndexLocked()
 	s.rebuildFieldKindsLocked()
 	s.rebuildMacroSetsLocked()
+	s.rebuildMemberSetsLocked()
 	s.viaDirty = true
 	s.mu.Unlock()
 }
@@ -195,9 +196,8 @@ func (s *Session) DidClose(path string) {
 
 // DidSave reindexes from the open buffer if present, else from disk.
 func (s *Session) DidSave(path string) {
-	path = CanonPath(path)
 	s.mu.Lock()
-	if b := s.buffers[path]; b != nil {
+	if b := s.buffers[CanonPath(path)]; b != nil {
 		s.reindexLocked(path, "", b.text, jomini.Result{})
 		s.mu.Unlock()
 		return
@@ -219,7 +219,6 @@ func (s *Session) externalChange(path string) {
 }
 
 func (s *Session) reindexFromDisk(path string) (deleted bool) {
-	path = CanonPath(path)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return true
@@ -232,8 +231,12 @@ func (s *Session) reindexFromDisk(path string) (deleted bool) {
 }
 
 // edit updates the buffer (parsing once) and reindexes the file.
+// The editor's spelling of the path is kept and only the buffer key is
+// canonicalised. Everything harvested here carries the path through to
+// Def.Path and out to go-to-definition, and the workbench keys its tabs by
+// exact URI.
 func (s *Session) edit(path, text string) {
-	path = CanonPath(path)
+	key := CanonPath(path)
 	text = jomini.Normalize(text)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -242,20 +245,35 @@ func (s *Session) edit(path, text string) {
 		return
 	}
 	if game.MatchExtract(s.GameID, rel).Mode == game.ModeLocKey {
-		s.buffers[path] = &buffer{text: text}
+		s.buffers[key] = &buffer{text: text}
 		s.reindexLocked(path, rel, text, jomini.Result{Src: text})
 		return
 	}
 	result := jomini.Parse(text)
-	s.buffers[path] = &buffer{text: text, result: result}
+	s.buffers[key] = &buffer{text: text, result: result}
 	s.reindexLocked(path, rel, text, result)
 }
 
 // reindexLocked patches indexes for one path. Identical bytes are a no-op.
+// reindexLocked harvests one file. path is kept as the caller spelled it and
+// canonicalised only where a map key is needed.
+//
+// Overwriting path with CanonPath here put a lower-cased path into every
+// definition harvested from an open file, because CanonPath lower-cases on
+// Windows. That spelling then travelled all the way to the editor, which keys
+// its tabs by exact URI: go-to-definition on a symbol in the file you were
+// already looking at opened a second tab onto `file:///c:/users/...` beside the
+// original `file:///C:/Users/...`. The same mismatch made the workbench's
+// reveal-in-explorer a no-op, since it first asks whether the resource is inside
+// a workspace folder and the folders are registered with their real casing.
+//
+// CanonPath is for comparison, never for a value anything downstream displays or
+// opens. addDefsLocked already gets this right: it keys by CanonPath(d.Path)
+// while leaving d.Path alone.
 func (s *Session) reindexLocked(path, rel, text string, parsed jomini.Result) {
-	path = CanonPath(path)
+	key := CanonPath(path)
 	text = jomini.Normalize(text)
-	if prev, ok := s.lastIndexed[path]; ok && prev == text {
+	if prev, ok := s.lastIndexed[key]; ok && prev == text {
 		return
 	}
 	origin, locatedRel, ok := s.locate(path)
@@ -265,7 +283,7 @@ func (s *Session) reindexLocked(path, rel, text string, parsed jomini.Result) {
 	if rel == "" {
 		rel = locatedRel
 	}
-	s.dropPathLocked(path)
+	s.dropPathLocked(key)
 	var ex catalog.FileExtract
 	if parsed.Root != nil {
 		ex = catalog.ExtractParsed(s.GameID, path, rel, origin, parsed, false, s.cache)
@@ -276,7 +294,7 @@ func (s *Session) reindexLocked(path, rel, text string, parsed jomini.Result) {
 	// sites must be queryable (peek/hover) without waiting on a rescan.
 	if origin == game.OriginVanilla {
 		s.indexVanillaLiveLocked(ex)
-		s.lastIndexed[path] = text
+		s.lastIndexed[key] = text
 		return
 	}
 	s.addDefsLocked(ex.Defs)
@@ -286,7 +304,7 @@ func (s *Session) reindexLocked(path, rel, text string, parsed jomini.Result) {
 	s.addRefsLocked(catalog.ApplyCallRefs(ex.Cands, s.macroDefKinds))
 	s.addEdgesLocked(catalog.ApplyCallEdges(ex.Cands, s.macroKeys))
 	s.locByLang = catalog.MergeLoc(s.locByLang, ex.Loc)
-	s.lastIndexed[path] = text
+	s.lastIndexed[key] = text
 	s.viaDirty = true
 }
 

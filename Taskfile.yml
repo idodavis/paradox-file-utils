@@ -80,19 +80,35 @@ tasks:
       - task: common:run:docker
 
   test:
-    summary: Fast backend tests (~2s). Skips the real-install tier.
+    summary: Fast backend tests (~3s). Skips the real-install tier.
     dir: services
     cmds:
-      - go test -short ./...
+      # -timeout 60s is the contract, not a safety net: a test that needs longer
+      # than a minute belongs behind an opt-in task, not in the loop a developer
+      # runs on every change. If this starts failing, move the test — do not
+      # raise the number.
+      - go test -short -timeout 60s ./...
 
   test:full:
     summary: >
-      Backend tests including the real-install tier (~2m). Needs
+      Backend tests including the real-install tier (~30s). Needs
       PMT_TEST_INSTALL_{CK3,VIC3,EU5} and PMT_TEST_DOCS_{CK3,VIC3,EU5};
       the heavy tests skip themselves when those are unset.
     dir: services
     cmds:
-      - go test ./... -timeout 1800s
+      - go test -timeout 60s ./...
+
+  test:probe:
+    summary: >
+      Engine probes over the real installs and the total conversions (~5min).
+      Opt-in and never part of test or test:full. Reports the vanilla orphan
+      rate, which is what says how much of the mod residue is engine gap rather
+      than mod defect — see GAME-SYNTAX §12.
+    dir: services
+    env:
+      PMT_LOC_RESIDUE: "1"
+    cmds:
+      - go test ./internal/views/ -run TestVanillaLocResidue -v -timeout 3600s
 
   test:sweep:
     summary: >

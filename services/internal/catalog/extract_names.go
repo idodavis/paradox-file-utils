@@ -305,13 +305,17 @@ func conventionLocRefs(
 	}
 	var out []Ref
 	for _, d := range defs {
-		// Only the near-universal conventions are stored as references. The
-		// full set is applied in reverse by ConventionOwner, which costs
-		// nothing until a key actually looks orphaned; expanding all of them
-		// forwards would add a reference per definition per convention to
-		// every install cache.
+		// Only the strongest conventions are stored as references. The full set
+		// is applied in reverse by ConventionOwner, which costs nothing until a
+		// key actually looks orphaned; expanding all of them forwards would add
+		// a reference per definition per convention to every install cache.
+		//
+		// LocConventionStored, not LocConventionRequired: what is worth a
+		// navigable reference and what the game demands are different questions,
+		// and sharing a constant coupled them. Raising the required floor to 100
+		// shrank this set and pushed EU5's orphan count up 143 as a side effect.
 		affixes := derived.locAffixes(d.Kind)
-		for _, key := range ConventionKeys(d.Key, affixes, LocConventionRequired) {
+		for _, key := range ConventionKeys(d.Key, affixes, LocConventionStored) {
 			out = append(out, Ref{
 				Key: key, Kind: "loc-convention", Path: path,
 				Line: li.PositionAt(d.Start).Line, Start: d.Start, End: d.End,

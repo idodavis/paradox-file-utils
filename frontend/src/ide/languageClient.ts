@@ -66,9 +66,26 @@ function columnUtf16(lineText: string, byteCol: number): number {
   return utf16;
 }
 
+/**
+ * Turn a path from the language service into a URI the workbench already knows.
+ *
+ * The workbench keys editors by exact URI string, and on Windows the backend
+ * canonicalises paths to lower case for comparison — so a definition in the file
+ * you are already looking at came back as `file:///c:/users/...` against the open
+ * editor's `file:///C:/Users/...`. Two spellings, two resources, and go-to-
+ * definition opened a second tab onto the same file.
+ *
+ * Matching against the open documents first means the URI handed back is
+ * identical to the one the editor holds, so the workbench reuses that tab.
+ */
 function uriToVsCode(uri: string): vscode.Uri {
-  if (uri.startsWith("file:")) return vscode.Uri.parse(uri);
-  return vscode.Uri.file(uri);
+  const parsed = uri.startsWith("file:") ? vscode.Uri.parse(uri) : vscode.Uri.file(uri);
+  const key = parsed.fsPath.replace(/\\/g, "/").toLowerCase();
+  for (const doc of vscode.workspace.textDocuments) {
+    if (doc.uri.scheme !== parsed.scheme) continue;
+    if (doc.uri.fsPath.replace(/\\/g, "/").toLowerCase() === key) return doc.uri;
+  }
+  return parsed;
 }
 
 function rangeToVsCode(
